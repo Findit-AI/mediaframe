@@ -5,7 +5,9 @@
 //! `Reserved(_)` arms.
 //!
 //! Structs: build via public `new(...)` with each field via
-//! `<FieldT>::arbitrary(g)`. Watch `NonZeroU32` for `Rational` denom.
+//! `<FieldT>::arbitrary(g)`. Watch `Rational`'s `NonZeroI64` denom —
+//! quickcheck has no `Arbitrary` for the signed `NonZero` family, and
+//! the constructor rejects negatives; see [`parts`].
 //!
 //! Owned types: 13 coded enums + 11 structs (colour×6, frame×5).
 
@@ -217,15 +219,36 @@ pub(crate) fn rect(g: &mut Gen) -> crate::frame::Rect {
   )
 }
 
+/// Draws a `Rational` numerator / denominator pair inside the range
+/// [`crate::frame::Rational::new`] accepts.
+///
+/// quickcheck 1.x implements `Arbitrary` only for the *unsigned*
+/// `NonZero` family, so `NonZeroI64` has none to swap in; and a signed
+/// draw would anyway be half negative, which the constructor asserts
+/// against — a generator must not be able to panic the type it
+/// generates. Both halves are therefore folded out of an unsigned draw
+/// into `0..=i64::MAX` (`1..=i64::MAX` for the denominator), legal by
+/// construction rather than by rejection.
+#[inline]
+fn parts(g: &mut Gen) -> (i64, ::core::num::NonZeroI64) {
+  #[allow(clippy::cast_possible_wrap)] // masked to 63 bits: always non-negative
+  let num = (u64::arbitrary(g) >> 1) as i64;
+  #[allow(clippy::cast_possible_wrap)]
+  let den = ((u64::arbitrary(g) >> 1) as i64).max(1);
+  let den = ::core::num::NonZeroI64::new(den).unwrap_or(crate::frame::DEN_ONE);
+  (num, den)
+}
+
 #[inline]
 pub(crate) fn rational(g: &mut Gen) -> crate::frame::Rational {
-  // `NonZeroU32` impls `quickcheck::Arbitrary` in quickcheck 1.x.
-  crate::frame::Rational::new(u32::arbitrary(g), ::core::num::NonZeroU32::arbitrary(g))
+  let (num, den) = parts(g);
+  crate::frame::Rational::new(num, den)
 }
 
 #[inline]
 pub(crate) fn sample_aspect_ratio(g: &mut Gen) -> crate::frame::SampleAspectRatio {
-  crate::frame::SampleAspectRatio::new(u32::arbitrary(g), ::core::num::NonZeroU32::arbitrary(g))
+  let (num, den) = parts(g);
+  crate::frame::SampleAspectRatio::new(num, den)
 }
 
 #[inline]

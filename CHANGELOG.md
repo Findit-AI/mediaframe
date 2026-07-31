@@ -4,7 +4,124 @@ All notable changes to this crate are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] / [0.1.7]
+## [Unreleased] / [0.2.0]
+
+**Breaking**, on two independent counts. `frame::Rational` widens to
+`i64`/`NonZeroI64` and its constructor becomes checked (see **Changed**
+below). And two public dependencies cross a major: `mediatime` 0.1 → 0.2
+(`mediatime::Timestamp` appears in `frame::TimestampedFrame`'s public
+signatures, so a caller holding a `mediatime 0.1` value no longer type-checks)
+and `buffa` 0.8 → 0.9 (`Message` is implemented for public types, so a
+downstream on 0.8 no longer sees those impls). **No wire byte changes** — every
+entry below carries its own proof.
+
+### Changed
+
+- **`frame::Rational` is now `i64` / `NonZeroI64`** (was `u32` /
+  `NonZeroU32`), and [`Rational::new`] is checked rather than total:
+  it panics on `num < 0` or `den < 0`, with a new
+  `Rational::try_new -> Option<Self>` as the fallible form.
+  `SampleAspectRatio` (a newtype over `Rational`) and `FrameRate`
+  (which composes it) follow automatically and carry no width of
+  their own; `SampleAspectRatio::new` panics the same way, and its
+  fallible route is the existing
+  `Rational::try_new(..).map(SampleAspectRatio::from)`.
+
+  *Why `i64`, and why `mediatime::Timebase` stays `i32`.* `mediaframe`
+  is a pure **receiver** — nothing here is handed back to a decoder
+  SDK — so "must round-trip into an `AVRational`", the reason
+  `Timebase` went to `i32`, does not apply. What does apply is
+  storage (`sqlx` has no `Type<Postgres>` for `u32`, so a `u32`
+  widens to `i64` to be stored regardless) and ingest (R3D metadata
+  returns `unsigned int`, ISO BMFF `pasp` is `unsigned int(32)` —
+  values `i32` would have to *reject*). `Timebase` is additionally an
+  arithmetic operand whose rescale overflow proofs need `num < 2^32`;
+  `Rational` never multiplies against a PTS and carries no such
+  proof. **The two types differ deliberately** — this is not an
+  inconsistency to reconcile.
+
+  The four setters (`with_num`/`with_den`/`set_num`/`set_den`) now
+  route through `new`, so the sign invariants have exactly one
+  enforcement site rather than a mutator hole. `Deserialize` was the
+  other unguarded construction path — the derive assigns fields
+  directly, and the field types no longer carry the invariant — so
+  each field gained a `deserialize_with` guard; `{"num": -5}` is now
+  a deserialization error instead of a value the constructor would
+  refuse. The constructor deliberately does **not** reduce to lowest
+  terms: a stream declaring `2/4` reads back as `2/4`.
+
+  **The wire format does not change.** `SampleAspectRatio` and
+  `Rational` move from `uint32 num/den` to `int64 num/den`, which is
+  the same plain non-ZigZag varint over every value the old
+  representation could hold. Proven, not inferred: 680 payloads
+  across `Rational`, `SampleAspectRatio` and `FrameRate` — spanning
+  every varint continuation boundary and `u32::MAX` — encode to
+  identical bytes under both representations, and the `i64` build
+  cross-decodes all 680 `uint32`-era payloads back to the same values
+  and the same bytes. (`sint32`/`sint64` would have been the silent
+  break, since ZigZag re-encodes every value; this crate uses neither.)
+  Decode stays total in the newly reachable directions: a negative
+  numerator clamps to `0` and a zero-or-negative denominator to `1`,
+  matching `mediatime::Timebase`'s decode policy.
+
+- **`xtask`: `syn` 2 → 3, `prettyplease` 0.2 → 0.3** — a coupled bump
+  (`prettyplease` 0.3 requires `syn ^3`, so neither moves alone).
+  Dev-only: `xtask` is `publish = false`, so nothing here reaches the
+  published `mediaframe` artifact. `syn` 3's breaking change is
+  `Signature::unsafety: Option<Token![unsafe]>` → the tri-state
+  `Signature::safety: Safety` (Rust 2024 `unsafe extern`); `xtask`
+  names only `syn::Ident` and `syn::parse2::<syn::File>` and never
+  inspects a signature, so it compiles unchanged. `prettyplease` 0.3
+  emits **byte-identical** output to 0.2 for the generated
+  `mediaframe/src/codec.rs` (89,303 bytes pre-`rustfmt`), so
+  `cargo xtask check`'s byte-for-byte freshness diff stays green and
+  the committed file needs no regeneration.
+- **`quickcheck-richderive` 0.3 → 0.4** (`quickcheck` feature) — upstream
+  is a dependency-only release (its own `syn` 2 → 3 migration); the
+  derive, the accepted attribute keys, and the emitted impls are
+  unchanged. Re-verified against *this* crate rather than inherited:
+  `-Zunpretty=expanded` over `--features quickcheck,frame,buffa,serde,arbitrary`
+  is byte-identical across the bump (263,301 lines). All 40 derive sites
+  keep their `#[quickcheck(arbitrary = "…")]` attributes as-is —
+  that key names a **function**, and every value here points at a
+  `pub(crate) fn(&mut Gen) -> T` in `quickcheck_helpers`, so none of
+  them is the sibling `with = "…"` key (which names a *module* supplying
+  both `arbitrary` and `shrink`). No consumer-visible change.
+- **`buffa` 0.8 → 0.9** (`buffa` feature) — `Message::write_to` now takes
+  `&mut impl EncodeSink` in place of `&mut impl BufMut`, so all 26
+  `write_to` signatures in `src/buffa.rs` move (the trait method's
+  parameter type is what changed, so keeping `BufMut` is an `E0276`
+  "impl has stricter requirements"). Nothing else in the module changes:
+  no body touches a `BufMut` method directly — every byte goes through
+  `buffa`'s `encode_*` helpers, whose bodies are unchanged — and
+  `buffa` carries a blanket `impl<T: BufMut + ?Sized> EncodeSink for T`,
+  so every existing caller still passes a `Vec<u8>` / `BytesMut`.
+  **The wire format does not change.** Established on this crate's own
+  types rather than inherited: all 37 `Message` impls were driven over
+  400 deterministic `arbitrary` values each (14,800 encodings) under
+  0.8.1 and 0.9.1, and the encoded bytes are identical in every case —
+  so bytes written by a 0.8-linked peer still decode here. The 112
+  non-identity round-trips are `audio::SampleFormat` only, are present
+  identically in both runs, and are the documented `Other(SmolStr)` →
+  `Unknown(u32::MAX)` collapse, not a regression.
+  `EncodeSink`'s segmented `Rope` sink is **not** adopted here.
+- **`mediatime` 0.1 → 0.2** — `mediatime::Timebase`'s `num`/`den` became
+  `i32`/`NonZeroI32` (matching ffmpeg's `AVRational`, which is
+  `{int num; int den;}`), `Timebase::new` now panics on a negative
+  numerator or denominator with `try_new` returning `Option`, and its
+  `Deserialize` gained a range guard. The surface this crate touches is
+  small: `mediatime::Timestamp` — not `Timebase` — is what
+  `frame::TimestampedFrame` carries, and `Timestamp::new(i64, Timebase)`
+  is unchanged, so the single site that moves is one test's
+  `NonZeroU32` → `NonZeroI32` denominator literal. Every other
+  `Timebase` mention in this crate is prose, and each statement it
+  makes (non-proto-zero `1/1` default; a frame rate is deliberately not
+  a PTS timebase) is still true of 0.2.
+  Also collapses the transient duplicate from the previous commit:
+  `mediatime` 0.2 requires `buffa` 0.9, so the graph carries one
+  `buffa` again.
+
+## [0.1.7]
 
 ### Added
 

@@ -276,7 +276,7 @@ mod tests {
     codec::VideoCodec,
     color::{self, Matrix},
     disposition::TrackDisposition,
-    frame::{Dimensions, SampleAspectRatio},
+    frame::{Dimensions, FrameRate, Rational, SampleAspectRatio},
     lang::Language,
   };
 
@@ -320,10 +320,35 @@ mod tests {
     round_trip(&Dimensions::new(1920, 1080));
     round_trip(&SampleAspectRatio::new(
       40,
-      core::num::NonZeroU32::new(33).unwrap(),
+      core::num::NonZeroI64::new(33).unwrap(),
     ));
     round_trip(&Tags::new().with_title("Song").with_year(2026));
     round_trip(&(TrackDisposition::DEFAULT | TrackDisposition::FORCED));
+  }
+
+  #[test]
+  fn rational_deserialize_rejects_out_of_range_fields() {
+    // The derived `Deserialize` assigns fields directly, so it is a
+    // second construction path; under `i64`/`NonZeroI64` the types no
+    // longer carry the sign invariant, and the `deserialize_with`
+    // guards are what stop it minting a value `Rational::new` rejects.
+    assert!(serde_json::from_str::<Rational>(r#"{"num":2,"den":4}"#).is_ok());
+    assert!(serde_json::from_str::<Rational>(r#"{"num":-5,"den":4}"#).is_err());
+    assert!(serde_json::from_str::<Rational>(r#"{"num":5,"den":-4}"#).is_err());
+    // `NonZeroI64`'s own deserializer rejects zero before the guard runs.
+    assert!(serde_json::from_str::<Rational>(r#"{"num":5,"den":0}"#).is_err());
+    // The wrappers derive through `Rational`, so guarding it guards them.
+    assert!(serde_json::from_str::<SampleAspectRatio>(r#"{"num":-1,"den":1}"#).is_err());
+    assert!(
+      serde_json::from_str::<FrameRate>(r#"{"rate":{"num":-1,"den":1},"is_vfr":false}"#).is_err()
+    );
+  }
+
+  #[test]
+  fn rational_serde_survives_above_u32_max() {
+    let big = i64::from(u32::MAX) + 1;
+    let r = Rational::new(big, core::num::NonZeroI64::new(big).unwrap());
+    round_trip(&r);
   }
 
   #[test]

@@ -578,9 +578,10 @@ impl Rotation {
 /// FFmpeg means "unknown"; callers normalise that to the `1:1`
 /// default (square pixels) before constructing this type.
 ///
-/// `den` is a [`core::num::NonZeroU32`] so a SAR can never have a
-/// zero denominator; the manual [`Default`] is `1:1` (square),
-/// mirroring `mediatime::Timebase`'s non-proto-zero default.
+/// `den` is a [`core::num::NonZeroI64`] so a SAR can never have a
+/// zero denominator, and the numerator cannot be negative; the manual
+/// [`Default`] is `1:1` (square), mirroring `mediatime::Timebase`'s
+/// non-proto-zero default.
 ///
 /// Represented as a newtype over [`Rational`] — the single source of
 /// truth for "exact ratio with a non-zero denominator". The fields
@@ -606,20 +607,26 @@ impl Default for SampleAspectRatio {
 impl SampleAspectRatio {
   /// Constructs a `SampleAspectRatio` from an explicit
   /// numerator / (non-zero) denominator.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `num < 0` or `den < 0`, as [`Rational::new`] does. For
+  /// a fallible path, build the ratio with [`Rational::try_new`] and
+  /// wrap it — `SampleAspectRatio` is `From<Rational>`.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn new(num: u32, den: core::num::NonZeroU32) -> Self {
+  pub const fn new(num: i64, den: core::num::NonZeroI64) -> Self {
     Self(Rational::new(num, den))
   }
 
   /// Returns the numerator (display-width units).
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn num(&self) -> u32 {
+  pub const fn num(&self) -> i64 {
     self.0.num()
   }
 
   /// Returns the (non-zero) denominator (display-height units).
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn den(&self) -> core::num::NonZeroU32 {
+  pub const fn den(&self) -> core::num::NonZeroI64 {
     self.0.den()
   }
 
@@ -645,31 +652,47 @@ impl SampleAspectRatio {
   }
 
   /// Sets the numerator (consuming builder).
+  ///
+  /// # Panics
+  ///
+  /// Panics if `num < 0`, as [`Rational::new`] does.
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_num(mut self, num: u32) -> Self {
+  pub const fn with_num(mut self, num: i64) -> Self {
     self.0 = self.0.with_num(num);
     self
   }
 
   /// Sets the denominator (consuming builder).
+  ///
+  /// # Panics
+  ///
+  /// Panics if `den < 0`, as [`Rational::new`] does.
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_den(mut self, den: core::num::NonZeroU32) -> Self {
+  pub const fn with_den(mut self, den: core::num::NonZeroI64) -> Self {
     self.0 = self.0.with_den(den);
     self
   }
 
   /// Sets the numerator in place.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `num < 0`, as [`Rational::new`] does.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_num(&mut self, num: u32) -> &mut Self {
+  pub const fn set_num(&mut self, num: i64) -> &mut Self {
     self.0.set_num(num);
     self
   }
 
   /// Sets the denominator in place.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `den < 0`, as [`Rational::new`] does.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_den(&mut self, den: core::num::NonZeroU32) -> &mut Self {
+  pub const fn set_den(&mut self, den: core::num::NonZeroI64) -> &mut Self {
     self.0.set_den(den);
     self
   }
@@ -699,20 +722,54 @@ impl From<Rational> for SampleAspectRatio {
   }
 }
 
-/// A generic exact ratio `num / den`.
+/// `NonZeroI64` for 1 — [`Rational`]'s default denominator, and the
+/// clamp target when a malformed denominator arrives on the wire.
+///
+/// Spelled out rather than reached for as `NonZeroI64::MIN`, which is
+/// `i64::MIN` — a value [`Rational::new`] rejects. (The pre-`i64`
+/// `NonZeroU32::MIN` *was* `1`, so the swap is a silent trap.)
+pub(crate) const DEN_ONE: core::num::NonZeroI64 = match core::num::NonZeroI64::new(1) {
+  Some(v) => v,
+  None => unreachable!(),
+};
+
+/// A generic exact ratio `num / den` — a non-negative numerator over a
+/// strictly positive denominator.
 ///
 /// The reusable rational primitive the rest of the frame layer builds
-/// on (e.g. [`FrameRate`]). `den` is a [`core::num::NonZeroU32`] so a
-/// ratio can never have a zero denominator; the manual [`Default`] is
-/// `1/1` (the multiplicative identity), mirroring
-/// [`SampleAspectRatio`]'s non-proto-zero default and
-/// `mediatime::Timebase`'s convention.
+/// on (e.g. [`FrameRate`]). `den` is a [`core::num::NonZeroI64`] so a
+/// ratio can never have a zero denominator, and [`Self::new`] rejects
+/// the negative half of both fields; the manual [`Default`] is `1/1`
+/// (the multiplicative identity), mirroring [`SampleAspectRatio`]'s
+/// non-proto-zero default and `mediatime::Timebase`'s convention.
 ///
 /// This is the format-agnostic numerator/denominator pair; semantic
 /// wrappers ([`SampleAspectRatio`] for pixel aspect, [`FrameRate`] for
 /// frames-per-second) carry the domain meaning. A `0` numerator is a
 /// valid representable state (e.g. an "unknown" FFmpeg `AVRational`
 /// `0/1`) — see [`Self::is_zero`].
+///
+/// # Why `i64` and not `mediatime::Timebase`'s `i32`
+///
+/// `mediatime::Timebase` is signed 32-bit because it must round-trip
+/// into an FFmpeg `AVRational` (`{int num; int den;}`) and because it
+/// is an *arithmetic operand*: it multiplies against `i64` PTS values,
+/// and the rescale overflow proofs need `num < 2^32` to keep the
+/// product inside `i128`.
+///
+/// Neither applies here. `mediaframe` is a pure receiver — nothing in
+/// it is handed back to a decoder SDK — and a `Rational` never
+/// multiplies against a PTS, so it carries no width proof. What does
+/// apply is the storage end (`sqlx` has no `Type<Postgres>` for `u32`,
+/// so a `u32` widens to `i64` to be stored regardless) and the ingest
+/// end (R3D metadata returns `unsigned int`, and ISO BMFF `pasp` is
+/// `unsigned int(32)`, both of which `i32` would have to *reject*).
+/// `i64` is a superset of every source and deletes a conversion with
+/// its error path at each boundary.
+///
+/// Values are stored exactly as declared — the constructor does **not**
+/// reduce to lowest terms, so a stream declaring `2/4` reads back as
+/// `2/4`.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
   feature = "quickcheck",
@@ -721,8 +778,10 @@ impl From<Rational> for SampleAspectRatio {
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rational {
-  num: u32,
-  den: core::num::NonZeroU32,
+  #[cfg_attr(feature = "serde", serde(deserialize_with = "de_num"))]
+  num: i64,
+  #[cfg_attr(feature = "serde", serde(deserialize_with = "de_den"))]
+  den: core::num::NonZeroI64,
 }
 
 impl Default for Rational {
@@ -731,7 +790,7 @@ impl Default for Rational {
   fn default() -> Self {
     Self {
       num: 1,
-      den: core::num::NonZeroU32::MIN,
+      den: DEN_ONE,
     }
   }
 }
@@ -739,20 +798,42 @@ impl Default for Rational {
 impl Rational {
   /// Constructs a `Rational` from an explicit
   /// numerator / (non-zero) denominator.
+  ///
+  /// # Panics
+  ///
+  /// - Panics if `num < 0` (a negative ratio is meaningless for the
+  ///   aspect / rate domains this primitive serves).
+  /// - Panics if `den <= 0` (`NonZeroI64` rules out zero; this rules
+  ///   out the negative denominators an `AVRational` would tolerate).
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn new(num: u32, den: core::num::NonZeroU32) -> Self {
+  pub const fn new(num: i64, den: core::num::NonZeroI64) -> Self {
+    assert!(num >= 0, "rational numerator must not be negative");
+    assert!(den.get() > 0, "rational denominator must be positive");
+
     Self { num, den }
+  }
+
+  /// Fallible variant of [`Self::new`]: returns `None` instead of
+  /// panicking when `num < 0` or `den < 0`. Accepts `num == 0` (the
+  /// "unknown" `0/1` `AVRational`).
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn try_new(num: i64, den: core::num::NonZeroI64) -> Option<Self> {
+    if num >= 0 && den.get() > 0 {
+      Some(Self { num, den })
+    } else {
+      None
+    }
   }
 
   /// Returns the numerator.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn num(&self) -> u32 {
+  pub const fn num(&self) -> i64 {
     self.num
   }
 
   /// Returns the (non-zero) denominator.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn den(&self) -> core::num::NonZeroU32 {
+  pub const fn den(&self) -> core::num::NonZeroI64 {
     self.den
   }
 
@@ -764,35 +845,91 @@ impl Rational {
   }
 
   /// Sets the numerator (consuming builder).
+  ///
+  /// # Panics
+  ///
+  /// Panics if `num < 0`, as [`Self::new`] does.
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_num(mut self, num: u32) -> Self {
-    self.num = num;
+  pub const fn with_num(mut self, num: i64) -> Self {
+    self.set_num(num);
     self
   }
 
   /// Sets the denominator (consuming builder).
+  ///
+  /// # Panics
+  ///
+  /// Panics if `den < 0`, as [`Self::new`] does.
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_den(mut self, den: core::num::NonZeroU32) -> Self {
-    self.den = den;
+  pub const fn with_den(mut self, den: core::num::NonZeroI64) -> Self {
+    self.set_den(den);
     self
   }
 
   /// Sets the numerator in place.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `num < 0`, as [`Self::new`] does.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_num(&mut self, num: u32) -> &mut Self {
-    self.num = num;
+  pub const fn set_num(&mut self, num: i64) -> &mut Self {
+    // Routed through the constructor so the sign invariants have
+    // exactly one enforcement site. Direct field assignment would let
+    // a mutator mint the negative values `new` refuses.
+    *self = Self::new(num, self.den);
     self
   }
 
   /// Sets the denominator in place.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `den < 0`, as [`Self::new`] does.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_den(&mut self, den: core::num::NonZeroU32) -> &mut Self {
-    self.den = den;
+  pub const fn set_den(&mut self, den: core::num::NonZeroI64) -> &mut Self {
+    *self = Self::new(self.num, den);
     self
   }
 }
+
+/// Field validators for [`Rational`]'s derived `Deserialize`.
+///
+/// The derive assigns fields directly, bypassing [`Rational::new`].
+/// While the fields were `u32`/`NonZeroU32` their types made every
+/// invariant violation unrepresentable; `i64`/`NonZeroI64` no longer
+/// do, so deserialization would otherwise be a second construction
+/// path able to mint a `Rational` the constructor rejects. The two
+/// invariants are independent per field, so a `deserialize_with` on
+/// each is enough — no intermediate representation and no allocation.
+/// [`SampleAspectRatio`] and [`FrameRate`] derive through `Rational`,
+/// so guarding it guards them.
+#[cfg(feature = "serde")]
+mod de {
+  use core::num::NonZeroI64;
+
+  use serde::{Deserialize, Deserializer, de::Error};
+
+  pub(super) fn de_num<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
+    let v = i64::deserialize(d)?;
+    if v < 0 {
+      return Err(D::Error::custom("rational numerator must not be negative"));
+    }
+    Ok(v)
+  }
+
+  pub(super) fn de_den<'de, D: Deserializer<'de>>(d: D) -> Result<NonZeroI64, D::Error> {
+    let v = NonZeroI64::deserialize(d)?;
+    if v.get() < 0 {
+      return Err(D::Error::custom("rational denominator must be positive"));
+    }
+    Ok(v)
+  }
+}
+
+#[cfg(feature = "serde")]
+use de::{de_den, de_num};
 
 impl core::fmt::Display for Rational {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -1739,7 +1876,7 @@ mod tests_primitives {
 
   #[test]
   fn sample_aspect_ratio_construction_and_builders() {
-    let nz = |n: u32| core::num::NonZeroU32::new(n).unwrap();
+    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
     let s = SampleAspectRatio::new(40, nz(33));
     assert_eq!(s.num(), 40);
     assert_eq!(s.den().get(), 33);
@@ -1754,7 +1891,7 @@ mod tests_primitives {
   #[cfg(feature = "std")]
   #[test]
   fn sample_aspect_ratio_display() {
-    let nz = core::num::NonZeroU32::new(11).unwrap();
+    let nz = core::num::NonZeroI64::new(11).unwrap();
     assert_eq!(std::format!("{}", SampleAspectRatio::new(10, nz)), "10:11");
   }
 
@@ -1853,7 +1990,7 @@ mod tests_primitives {
 
   #[test]
   fn timestamped_frame_pts_builder() {
-    let tb = mediatime::Timebase::new(1, core::num::NonZeroU32::new(1000).unwrap());
+    let tb = mediatime::Timebase::new(1, core::num::NonZeroI32::new(1000).unwrap());
     let ts = mediatime::Timestamp::new(1000, tb);
     let tf = TimestampedFrame::new(0u8).with_pts(ts).with_duration(ts);
     assert_eq!(tf.pts(), Some(ts));
@@ -1880,7 +2017,7 @@ mod tests_primitives {
 
   #[test]
   fn rational_construction_builders_and_is_zero() {
-    let nz = |n: u32| core::num::NonZeroU32::new(n).unwrap();
+    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
     let r = Rational::new(30000, nz(1001));
     assert_eq!(r.num(), 30000);
     assert_eq!(r.den().get(), 1001);
@@ -1897,15 +2034,120 @@ mod tests_primitives {
   #[cfg(feature = "std")]
   #[test]
   fn rational_display() {
-    let nz = core::num::NonZeroU32::new(1001).unwrap();
+    let nz = core::num::NonZeroI64::new(1001).unwrap();
     assert_eq!(std::format!("{}", Rational::new(30000, nz)), "30000/1001");
+  }
+
+  // ---------- Rational sign / width invariants --------------------------
+  //
+  // `num`/`den` were `u32`/`NonZeroU32`, where the types made every
+  // invariant unrepresentable. Under `i64`/`NonZeroI64` only
+  // "denominator is non-zero" is still enforced by the type; the sign
+  // half moved into `new`, so it needs pinning here.
+
+  #[test]
+  fn rational_rejects_negative_numerator() {
+    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
+    assert!(Rational::try_new(-1, nz(1)).is_none());
+    assert!(Rational::try_new(i64::MIN, nz(1)).is_none());
+    // `0` is a legal degenerate ratio (FFmpeg's "unknown" `0/1`).
+    assert!(Rational::try_new(0, nz(1)).is_some());
+  }
+
+  #[test]
+  fn rational_rejects_negative_denominator() {
+    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
+    assert!(Rational::try_new(1, nz(-1)).is_none());
+    assert!(Rational::try_new(1, nz(i64::MIN)).is_none());
+  }
+
+  #[test]
+  fn rational_zero_denominator_is_unrepresentable() {
+    // Not a runtime check in `new` — `NonZeroI64` has no zero value at
+    // all, so the state cannot be constructed to be rejected.
+    assert!(core::num::NonZeroI64::new(0).is_none());
+  }
+
+  #[test]
+  #[should_panic(expected = "rational numerator must not be negative")]
+  fn rational_new_panics_on_negative_numerator() {
+    let _ = Rational::new(-1, DEN_ONE);
+  }
+
+  #[test]
+  #[should_panic(expected = "rational denominator must be positive")]
+  fn rational_new_panics_on_negative_denominator() {
+    let nz = core::num::NonZeroI64::new(-2).unwrap();
+    let _ = Rational::new(1, nz);
+  }
+
+  #[test]
+  #[should_panic(expected = "rational numerator must not be negative")]
+  fn rational_set_num_routes_through_new() {
+    // The four mutators are the invariant hole a direct field
+    // assignment would leave open; each goes through `new`.
+    let mut r = Rational::default();
+    r.set_num(-1);
+  }
+
+  #[test]
+  #[should_panic(expected = "rational denominator must be positive")]
+  fn rational_set_den_routes_through_new() {
+    let mut r = Rational::default();
+    r.set_den(core::num::NonZeroI64::new(-3).unwrap());
+  }
+
+  #[test]
+  #[should_panic(expected = "rational numerator must not be negative")]
+  fn rational_with_num_routes_through_new() {
+    let _ = Rational::default().with_num(-1);
+  }
+
+  #[test]
+  #[should_panic(expected = "rational denominator must be positive")]
+  fn rational_with_den_routes_through_new() {
+    let _ = Rational::default().with_den(core::num::NonZeroI64::new(-3).unwrap());
+  }
+
+  #[test]
+  fn rational_accepts_i64_max_at_both_positions() {
+    let nz = core::num::NonZeroI64::new(i64::MAX).unwrap();
+    let r = Rational::new(i64::MAX, nz);
+    assert_eq!(r.num(), i64::MAX);
+    assert_eq!(r.den().get(), i64::MAX);
+  }
+
+  #[test]
+  fn rational_accepts_values_above_u32_max() {
+    // The capability the widening buys: a numerator (and denominator)
+    // the previous `u32` representation could not hold at all.
+    let big = i64::from(u32::MAX) + 1;
+    let nz = core::num::NonZeroI64::new(big).unwrap();
+    let r = Rational::new(big, nz);
+    assert_eq!(r.num(), big);
+    assert_eq!(r.den().get(), big);
+    // And through the semantic wrappers, which carry no width of their own.
+    let sar = SampleAspectRatio::new(big, nz);
+    assert_eq!((sar.num(), sar.den().get()), (big, big));
+    assert_eq!(FrameRate::new(r, false).rate(), r);
+  }
+
+  #[test]
+  fn sample_aspect_ratio_fallible_path_is_try_new_plus_from() {
+    // `SampleAspectRatio::new` panics like `Rational::new`; the
+    // fallible route is the existing `From<Rational>`.
+    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
+    let ok = Rational::try_new(40, nz(33)).map(SampleAspectRatio::from);
+    assert_eq!(ok, Some(SampleAspectRatio::new(40, nz(33))));
+    let bad = Rational::try_new(-40, nz(33)).map(SampleAspectRatio::from);
+    assert!(bad.is_none());
   }
 
   // ---------- SampleAspectRatio ↔ Rational interop ----------------------
 
   #[test]
   fn sample_aspect_ratio_rational_interop() {
-    let nz = |n: u32| core::num::NonZeroU32::new(n).unwrap();
+    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
     let sar = SampleAspectRatio::new(40, nz(33));
     let via_method: Rational = sar.as_rational();
     let via_from: Rational = Rational::from(sar);
@@ -1922,7 +2164,7 @@ mod tests_primitives {
 
   #[test]
   fn sample_aspect_ratio_rational_round_trip_both_ways() {
-    let nz = |n: u32| core::num::NonZeroU32::new(n).unwrap();
+    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
     // SAR -> Rational -> SAR
     let sar = SampleAspectRatio::new(40, nz(33));
     let r: Rational = sar.into();
@@ -1942,13 +2184,13 @@ mod tests_primitives {
     let d = SampleAspectRatio::default();
     assert_eq!((d.num(), d.den().get()), (1, 1));
     assert!(d.is_square());
-    assert_eq!(d, SampleAspectRatio::new(1, core::num::NonZeroU32::MIN));
+    assert_eq!(d, SampleAspectRatio::new(1, DEN_ONE));
   }
 
   #[test]
   fn sample_aspect_ratio_eq_and_hash_parity() {
     use core::hash::{Hash, Hasher};
-    let nz = |n: u32| core::num::NonZeroU32::new(n).unwrap();
+    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
     let a = SampleAspectRatio::new(40, nz(33));
     let b = SampleAspectRatio::default().with_num(40).with_den(nz(33));
     assert_eq!(a, b);
@@ -1984,7 +2226,7 @@ mod tests_primitives {
 
   #[test]
   fn frame_rate_construction_and_builders() {
-    let nz = |n: u32| core::num::NonZeroU32::new(n).unwrap();
+    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
     let ntsc = Rational::new(30000, nz(1001));
     let fr = FrameRate::new(ntsc, false);
     assert_eq!(fr.rate(), ntsc);

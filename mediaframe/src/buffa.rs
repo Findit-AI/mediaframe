@@ -53,8 +53,8 @@
 //! ```text
 //! Dimensions        { uint32 width = 1; uint32 height = 2; }
 //! Rect              { uint32 x = 1; uint32 y = 2; uint32 width = 3; uint32 height = 4; }
-//! SampleAspectRatio { uint32 num = 1; uint32 den = 2; }          // both ALWAYS encoded
-//! Rational          { uint32 num = 1; uint32 den = 2; }          // both ALWAYS encoded
+//! SampleAspectRatio { int64  num = 1; int64  den = 2; }          // both ALWAYS encoded
+//! Rational          { int64  num = 1; int64  den = 2; }          // both ALWAYS encoded
 //! FrameRate         { Rational rate = 1;                         // rate ALWAYS encoded
 //!                     bool     is_vfr = 2; }                     // proto3 zero-elision
 //! DolbyVisionConfig { uint32 profile = 1; uint32 level = 2;      // proto3 zero-elision
@@ -85,14 +85,20 @@
 //! **always encoded** (the `mediatime::Timebase` reasoning):
 //!
 //! - `SampleAspectRatio` — `Default` is `1:1`. `num`'s default is
-//!   `1` (≠ 0) and `den` is `NonZeroU32` (never 0), so eliding a
-//!   zero would mis-decode. Both fields are always written; a
-//!   malformed `den == 0` on the wire (never produced by this
-//!   encoder) is clamped to `1` to keep decode total.
+//!   `1` (≠ 0) and `den` is `NonZeroI64` (never 0), so eliding a
+//!   zero would mis-decode. Both fields are always written. On the
+//!   way back in, both halves are clamped into the range
+//!   `Rational::new` accepts, so decode stays total: a negative
+//!   `num` becomes `0`, and a `den` that is zero *or negative*
+//!   becomes `1`. Neither is producible by this encoder — a peer
+//!   reaches them either directly or by writing a `uint64` above
+//!   `i64::MAX`, which `decode_int64` reinterprets as negative.
+//!   (Before `Rational` became signed, `den` was `NonZeroU32` and
+//!   only the zero case existed.)
 //! - `Rational` — same shape / reasoning as `SampleAspectRatio`
-//!   (`Default` is `1/1`, `num` default `1`, `den` `NonZeroU32`):
-//!   both fields always encoded, malformed `den == 0` clamped to
-//!   `1`.
+//!   (`Default` is `1/1`, `num` default `1`, `den` `NonZeroI64`):
+//!   both fields always encoded, malformed `num`/`den` clamped the
+//!   same way.
 //! - `FrameRate` — `rate` is an always-encoded length-delimited
 //!   `Rational` sub-message (its inner `Default` is `1/1` ≠
 //!   proto-zero, so the nested-message-always-encoded
@@ -247,16 +253,17 @@
 //!   "invalid value" arm, and the type's sentinel is the right
 //!   fallback.
 
-use core::num::NonZeroU32;
+use core::num::NonZeroI64;
 
 use ::buffa::{
-  DecodeContext, DecodeError, DefaultInstance, Message, SizeCache,
-  bytes::{Buf, BufMut},
+  DecodeContext, DecodeError, DefaultInstance, EncodeSink, Message, SizeCache,
+  bytes::Buf,
   encoding::{Tag, WireType, encode_varint, skip_field_depth, varint_len},
   types::{
     FIXED32_ENCODED_LEN, bytes_encoded_len, decode_bytes, decode_double, decode_float,
-    decode_string, decode_uint32, encode_bytes, encode_double, encode_float, encode_string,
-    encode_uint32, string_encoded_len, uint32_encoded_len,
+    decode_int64, decode_string, decode_uint32, encode_bytes, encode_double, encode_float,
+    encode_int64, encode_string, encode_uint32, int64_encoded_len, string_encoded_len,
+    uint32_encoded_len,
   },
 };
 use smol_str::SmolStr;
@@ -274,7 +281,8 @@ use crate::{
   container::Format,
   disposition::TrackDisposition,
   frame::{
-    Dimensions, FieldOrder, FrameRate, Rational, Rect, Rotation, SampleAspectRatio, StereoMode,
+    DEN_ONE, Dimensions, FieldOrder, FrameRate, Rational, Rect, Rotation, SampleAspectRatio,
+    StereoMode,
   },
   lang::Language,
   pixel_format::PixelFormat,
@@ -323,7 +331,7 @@ macro_rules! impl_enum_message {
         }
       }
 
-      fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+      fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
         // Default-elision (NOT proto3 zero-elision): see `compute_size`.
         if *self != <$ty>::default() {
           let v: u32 = $to(self);
@@ -439,7 +447,7 @@ impl Message for Dimensions {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if self.width() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -521,7 +529,7 @@ impl Message for Rect {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if self.x() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -603,13 +611,23 @@ impl Message for Rect {
 }
 
 // ----------------------------------------------------------------------------
-// SampleAspectRatio — { uint32 num = 1; uint32 den = 2; }
+// SampleAspectRatio — { int64 num = 1; int64 den = 2; }
 //
 // `num`/`den` are encoded UNCONDITIONALLY — no proto3 zero elision.
 // The decoder seeds from `SampleAspectRatio::default()` (1:1), NOT
 // proto-zero. Eliding `num == 0` would decode back as `num == 1`;
-// `den` is `NonZeroU32` and can never legitimately be 0. (Exactly
+// `den` is `NonZeroI64` and can never legitimately be 0. (Exactly
 // the `mediatime::Timebase` reasoning.) Both tags are single-byte.
+//
+// The fields were `uint32` before `Rational` became signed and 64-bit.
+// Protobuf's `int64` and `uint32` are the same plain (non-ZigZag)
+// varint over the values a `SampleAspectRatio` can hold — non-negative
+// and, for anything a `uint32` peer wrote, at most `u32::MAX` — so the
+// bytes are unchanged in both directions and previously-encoded
+// payloads still decode. `sint64` would have been the silent break:
+// ZigZag re-encodes every value. Note the widening is one-way at the
+// edges: a value above `u32::MAX` is writable now and a `uint32`
+// reader would truncate it.
 // ----------------------------------------------------------------------------
 
 impl DefaultInstance for SampleAspectRatio {
@@ -621,14 +639,14 @@ impl DefaultInstance for SampleAspectRatio {
 
 impl Message for SampleAspectRatio {
   fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
-    2 + uint32_encoded_len(self.num()) as u32 + uint32_encoded_len(self.den().get()) as u32
+    2 + int64_encoded_len(self.num()) as u32 + int64_encoded_len(self.den().get()) as u32
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::Varint).encode(buf);
-    encode_uint32(self.num(), buf);
+    encode_int64(self.num(), buf);
     Tag::new(2, WireType::Varint).encode(buf);
-    encode_uint32(self.den().get(), buf);
+    encode_int64(self.den().get(), buf);
   }
 
   fn merge_field(
@@ -646,7 +664,13 @@ impl Message for SampleAspectRatio {
             actual: tag.wire_type() as u8,
           });
         }
-        let num = decode_uint32(buf)?;
+        // `Rational::new` panics on a negative numerator, so decode
+        // must not hand it one. Our own encoder never writes a
+        // negative; a peer can, either directly or by writing a
+        // `uint64` above `i64::MAX` that `decode_int64` reinterprets
+        // into the negative half. Clamp to the smallest legal
+        // numerator so decode stays total, as `den` does.
+        let num = decode_int64(buf)?.max(0);
         self.set_num(num);
       }
       2 => {
@@ -657,16 +681,19 @@ impl Message for SampleAspectRatio {
             actual: tag.wire_type() as u8,
           });
         }
-        // `den` is NonZeroU32; a malformed 0 on the wire (never
-        // produced by our own encoder) is clamped to 1. This is
-        // byte-identical to `mediatime::Timebase`'s decode in the
-        // published `mediatime` extern (>= 0.1.6) that SAR mirrors,
-        // and upholds the codec family's total-scalar-decode
-        // invariant (scalar values never raise decode errors; only
-        // structural errors do). Codex adversarial-review F6:
-        // resolved as a coordinated mediatime/buffa policy, NOT a
-        // mediaframe-only divergence.
-        let den = NonZeroU32::new(decode_uint32(buf)?).unwrap_or(NonZeroU32::MIN);
+        // `den` is NonZeroI64; a malformed den — zero, or negative by
+        // the same route as `num` above — is clamped to 1. Since
+        // `NonZeroI64::MIN` is `i64::MIN`, the clamp target is spelled
+        // out as `DEN_ONE`. This is the same decode policy as
+        // `mediatime::Timebase`'s in the published `mediatime` extern
+        // that SAR mirrors, and upholds the codec family's
+        // total-scalar-decode invariant (scalar values never raise
+        // decode errors; only structural errors do). Codex
+        // adversarial-review F6: resolved as a coordinated
+        // mediatime/buffa policy, NOT a mediaframe-only divergence.
+        let den = NonZeroI64::new(decode_int64(buf)?)
+          .filter(|d| d.get() > 0)
+          .unwrap_or(DEN_ONE);
         self.set_den(den);
       }
       _ => skip_field_depth(tag, buf, ctx.depth())?,
@@ -680,15 +707,16 @@ impl Message for SampleAspectRatio {
 }
 
 // ----------------------------------------------------------------------------
-// Rational — { uint32 num = 1; uint32 den = 2; }
+// Rational — { int64 num = 1; int64 den = 2; }
 //
-// Same shape and reasoning as `SampleAspectRatio`: `num`/`den` are
-// encoded UNCONDITIONALLY (no proto3 zero-elision). The decoder
-// seeds from `Rational::default()` (1/1), NOT proto-zero; eliding
-// `num == 0` would decode back as `num == 1`. `den` is `NonZeroU32`
-// and can never legitimately be 0; a malformed wire `den == 0` (never
-// produced by this encoder) is clamped to 1 to keep decode total.
-// Both tags are single-byte.
+// Same shape and reasoning as `SampleAspectRatio`, including the
+// `uint32` → `int64` widening being byte-compatible in both
+// directions: `num`/`den` are encoded UNCONDITIONALLY (no proto3
+// zero-elision). The decoder seeds from `Rational::default()` (1/1),
+// NOT proto-zero; eliding `num == 0` would decode back as `num == 1`.
+// `den` is `NonZeroI64` and can never legitimately be 0; a malformed
+// wire `den` — zero or negative — is clamped to 1 to keep decode
+// total, as is a negative `num`. Both tags are single-byte.
 // ----------------------------------------------------------------------------
 
 impl DefaultInstance for Rational {
@@ -700,14 +728,14 @@ impl DefaultInstance for Rational {
 
 impl Message for Rational {
   fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
-    2 + uint32_encoded_len(self.num()) as u32 + uint32_encoded_len(self.den().get()) as u32
+    2 + int64_encoded_len(self.num()) as u32 + int64_encoded_len(self.den().get()) as u32
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::Varint).encode(buf);
-    encode_uint32(self.num(), buf);
+    encode_int64(self.num(), buf);
     Tag::new(2, WireType::Varint).encode(buf);
-    encode_uint32(self.den().get(), buf);
+    encode_int64(self.den().get(), buf);
   }
 
   fn merge_field(
@@ -725,7 +753,9 @@ impl Message for Rational {
             actual: tag.wire_type() as u8,
           });
         }
-        let num = decode_uint32(buf)?;
+        // A negative numerator would trip `Rational::new`'s assert;
+        // clamp as `SampleAspectRatio` does to keep decode total.
+        let num = decode_int64(buf)?.max(0);
         self.set_num(num);
       }
       2 => {
@@ -736,11 +766,13 @@ impl Message for Rational {
             actual: tag.wire_type() as u8,
           });
         }
-        // `den` is NonZeroU32; a malformed 0 on the wire (never
-        // produced by our own encoder) is clamped to 1 — identical
-        // to `SampleAspectRatio`'s decode, upholding the codec
-        // family's total-scalar-decode invariant.
-        let den = NonZeroU32::new(decode_uint32(buf)?).unwrap_or(NonZeroU32::MIN);
+        // `den` is NonZeroI64; a malformed 0 or negative on the wire
+        // (never produced by our own encoder) is clamped to 1 —
+        // identical to `SampleAspectRatio`'s decode, upholding the
+        // codec family's total-scalar-decode invariant.
+        let den = NonZeroI64::new(decode_int64(buf)?)
+          .filter(|d| d.get() > 0)
+          .unwrap_or(DEN_ONE);
         self.set_den(den);
       }
       _ => skip_field_depth(tag, buf, ctx.depth())?,
@@ -789,7 +821,7 @@ impl Message for FrameRate {
     size
   }
 
-  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::LengthDelimited).encode(buf);
     encode_varint(cache.consume_next() as u64, buf);
     self.rate().write_to(cache, buf);
@@ -878,7 +910,7 @@ impl Message for DolbyVisionConfig {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if self.profile() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -994,7 +1026,7 @@ impl Message for Info {
       + uint32_encoded_len(self.chroma_location().to_u32()) as u32
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::Varint).encode(buf);
     encode_uint32(self.primaries().to_u32(), buf);
     Tag::new(2, WireType::Varint).encode(buf);
@@ -1104,7 +1136,7 @@ impl Message for ContentLightLevel {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if self.max_cll() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -1183,7 +1215,7 @@ impl Message for ChromaCoord {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if self.x() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -1282,7 +1314,7 @@ impl Message for MasteringDisplay {
     size
   }
 
-  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     let primaries = self.display_primaries();
     for (i, cc) in primaries.iter().enumerate() {
       Tag::new(1 + i as u32, WireType::LengthDelimited).encode(buf);
@@ -1403,7 +1435,7 @@ impl Message for HdrStaticMetadata {
     size
   }
 
-  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if let Some(md) = self.mastering() {
       Tag::new(1, WireType::LengthDelimited).encode(buf);
       encode_varint(cache.consume_next() as u64, buf);
@@ -1496,7 +1528,7 @@ macro_rules! impl_string_enum_message {
         }
       }
 
-      fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+      fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
         let s = self.as_str();
         if !s.is_empty() {
           Tag::new(1, WireType::LengthDelimited).encode(buf);
@@ -1569,7 +1601,7 @@ impl Message for BitRateMode {
     }
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     let v = self.to_u32();
     if v != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -1634,7 +1666,7 @@ impl Message for SampleFormat {
     }
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if *self != SampleFormat::default() {
       let v = self.to_u32();
       Tag::new(1, WireType::Varint).encode(buf);
@@ -1704,7 +1736,7 @@ impl Message for Loudness {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if self.integrated_lufs() != 0.0 {
       Tag::new(1, WireType::Fixed32).encode(buf);
       encode_float(self.integrated_lufs(), buf);
@@ -1800,7 +1832,7 @@ impl Message for ReplayGain {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if self.track_gain_db() != 0.0 {
       Tag::new(1, WireType::Fixed32).encode(buf);
       encode_float(self.track_gain_db(), buf);
@@ -1894,7 +1926,7 @@ impl Message for Fingerprint {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::LengthDelimited).encode(buf);
     encode_string(self.algorithm(), buf);
     if !self.value().is_empty() {
@@ -1985,7 +2017,7 @@ impl Message for CoverArt {
     2 + string_encoded_len(self.mime()) as u32 + bytes_encoded_len(self.data()) as u32
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::LengthDelimited).encode(buf);
     encode_string(self.mime(), buf);
     Tag::new(2, WireType::LengthDelimited).encode(buf);
@@ -2114,7 +2146,7 @@ impl Message for Tags {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if !self.title().is_empty() {
       Tag::new(1, WireType::LengthDelimited).encode(buf);
       encode_string(self.title(), buf);
@@ -2290,7 +2322,7 @@ impl Message for TrackDisposition {
     }
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if self.to_u32() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
       encode_uint32(self.to_u32(), buf);
@@ -2366,7 +2398,7 @@ mod subtitle_impls {
       }
     }
 
-    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
       if *self != TrackOrigin::default() {
         let v: u32 = self.to_u32();
         Tag::new(1, WireType::Varint).encode(buf);
@@ -2430,7 +2462,7 @@ mod subtitle_impls {
       1 + string_encoded_len(slug) as u32
     }
 
-    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
       let slug = self.as_str();
       Tag::new(1, WireType::LengthDelimited).encode(buf);
       encode_string(slug, buf);
@@ -2502,7 +2534,7 @@ impl Message for Device {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if !self.make().is_empty() {
       Tag::new(1, WireType::LengthDelimited).encode(buf);
@@ -2589,7 +2621,7 @@ impl Message for GeoLocation {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::Fixed64).encode(buf);
     encode_double(self.lat(), buf);
     Tag::new(2, WireType::Fixed64).encode(buf);
@@ -2698,7 +2730,7 @@ impl Message for Language {
     }
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     let tag = self.to_bcp47();
     if !tag.is_empty() {
       Tag::new(1, WireType::LengthDelimited).encode(buf);
@@ -2751,8 +2783,8 @@ mod tests {
   // under `--no-default-features --features buffa`.
   use ::buffa::alloc::vec::Vec;
 
-  fn nz(n: u32) -> NonZeroU32 {
-    NonZeroU32::new(n).unwrap()
+  fn nz(n: i64) -> NonZeroI64 {
+    NonZeroI64::new(n).unwrap()
   }
 
   fn cc(x: u32, y: u32) -> ChromaCoord {
@@ -3071,9 +3103,15 @@ mod tests {
   }
 
   // Byte-for-byte wire-stability guard. `SampleAspectRatio` is a
-  // `buffa` extern target whose representation changed (newtype over
-  // `Rational` in 0.3.1); the wire encoding MUST stay identical to
-  // 0.3.0: `{ uint32 num = 1; uint32 den = 2; }`, both always encoded.
+  // `buffa` extern target whose representation has changed twice —
+  // newtype over `Rational` in 0.3.1, then `Rational`'s halves going
+  // `u32`/`NonZeroU32` → `i64`/`NonZeroI64` in 0.2.0 — and the wire
+  // encoding MUST stay identical to 0.3.0 through both. These exact
+  // bytes were written when the schema said `uint32`; they are what
+  // `int64` must still produce, which holds because protobuf's
+  // `int64` and `uint32` are the same plain non-ZigZag varint over
+  // the non-negative range a SAR can hold. (`sint64` would have been
+  // the silent break — ZigZag re-encodes every value.)
   // For `new(40, 33)`: tag1 varint `0x08`, value `40` (`0x28`),
   // tag2 varint `0x10`, value `33` (`0x21`).
   #[test]
@@ -3086,6 +3124,36 @@ mod tests {
       SampleAspectRatio::decode_from_slice(&bytes).unwrap(),
       SampleAspectRatio::new(40, nz(33))
     );
+  }
+
+  // The same guard from the reader's side: bytes a `uint32`-era peer
+  // produced must still decode to the same value under `int64`.
+  #[test]
+  fn sar_decodes_uint32_era_bytes() {
+    let mut buf: Vec<u8> = Vec::new();
+    Tag::new(1, WireType::Varint).encode(&mut buf);
+    encode_uint32(u32::MAX, &mut buf); // widest a uint32 peer can write
+    Tag::new(2, WireType::Varint).encode(&mut buf);
+    encode_uint32(1001, &mut buf);
+    let s = <SampleAspectRatio as Message>::decode_from_slice(&buf).unwrap();
+    assert_eq!(s.num(), i64::from(u32::MAX));
+    assert_eq!(s.den().get(), 1001);
+    // And re-encoding those values reproduces the same bytes.
+    assert_eq!(s.encode_to_vec(), buf);
+  }
+
+  #[test]
+  fn sar_negative_fields_clamped() {
+    // Not producible by this encoder — a peer reaches the negative
+    // half either directly or by writing a `uint64` above `i64::MAX`.
+    let mut buf: Vec<u8> = Vec::new();
+    Tag::new(1, WireType::Varint).encode(&mut buf);
+    encode_int64(-7, &mut buf);
+    Tag::new(2, WireType::Varint).encode(&mut buf);
+    encode_int64(-9, &mut buf);
+    let s = <SampleAspectRatio as Message>::decode_from_slice(&buf).unwrap();
+    assert_eq!(s.num(), 0);
+    assert_eq!(s.den().get(), 1);
   }
 
   #[test]
@@ -3473,6 +3541,30 @@ mod tests {
     let r = <Rational as Message>::decode_from_slice(&buf).unwrap();
     assert_eq!(r.num(), 24);
     assert_eq!(r.den().get(), 1);
+  }
+
+  #[test]
+  fn rational_negative_fields_clamped() {
+    let mut buf: Vec<u8> = Vec::new();
+    Tag::new(1, WireType::Varint).encode(&mut buf);
+    encode_int64(-1, &mut buf);
+    Tag::new(2, WireType::Varint).encode(&mut buf);
+    encode_int64(i64::MIN, &mut buf);
+    let r = <Rational as Message>::decode_from_slice(&buf).unwrap();
+    assert_eq!(r.num(), 0);
+    assert_eq!(r.den().get(), 1);
+  }
+
+  // The width the `i64` change buys, end to end on the wire.
+  #[test]
+  fn rational_round_trips_above_u32_max() {
+    let big = i64::from(u32::MAX) + 1;
+    let r = Rational::new(big, nz(i64::MAX));
+    let b = r.encode_to_vec();
+    assert_eq!(Rational::decode_from_slice(&b).unwrap(), r);
+    let fr = FrameRate::new(r, true);
+    let b = fr.encode_to_vec();
+    assert_eq!(FrameRate::decode_from_slice(&b).unwrap(), fr);
   }
 
   // ---- FrameRate ----
