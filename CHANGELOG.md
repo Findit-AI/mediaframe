@@ -4,7 +4,24 @@ All notable changes to this crate are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] / [0.1.7]
+## [Unreleased] / [0.1.10]
+
+### Changed
+
+- **`xtask`: `syn` 2 → 3, `prettyplease` 0.2 → 0.3** — a coupled bump
+  (`prettyplease` 0.3 requires `syn ^3`, so neither moves alone).
+  Dev-only: `xtask` is `publish = false`, so nothing here reaches the
+  published `mediaframe` artifact. `syn` 3's breaking change is
+  `Signature::unsafety: Option<Token![unsafe]>` → the tri-state
+  `Signature::safety: Safety` (Rust 2024 `unsafe extern`); `xtask`
+  names only `syn::Ident` and `syn::parse2::<syn::File>` and never
+  inspects a signature, so it compiles unchanged. `prettyplease` 0.3
+  emits **byte-identical** output to 0.2 for the generated
+  `mediaframe/src/codec.rs` (89,303 bytes pre-`rustfmt`), so
+  `cargo xtask check`'s byte-for-byte freshness diff stays green and
+  the committed file needs no regeneration.
+
+## [0.1.7]
 
 ### Added
 
