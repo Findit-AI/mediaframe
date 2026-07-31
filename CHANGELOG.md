@@ -4,7 +4,7 @@ All notable changes to this crate are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] / [0.2.0]
+## [0.2.0]
 
 **Breaking**, on two independent counts. `frame::Rational` widens to
 `i64`/`NonZeroI64` and its constructor becomes checked (see **Changed**
