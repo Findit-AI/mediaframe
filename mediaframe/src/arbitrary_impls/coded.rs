@@ -153,21 +153,37 @@ impl<'a> ::arbitrary::Arbitrary<'a> for crate::frame::Rect {
   }
 }
 
+/// Draws a `Rational` numerator / denominator pair inside the range
+/// [`crate::frame::Rational::new`] accepts.
+///
+/// `NonZeroI64::arbitrary` covers the whole non-zero `i64` range, half
+/// of which is negative and would trip the constructor's assert — a
+/// generator must not be able to panic the type it generates. Folding
+/// an unsigned draw into `0..=i64::MAX` (and `1..=i64::MAX` for the
+/// denominator) keeps every draw legal by construction rather than by
+/// rejection, so no input byte is ever wasted retrying.
+fn parts(
+  u: &mut ::arbitrary::Unstructured<'_>,
+) -> ::arbitrary::Result<(i64, core::num::NonZeroI64)> {
+  #[allow(clippy::cast_possible_wrap)] // masked to 63 bits: always non-negative
+  let num = (<u64 as ::arbitrary::Arbitrary>::arbitrary(u)? >> 1) as i64;
+  #[allow(clippy::cast_possible_wrap)]
+  let den = ((<u64 as ::arbitrary::Arbitrary>::arbitrary(u)? >> 1) as i64).max(1);
+  let den = core::num::NonZeroI64::new(den).unwrap_or(crate::frame::DEN_ONE);
+  Ok((num, den))
+}
+
 impl<'a> ::arbitrary::Arbitrary<'a> for crate::frame::Rational {
   fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
-    Ok(Self::new(
-      u32::arbitrary(u)?,
-      core::num::NonZeroU32::arbitrary(u)?,
-    ))
+    let (num, den) = parts(u)?;
+    Ok(Self::new(num, den))
   }
 }
 
 impl<'a> ::arbitrary::Arbitrary<'a> for crate::frame::SampleAspectRatio {
   fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
-    Ok(Self::new(
-      u32::arbitrary(u)?,
-      core::num::NonZeroU32::arbitrary(u)?,
-    ))
+    let (num, den) = parts(u)?;
+    Ok(Self::new(num, den))
   }
 }
 

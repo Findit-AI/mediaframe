@@ -6,14 +6,63 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] / [0.2.0]
 
-**Breaking.** Two public dependencies cross a major: `mediatime` 0.1 → 0.2
+**Breaking**, on two independent counts. `frame::Rational` widens to
+`i64`/`NonZeroI64` and its constructor becomes checked (see **Changed**
+below). And two public dependencies cross a major: `mediatime` 0.1 → 0.2
 (`mediatime::Timestamp` appears in `frame::TimestampedFrame`'s public
 signatures, so a caller holding a `mediatime 0.1` value no longer type-checks)
 and `buffa` 0.8 → 0.9 (`Message` is implemented for public types, so a
-downstream on 0.8 no longer sees those impls). Neither changes a wire byte —
-see the per-entry proofs below.
+downstream on 0.8 no longer sees those impls). **No wire byte changes** — every
+entry below carries its own proof.
 
 ### Changed
+
+- **`frame::Rational` is now `i64` / `NonZeroI64`** (was `u32` /
+  `NonZeroU32`), and [`Rational::new`] is checked rather than total:
+  it panics on `num < 0` or `den < 0`, with a new
+  `Rational::try_new -> Option<Self>` as the fallible form.
+  `SampleAspectRatio` (a newtype over `Rational`) and `FrameRate`
+  (which composes it) follow automatically and carry no width of
+  their own; `SampleAspectRatio::new` panics the same way, and its
+  fallible route is the existing
+  `Rational::try_new(..).map(SampleAspectRatio::from)`.
+
+  *Why `i64`, and why `mediatime::Timebase` stays `i32`.* `mediaframe`
+  is a pure **receiver** — nothing here is handed back to a decoder
+  SDK — so "must round-trip into an `AVRational`", the reason
+  `Timebase` went to `i32`, does not apply. What does apply is
+  storage (`sqlx` has no `Type<Postgres>` for `u32`, so a `u32`
+  widens to `i64` to be stored regardless) and ingest (R3D metadata
+  returns `unsigned int`, ISO BMFF `pasp` is `unsigned int(32)` —
+  values `i32` would have to *reject*). `Timebase` is additionally an
+  arithmetic operand whose rescale overflow proofs need `num < 2^32`;
+  `Rational` never multiplies against a PTS and carries no such
+  proof. **The two types differ deliberately** — this is not an
+  inconsistency to reconcile.
+
+  The four setters (`with_num`/`with_den`/`set_num`/`set_den`) now
+  route through `new`, so the sign invariants have exactly one
+  enforcement site rather than a mutator hole. `Deserialize` was the
+  other unguarded construction path — the derive assigns fields
+  directly, and the field types no longer carry the invariant — so
+  each field gained a `deserialize_with` guard; `{"num": -5}` is now
+  a deserialization error instead of a value the constructor would
+  refuse. The constructor deliberately does **not** reduce to lowest
+  terms: a stream declaring `2/4` reads back as `2/4`.
+
+  **The wire format does not change.** `SampleAspectRatio` and
+  `Rational` move from `uint32 num/den` to `int64 num/den`, which is
+  the same plain non-ZigZag varint over every value the old
+  representation could hold. Proven, not inferred: 680 payloads
+  across `Rational`, `SampleAspectRatio` and `FrameRate` — spanning
+  every varint continuation boundary and `u32::MAX` — encode to
+  identical bytes under both representations, and the `i64` build
+  cross-decodes all 680 `uint32`-era payloads back to the same values
+  and the same bytes. (`sint32`/`sint64` would have been the silent
+  break, since ZigZag re-encodes every value; this crate uses neither.)
+  Decode stays total in the newly reachable directions: a negative
+  numerator clamps to `0` and a zero-or-negative denominator to `1`,
+  matching `mediatime::Timebase`'s decode policy.
 
 - **`xtask`: `syn` 2 → 3, `prettyplease` 0.2 → 0.3** — a coupled bump
   (`prettyplease` 0.3 requires `syn ^3`, so neither moves alone).
