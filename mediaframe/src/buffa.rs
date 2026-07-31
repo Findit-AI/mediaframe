@@ -250,8 +250,8 @@
 use core::num::NonZeroU32;
 
 use ::buffa::{
-  DecodeContext, DecodeError, DefaultInstance, Message, SizeCache,
-  bytes::{Buf, BufMut},
+  DecodeContext, DecodeError, DefaultInstance, EncodeSink, Message, SizeCache,
+  bytes::Buf,
   encoding::{Tag, WireType, encode_varint, skip_field_depth, varint_len},
   types::{
     FIXED32_ENCODED_LEN, bytes_encoded_len, decode_bytes, decode_double, decode_float,
@@ -323,7 +323,7 @@ macro_rules! impl_enum_message {
         }
       }
 
-      fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+      fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
         // Default-elision (NOT proto3 zero-elision): see `compute_size`.
         if *self != <$ty>::default() {
           let v: u32 = $to(self);
@@ -439,7 +439,7 @@ impl Message for Dimensions {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if self.width() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -521,7 +521,7 @@ impl Message for Rect {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if self.x() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -624,7 +624,7 @@ impl Message for SampleAspectRatio {
     2 + uint32_encoded_len(self.num()) as u32 + uint32_encoded_len(self.den().get()) as u32
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::Varint).encode(buf);
     encode_uint32(self.num(), buf);
     Tag::new(2, WireType::Varint).encode(buf);
@@ -703,7 +703,7 @@ impl Message for Rational {
     2 + uint32_encoded_len(self.num()) as u32 + uint32_encoded_len(self.den().get()) as u32
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::Varint).encode(buf);
     encode_uint32(self.num(), buf);
     Tag::new(2, WireType::Varint).encode(buf);
@@ -789,7 +789,7 @@ impl Message for FrameRate {
     size
   }
 
-  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::LengthDelimited).encode(buf);
     encode_varint(cache.consume_next() as u64, buf);
     self.rate().write_to(cache, buf);
@@ -878,7 +878,7 @@ impl Message for DolbyVisionConfig {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if self.profile() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -994,7 +994,7 @@ impl Message for Info {
       + uint32_encoded_len(self.chroma_location().to_u32()) as u32
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::Varint).encode(buf);
     encode_uint32(self.primaries().to_u32(), buf);
     Tag::new(2, WireType::Varint).encode(buf);
@@ -1104,7 +1104,7 @@ impl Message for ContentLightLevel {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if self.max_cll() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -1183,7 +1183,7 @@ impl Message for ChromaCoord {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if self.x() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -1282,7 +1282,7 @@ impl Message for MasteringDisplay {
     size
   }
 
-  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     let primaries = self.display_primaries();
     for (i, cc) in primaries.iter().enumerate() {
       Tag::new(1 + i as u32, WireType::LengthDelimited).encode(buf);
@@ -1403,7 +1403,7 @@ impl Message for HdrStaticMetadata {
     size
   }
 
-  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if let Some(md) = self.mastering() {
       Tag::new(1, WireType::LengthDelimited).encode(buf);
       encode_varint(cache.consume_next() as u64, buf);
@@ -1496,7 +1496,7 @@ macro_rules! impl_string_enum_message {
         }
       }
 
-      fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+      fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
         let s = self.as_str();
         if !s.is_empty() {
           Tag::new(1, WireType::LengthDelimited).encode(buf);
@@ -1569,7 +1569,7 @@ impl Message for BitRateMode {
     }
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     let v = self.to_u32();
     if v != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
@@ -1634,7 +1634,7 @@ impl Message for SampleFormat {
     }
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if *self != SampleFormat::default() {
       let v = self.to_u32();
       Tag::new(1, WireType::Varint).encode(buf);
@@ -1704,7 +1704,7 @@ impl Message for Loudness {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if self.integrated_lufs() != 0.0 {
       Tag::new(1, WireType::Fixed32).encode(buf);
       encode_float(self.integrated_lufs(), buf);
@@ -1800,7 +1800,7 @@ impl Message for ReplayGain {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if self.track_gain_db() != 0.0 {
       Tag::new(1, WireType::Fixed32).encode(buf);
       encode_float(self.track_gain_db(), buf);
@@ -1894,7 +1894,7 @@ impl Message for Fingerprint {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::LengthDelimited).encode(buf);
     encode_string(self.algorithm(), buf);
     if !self.value().is_empty() {
@@ -1985,7 +1985,7 @@ impl Message for CoverArt {
     2 + string_encoded_len(self.mime()) as u32 + bytes_encoded_len(self.data()) as u32
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::LengthDelimited).encode(buf);
     encode_string(self.mime(), buf);
     Tag::new(2, WireType::LengthDelimited).encode(buf);
@@ -2114,7 +2114,7 @@ impl Message for Tags {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if !self.title().is_empty() {
       Tag::new(1, WireType::LengthDelimited).encode(buf);
       encode_string(self.title(), buf);
@@ -2290,7 +2290,7 @@ impl Message for TrackDisposition {
     }
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     if self.to_u32() != 0 {
       Tag::new(1, WireType::Varint).encode(buf);
       encode_uint32(self.to_u32(), buf);
@@ -2366,7 +2366,7 @@ mod subtitle_impls {
       }
     }
 
-    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
       if *self != TrackOrigin::default() {
         let v: u32 = self.to_u32();
         Tag::new(1, WireType::Varint).encode(buf);
@@ -2430,7 +2430,7 @@ mod subtitle_impls {
       1 + string_encoded_len(slug) as u32
     }
 
-    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
       let slug = self.as_str();
       Tag::new(1, WireType::LengthDelimited).encode(buf);
       encode_string(slug, buf);
@@ -2502,7 +2502,7 @@ impl Message for Device {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     // proto3 zero-elision: sound — see `compute_size`.
     if !self.make().is_empty() {
       Tag::new(1, WireType::LengthDelimited).encode(buf);
@@ -2589,7 +2589,7 @@ impl Message for GeoLocation {
     size
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     Tag::new(1, WireType::Fixed64).encode(buf);
     encode_double(self.lat(), buf);
     Tag::new(2, WireType::Fixed64).encode(buf);
@@ -2698,7 +2698,7 @@ impl Message for Language {
     }
   }
 
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
     let tag = self.to_bcp47();
     if !tag.is_empty() {
       Tag::new(1, WireType::LengthDelimited).encode(buf);

@@ -31,6 +31,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `pub(crate) fn(&mut Gen) -> T` in `quickcheck_helpers`, so none of
   them is the sibling `with = "…"` key (which names a *module* supplying
   both `arbitrary` and `shrink`). No consumer-visible change.
+- **`buffa` 0.8 → 0.9** (`buffa` feature) — `Message::write_to` now takes
+  `&mut impl EncodeSink` in place of `&mut impl BufMut`, so all 26
+  `write_to` signatures in `src/buffa.rs` move (the trait method's
+  parameter type is what changed, so keeping `BufMut` is an `E0276`
+  "impl has stricter requirements"). Nothing else in the module changes:
+  no body touches a `BufMut` method directly — every byte goes through
+  `buffa`'s `encode_*` helpers, whose bodies are unchanged — and
+  `buffa` carries a blanket `impl<T: BufMut + ?Sized> EncodeSink for T`,
+  so every existing caller still passes a `Vec<u8>` / `BytesMut`.
+  **The wire format does not change.** Established on this crate's own
+  types rather than inherited: all 37 `Message` impls were driven over
+  400 deterministic `arbitrary` values each (14,800 encodings) under
+  0.8.1 and 0.9.1, and the encoded bytes are identical in every case —
+  so bytes written by a 0.8-linked peer still decode here. The 112
+  non-identity round-trips are `audio::SampleFormat` only, are present
+  identically in both runs, and are the documented `Other(SmolStr)` →
+  `Unknown(u32::MAX)` collapse, not a regression.
+  `EncodeSink`'s segmented `Rope` sink is **not** adopted here.
 
 ## [0.1.7]
 
