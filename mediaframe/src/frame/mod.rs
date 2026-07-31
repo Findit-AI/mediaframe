@@ -1853,7 +1853,7 @@ mod tests_primitives {
 
   #[test]
   fn timestamped_frame_pts_builder() {
-    let tb = mediatime::Timebase::new(1, core::num::NonZeroU32::new(1000).unwrap());
+    let tb = mediatime::Timebase::new(1, core::num::NonZeroI32::new(1000).unwrap());
     let ts = mediatime::Timestamp::new(1000, tb);
     let tf = TimestampedFrame::new(0u8).with_pts(ts).with_duration(ts);
     assert_eq!(tf.pts(), Some(ts));

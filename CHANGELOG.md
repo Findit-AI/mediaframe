@@ -4,7 +4,14 @@ All notable changes to this crate are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] / [0.1.10]
+## [Unreleased] / [0.2.0]
+
+**Breaking.** Two public dependencies cross a major: `mediatime` 0.1 → 0.2
+(`mediatime::Timestamp` appears in `frame::TimestampedFrame`'s public
+signatures, so a caller holding a `mediatime 0.1` value no longer type-checks)
+and `buffa` 0.8 → 0.9 (`Message` is implemented for public types, so a
+downstream on 0.8 no longer sees those impls). Neither changes a wire byte —
+see the per-entry proofs below.
 
 ### Changed
 
@@ -49,6 +56,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   identically in both runs, and are the documented `Other(SmolStr)` →
   `Unknown(u32::MAX)` collapse, not a regression.
   `EncodeSink`'s segmented `Rope` sink is **not** adopted here.
+- **`mediatime` 0.1 → 0.2** — `mediatime::Timebase`'s `num`/`den` became
+  `i32`/`NonZeroI32` (matching ffmpeg's `AVRational`, which is
+  `{int num; int den;}`), `Timebase::new` now panics on a negative
+  numerator or denominator with `try_new` returning `Option`, and its
+  `Deserialize` gained a range guard. The surface this crate touches is
+  small: `mediatime::Timestamp` — not `Timebase` — is what
+  `frame::TimestampedFrame` carries, and `Timestamp::new(i64, Timebase)`
+  is unchanged, so the single site that moves is one test's
+  `NonZeroU32` → `NonZeroI32` denominator literal. Every other
+  `Timebase` mention in this crate is prose, and each statement it
+  makes (non-proto-zero `1/1` default; a frame rate is deliberately not
+  a PTS timebase) is still true of 0.2.
+  Also collapses the transient duplicate from the previous commit:
+  `mediatime` 0.2 requires `buffa` 0.9, so the graph carries one
+  `buffa` again.
 
 ## [0.1.7]
 
