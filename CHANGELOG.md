@@ -20,6 +20,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `mediaframe/src/codec.rs` (89,303 bytes pre-`rustfmt`), so
   `cargo xtask check`'s byte-for-byte freshness diff stays green and
   the committed file needs no regeneration.
+- **`quickcheck-richderive` 0.3 → 0.4** (`quickcheck` feature) — upstream
+  is a dependency-only release (its own `syn` 2 → 3 migration); the
+  derive, the accepted attribute keys, and the emitted impls are
+  unchanged. Re-verified against *this* crate rather than inherited:
+  `-Zunpretty=expanded` over `--features quickcheck,frame,buffa,serde,arbitrary`
+  is byte-identical across the bump (263,301 lines). All 40 derive sites
+  keep their `#[quickcheck(arbitrary = "…")]` attributes as-is —
+  that key names a **function**, and every value here points at a
+  `pub(crate) fn(&mut Gen) -> T` in `quickcheck_helpers`, so none of
+  them is the sibling `with = "…"` key (which names a *module* supplying
+  both `arbitrary` and `shrink`). No consumer-visible change.
 
 ## [0.1.7]
 
