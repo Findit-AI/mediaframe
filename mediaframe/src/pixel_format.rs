@@ -34,15 +34,19 @@
 //! before reaching a `mediadecode::VideoFrame` consumer. Backend
 //! crates handle the HW path internally.
 //!
-//! Stable wire format: [`PixelFormat::to_u32`] returns the underlying
-//! discriminant (this enum is `#[repr(u32)]`); [`PixelFormat::from_u32`]
-//! reverses the mapping. Unrecognised values map to
-//! [`PixelFormat::Unknown`].
+//! The **text** form is the wire form: [`PixelFormat::as_str`] renders the
+//! FFmpeg slug and [`FromStr`](core::str::FromStr) reads it back, with
+//! [`PixelFormat::Other`] carrying any name this build does not enumerate.
+//! [`PixelFormat::to_u32`] / [`PixelFormat::from_u32`] remain as FFmpeg
+//! interop helpers over a number space that has no room for a name, and
+//! return [`None`] outside it.
 
 use derive_more::{Display, IsVariant};
+#[cfg(any(feature = "std", feature = "alloc"))]
+use smol_str::SmolStr;
 
 /// Pixel format identifier covering FFmpeg + Bayer + cinema-RAW.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -51,10 +55,13 @@ use derive_more::{Display, IsVariant};
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::pixel_format")
 )]
 pub enum PixelFormat {
-  /// Unknown / unset format. The wrapped `u32` is the original
-  /// wire value passed to [`PixelFormat::from_u32`] — preserved so
-  /// round-tripping unknown values is lossless.
-  Unknown(u32),
+  /// No format — FFmpeg's own `AV_PIX_FMT_NONE`, and the [`Default`].
+  ///
+  /// A **named** member of the vocabulary, not an escape arm: it carries
+  /// no payload, owns the slug `"none"`, and round-trips exactly. It is
+  /// the state a freshly-defaulted descriptor is in, before a decoder has
+  /// said what it produces.
+  None,
 
   // ===================================================================
   // Planar YUV 8-bit
@@ -771,23 +778,37 @@ pub enum PixelFormat {
   BayerGrbg16Le,
   /// Bayer GRBG pattern, 16-bit big-endian.
   BayerGrbg16Be,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for PixelFormat {
+  /// [`Self::None`] — FFmpeg's `AV_PIX_FMT_NONE`, "no format yet".
   #[inline]
   fn default() -> Self {
-    Self::Unknown(0)
+    Self::None
   }
 }
 
 impl PixelFormat {
   /// Stable wire representation. Known variants return their
-  /// assigned wire id; [`PixelFormat::Unknown`] carries its original
-  /// `u32` value through unchanged so `from_u32(to_u32(x)) == x` for
-  /// every `x`.
+  /// assigned id.
+  ///
+  /// [`None`] for [`Self::Other`]: it names a format this build does not
+  /// enumerate, and there is no id to invent for it.
   #[inline]
-  pub const fn to_u32(self) -> u32 {
-    match self {
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
+      Self::None => 0,
       Self::Yuv420p => 100,
       Self::Yuv422p => 101,
       Self::Yuv440p => 102,
@@ -1072,15 +1093,17 @@ impl PixelFormat {
       Self::BayerGbrg16Be => 946,
       Self::BayerGrbg16Le => 943,
       Self::BayerGrbg16Be => 947,
-      Self::Unknown(value) => value,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the stable `u32` representation produced by
-  /// [`Self::to_u32`]. Unrecognised values map to [`Self::Unknown`].
+  /// [`Self::to_u32`]. [`None`] for an id this build names nothing for.
   #[inline]
-  pub const fn from_u32(value: u32) -> Self {
-    match value {
+  pub const fn from_u32(value: u32) -> Option<Self> {
+    Some(match value {
+      0 => Self::None,
       // Planar YUV 8-bit.
       100 => Self::Yuv420p,
       101 => Self::Yuv422p,
@@ -1385,8 +1408,8 @@ impl PixelFormat {
       945 => Self::BayerRggb16Be,
       946 => Self::BayerGbrg16Be,
       947 => Self::BayerGrbg16Be,
-      _ => Self::Unknown(value),
-    }
+      _ => return None,
+    })
   }
 
   /// Returns `true` for Bayer-mosaic formats (any pattern, any bit
@@ -1394,7 +1417,7 @@ impl PixelFormat {
   /// consumers (e.g. `colconv::raw`) demosaic + white-balance + colour-
   /// correct to produce RGB.
   #[inline]
-  pub const fn is_bayer(self) -> bool {
+  pub fn is_bayer(&self) -> bool {
     matches!(
       self,
       Self::BayerBggr8
@@ -1473,7 +1496,7 @@ impl PixelFormat {
   ///   `XV30`). Both endians resolve onto their matching `V410` variant,
   ///   preserving byte order: the [`V410Frame<'a, BE>`](crate::frame::V410Frame)
   ///   borrow view and the `v410_to::<BE>` walker decode either endian.
-  /// - Every other variant — including [`Unknown`](Self::Unknown) — is
+  /// - Every other variant — including [`Other`](Self::Other) — is
   ///   already canonical and maps to `(self, None)`.
   ///
   /// The match is intentionally **exhaustive without a wildcard**:
@@ -1483,9 +1506,11 @@ impl PixelFormat {
   /// not yet routed, ensuring a new alias can never silently fall through
   /// to the "already canonical" arm.
   #[inline]
-  pub const fn canonical(self) -> (PixelFormat, Option<crate::color::DynamicRange>) {
+  pub fn canonical(self) -> (PixelFormat, Option<crate::color::DynamicRange>) {
     use crate::color::DynamicRange;
     match self {
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => (self, None),
       Self::Yuvj411p => (Self::Yuv411p, Some(DynamicRange::Full)),
       Self::Yuvj420p => (Self::Yuv420p, Some(DynamicRange::Full)),
       Self::Yuvj422p => (Self::Yuv422p, Some(DynamicRange::Full)),
@@ -1494,7 +1519,7 @@ impl PixelFormat {
       Self::Gray8a | Self::Y400a => (Self::Ya8, None),
       Self::Xv30Le => (Self::V410Le, None),
       Self::Xv30Be => (Self::V410Be, None),
-      Self::Unknown(_)
+      Self::None
       | Self::Yuv420p
       | Self::Yuv422p
       | Self::Yuv440p
@@ -1772,6 +1797,17 @@ impl PixelFormat {
       | Self::BayerGrbg16Be => (self, None),
     }
   }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+  }
 }
 
 impl core::str::FromStr for PixelFormat {
@@ -1783,12 +1819,13 @@ impl core::str::FromStr for PixelFormat {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Ok(match s {
+      "none" => Self::None,
       "yuv420p" => Self::Yuv420p,
       "yuv422p" => Self::Yuv422p,
       "yuv440p" => Self::Yuv440p,
@@ -2073,6 +2110,9 @@ impl core::str::FromStr for PixelFormat {
       "bayer_gbrg16be" => Self::BayerGbrg16Be,
       "bayer_grbg16le" => Self::BayerGrbg16Le,
       "bayer_grbg16be" => Self::BayerGrbg16Be,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(crate::parse::ParseError::unrecognised("PixelFormat")),
     })
   }
@@ -2086,9 +2126,9 @@ impl PixelFormat {
   /// Matches the enum's [`Display`] output exactly — single source of
   /// truth.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
+      Self::None => "none",
       Self::Yuv420p => "yuv420p",
       Self::Yuv422p => "yuv422p",
       Self::Yuv440p => "yuv440p",
@@ -2373,6 +2413,8 @@ impl PixelFormat {
       Self::BayerGbrg16Be => "bayer_gbrg16be",
       Self::BayerGrbg16Le => "bayer_grbg16le",
       Self::BayerGrbg16Be => "bayer_grbg16be",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 }
@@ -2387,14 +2429,16 @@ mod tests {
   use std::format;
 
   #[test]
-  fn default_is_unknown() {
-    assert!(matches!(PixelFormat::default(), PixelFormat::Unknown(0)));
+  fn default_is_none() {
+    assert!(matches!(PixelFormat::default(), PixelFormat::None));
+    assert_eq!(PixelFormat::None.as_str(), "none");
+    assert_eq!("none".parse(), Ok(PixelFormat::None));
   }
 
   #[test]
   fn round_trip_u32_for_known_variants() {
     let all = [
-      PixelFormat::Unknown(0),
+      PixelFormat::None,
       PixelFormat::Yuv420p,
       PixelFormat::Yuv444p,
       PixelFormat::Yuv420p10Le,
@@ -2427,27 +2471,20 @@ mod tests {
     ];
     for fmt in all {
       assert_eq!(
-        PixelFormat::from_u32(fmt.to_u32()),
-        fmt,
+        PixelFormat::from_u32(fmt.to_u32().expect("named format has an id")),
+        Some(fmt.clone()),
         "round-trip failed for {fmt:?}"
       );
     }
   }
 
   #[test]
-  fn unknown_for_garbage_u32() {
-    assert_eq!(PixelFormat::from_u32(99_999), PixelFormat::Unknown(99_999));
-    assert_eq!(PixelFormat::from_u32(1), PixelFormat::Unknown(1));
-  }
-
-  #[test]
-  fn unknown_round_trip_is_lossless() {
-    // Pre-Unknown(u32) refactor: from_u32(99) → Unknown → to_u32 → 0.
-    // Post: from_u32(99) → Unknown(99) → to_u32 → 99. Lossless.
-    for n in [1u32, 42, 99_999, u32::MAX, 0] {
-      let p = PixelFormat::from_u32(n);
-      assert_eq!(p.to_u32(), n, "lossless round-trip broken for {n}");
-    }
+  fn garbage_u32_is_rejected_not_invented() {
+    assert_eq!(PixelFormat::from_u32(99_999), None);
+    assert_eq!(PixelFormat::from_u32(1), None);
+    assert_eq!(PixelFormat::from_u32(u32::MAX), None);
+    // Code 0 is FFmpeg's own "no format".
+    assert_eq!(PixelFormat::from_u32(0), Some(PixelFormat::None));
   }
 
   // `format!` requires an allocator; gate to alloc-or-std builds.
@@ -2461,7 +2498,7 @@ mod tests {
     assert_eq!(format!("{}", PixelFormat::Nv12), "nv12");
     assert_eq!(format!("{}", PixelFormat::P010Le), "p010le");
     assert_eq!(format!("{}", PixelFormat::Rgba64Le), "rgba64le");
-    assert_eq!(format!("{}", PixelFormat::Unknown(0)), "unknown");
+    assert_eq!(format!("{}", PixelFormat::None), "none");
   }
 
   // Sub-16-bit Bayer are mediaframe extensions (no FFmpeg pixel format);
@@ -2483,7 +2520,7 @@ mod tests {
     assert!(PixelFormat::BayerGrbg14Be.is_bayer());
     assert!(!PixelFormat::Yuv420p.is_bayer());
     assert!(!PixelFormat::Rgb24.is_bayer());
-    assert!(!PixelFormat::Unknown(0).is_bayer());
+    assert!(!PixelFormat::None.is_bayer());
   }
 
   #[test]
@@ -2491,13 +2528,14 @@ mod tests {
     assert!(PixelFormat::Yuv420p.is_yuv_420_p());
     assert!(PixelFormat::Nv12.is_nv_12());
     assert!(PixelFormat::P010Le.is_p_010_le());
-    assert!(!PixelFormat::Yuv420p.is_unknown());
+    assert!(!PixelFormat::Yuv420p.is_none());
   }
 
   #[test]
-  fn copy_and_eq() {
+  fn clone_and_eq() {
+    // `Copy` went with `Other(SmolStr)` — the escape carries a name.
     let p = PixelFormat::Nv12;
-    let q = p; // Copy
+    let q = p.clone();
     assert_eq!(p, q);
     assert_ne!(p, PixelFormat::Yuv420p);
   }
@@ -2550,8 +2588,7 @@ mod tests {
   #[test]
   fn canonical_is_identity_for_non_aliases() {
     for fmt in [
-      PixelFormat::Unknown(0),
-      PixelFormat::Unknown(99_999),
+      PixelFormat::None,
       PixelFormat::Yuv420p,
       PixelFormat::Yuv444p,
       PixelFormat::V410Le,
@@ -2565,8 +2602,8 @@ mod tests {
       PixelFormat::BayerBggr8,
     ] {
       assert_eq!(
-        fmt.canonical(),
-        (fmt, None),
+        fmt.clone().canonical(),
+        (fmt.clone(), None),
         "non-alias {fmt:?} must be its own canonical form"
       );
     }
@@ -2588,10 +2625,10 @@ mod tests {
       PixelFormat::Xv30Le,
     ];
     for alias in aliases {
-      let (canon, _range) = alias.canonical();
+      let (canon, _range) = alias.clone().canonical();
       assert_eq!(
-        canon.canonical(),
-        (canon, None),
+        canon.clone().canonical(),
+        (canon.clone(), None),
         "canonical form {canon:?} of alias {alias:?} must be a fixed point with no pinned range"
       );
     }
@@ -2606,22 +2643,26 @@ mod tests {
     // A fixed array, not a `Vec`: this type is available at the crate's
     // no-alloc tier and the test has to build there too.
     let mut named = 0usize;
-    let mut seen: [&str; 512] = [""; 512];
+    let mut codes = [0u32; 512];
     for code in 0..=4096u32 {
-      let value = PixelFormat::from_u32(code);
-      if value.is_unknown() {
+      let Some(value) = PixelFormat::from_u32(code) else {
         continue;
-      }
+      };
       let slug = value.as_str();
       assert_eq!(
         slug.parse::<PixelFormat>(),
-        Ok(value),
+        Ok(value.clone()),
         "slug {slug:?} does not parse back to {value:?}"
       );
-      for prior in seen.iter().take(named) {
-        assert_ne!(*prior, slug, "two pixel formats are spelled {slug:?}");
+      for prior in codes.iter().take(named) {
+        let prior = PixelFormat::from_u32(*prior).expect("recorded code names a format");
+        assert_ne!(
+          prior.as_str(),
+          slug,
+          "two pixel formats are spelled {slug:?}"
+        );
       }
-      seen[named] = slug;
+      codes[named] = code;
       named += 1;
     }
     assert!(
@@ -2630,21 +2671,28 @@ mod tests {
     );
   }
 
-  /// `Unknown(_)` renders as `"unknown"` for every payload, so it has no
-  /// parseable spelling; `from_u32` remains the way to carry an
-  /// unrecognised id.
+  /// A vendor format mediaframe has never heard of keeps its **name**.
+  /// That is the whole point of the escape: the old `Unknown(u32)` handed
+  /// a downstream RAW/sensor backend a bare number and `as_str() ==
+  /// "unknown"`, while a downstream codec got a first-class value.
+  #[cfg(any(feature = "alloc", feature = "std"))]
   #[test]
-  fn unknown_pixel_format_has_no_parseable_spelling() {
-    assert_eq!(PixelFormat::Unknown(99_999).as_str(), "unknown");
-    assert!("unknown".parse::<PixelFormat>().is_err());
-    assert_eq!(PixelFormat::from_u32(99_999), PixelFormat::Unknown(99_999));
+  fn an_unnamed_pixel_format_keeps_its_name() {
+    let vendor: PixelFormat = "yuv420q".parse().unwrap();
+    assert!(vendor.is_other());
+    assert_eq!(vendor.as_str(), "yuv420q");
+    assert_eq!(vendor.to_u32(), None);
+    assert_eq!("yuv420q".parse(), Ok(vendor));
+    // The escape folds on the way in, so one name is one value.
+    assert_eq!(PixelFormat::other("YUV420Q").as_str(), "yuv420q");
   }
 
+  /// At the no-alloc tier there is nowhere to put a name, so the same
+  /// vocabulary is closed and the parse fails instead.
+  #[cfg(not(any(feature = "alloc", feature = "std")))]
   #[test]
-  fn unrecognised_pixel_format_slug_is_rejected() {
+  fn an_unnamed_pixel_format_is_rejected_without_an_allocator() {
     let err = "yuv420q".parse::<PixelFormat>().unwrap_err();
     assert_eq!(err.type_name(), "PixelFormat");
-    assert!("YUV420P".parse::<PixelFormat>().is_err());
-    assert!("".parse::<PixelFormat>().is_err());
   }
 }

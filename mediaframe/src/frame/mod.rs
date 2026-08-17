@@ -518,15 +518,16 @@ impl Rect {
 /// WebCodecs `VideoFrame` rotation attribute. Only the four
 /// axis-aligned multiples of 90° are representable — every container
 /// rotation tag in practice is one of these. Any other / future /
-/// corrupt wire value is preserved verbatim as [`Self::Unknown`]
-/// rather than silently collapsed to a valid rotation (mirrors the
-/// lossless `Unknown(u32)` convention of the colour enums).
+/// corrupt wire value is **rejected** by [`Self::from_u32`] rather than
+/// silently collapsed to a valid rotation; a *name* this build does not
+/// enumerate is carried verbatim as [`Self::Other`], the crate-wide
+/// extension idiom.
 ///
 /// The angle is the **clockwise** rotation to apply for display
 /// (matching WebCodecs' `rotation`); callers normalising FFmpeg's
 /// counter-clockwise convention negate accordingly. [`Self::D0`] is
 /// the default (no rotation / square presentation).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -535,10 +536,6 @@ impl Rect {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::rotation")
 )]
 pub enum Rotation {
-  /// Unknown / unrecognised rotation wire value. The wrapped `u32`
-  /// is the original value passed to [`Self::from_u32`] — preserved
-  /// so the round-trip is lossless (no silent collapse to `D0`).
-  Unknown(u32),
   /// No rotation.
   #[default]
   D0,
@@ -548,49 +545,74 @@ pub enum Rotation {
   D180,
   /// 270° clockwise (= 90° counter-clockwise).
   D270,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Rotation {
   /// Degree string for this rotation (`"0"` / `"90"` / `"180"` /
-  /// `"270"`); [`Self::Unknown`] renders as `"unknown"`.
+  /// `"270"`); [`Self::Other`] renders the name it carries.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
       Self::D0 => "0",
       Self::D90 => "90",
       Self::D180 => "180",
       Self::D270 => "270",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
   /// Stable `u32` wire id: `0`/`1`/`2`/`3` for
-  /// `D0`/`D90`/`D180`/`D270`; [`Self::Unknown`] carries its
-  /// original value through unchanged so `from_u32(to_u32(x)) == x`
-  /// for every unrecognised `x`. Stable and append-only.
+  /// `D0`/`D90`/`D180`/`D270`. Stable and append-only.
+  ///
+  /// [`None`] for [`Self::Other`]: it names a rotation this build does
+  /// not enumerate, and there is no id to invent for it.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::D0 => 0,
       Self::D90 => 1,
       Self::D180 => 2,
       Self::D270 => 3,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the stable `u32` wire id produced by
-  /// [`Self::to_u32`]. Unrecognised values are preserved as
-  /// [`Self::Unknown`] (lossless) rather than mapped to a default.
+  /// [`Self::to_u32`]. [`None`] for an unrecognised value — never a
+  /// silent collapse to a default rotation.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       0 => Self::D0,
       1 => Self::D90,
       2 => Self::D180,
       3 => Self::D270,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
@@ -603,16 +625,19 @@ impl core::str::FromStr for Rotation {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Ok(match s {
       "0" => Self::D0,
       "90" => Self::D90,
       "180" => Self::D180,
       "270" => Self::D270,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(crate::parse::ParseError::unrecognised("Rotation")),
     })
   }
@@ -1149,13 +1174,14 @@ impl FrameRate {
 /// `AV_FIELD_PROGRESSIVE = 1`, `AV_FIELD_TT = 2`,
 /// `AV_FIELD_BB = 3`, `AV_FIELD_TB = 4`, `AV_FIELD_BT = 5`. Any
 /// other / future / corrupt wire value is preserved verbatim as
-/// [`Self::Unknown`] rather than collapsed (mirrors the lossless
-/// `Unknown(u32)` convention of [`Rotation`] / the colour enums).
+/// [`None`] from [`Self::from_u32`] rather than collapsed; a *name*
+/// this build does not enumerate rides [`Self::Other`].
 ///
 /// FFmpeg's own `AV_FIELD_UNKNOWN` sentinel is code `0`, so the
-/// [`Default`] is `Unknown(0)` — the same default-is-`Unknown(0)`
-/// precedent as [`PixelFormat`](crate::pixel_format::PixelFormat).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+/// [`Default`] is the named [`Self::Unknown`] — the same
+/// FFmpeg-names-its-own-absence precedent as
+/// [`PixelFormat::None`](crate::pixel_format::PixelFormat::None).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -1164,11 +1190,14 @@ impl FrameRate {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::field_order")
 )]
 pub enum FieldOrder {
-  /// Unknown / unrecognised field-order wire value. The wrapped
-  /// `u32` is the original value passed to [`Self::from_u32`] —
-  /// preserved so the round-trip is lossless. Also the [`Default`]
-  /// (`Unknown(0)`), since FFmpeg's `AV_FIELD_UNKNOWN` is code `0`.
-  Unknown(u32),
+  /// Field order not known — FFmpeg's own `AV_FIELD_UNKNOWN` (code `0`),
+  /// and the [`Default`].
+  ///
+  /// A **named** member of the FFmpeg vocabulary, not an escape arm: it
+  /// carries no payload, owns the slug `"unknown"`, and round-trips
+  /// exactly. "The container did not say" is a field order a stream can
+  /// state, and it is the state a freshly-defaulted descriptor is in.
+  Unknown,
   /// Progressive (not interlaced) — `AV_FIELD_PROGRESSIVE`.
   Progressive,
   /// Top coded first, top displayed first — `AV_FIELD_TT`.
@@ -1179,63 +1208,90 @@ pub enum FieldOrder {
   Tb,
   /// Bottom coded first, top displayed first — `AV_FIELD_BT`.
   Bt,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for FieldOrder {
-  /// `Unknown(0)` — FFmpeg's `AV_FIELD_UNKNOWN` is code `0`.
+  /// [`Self::Unknown`] — FFmpeg's `AV_FIELD_UNKNOWN`, code `0`.
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn default() -> Self {
-    Self::Unknown(0)
+    Self::Unknown
   }
 }
 
 impl FieldOrder {
   /// Lowercase slug for this field order (`"progressive"` / `"tt"` /
-  /// `"bb"` / `"tb"` / `"bt"`); [`Self::Unknown`] renders as
-  /// `"unknown"`.
+  /// `"bb"` / `"tb"` / `"bt"`); [`Self::Unknown`] is FFmpeg's own named
+  /// `"unknown"`, and [`Self::Other`] renders the name it carries.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
+      Self::Unknown => "unknown",
       Self::Progressive => "progressive",
       Self::Tt => "tt",
       Self::Bb => "bb",
       Self::Tb => "tb",
       Self::Bt => "bt",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
   /// Stable `u32` wire id = the FFmpeg `AVFieldOrder` code
-  /// (`Unknown`→its carried value, `Progressive`=1, `Tt`=2, `Bb`=3,
-  /// `Tb`=4, `Bt`=5). [`Self::Unknown`] carries its original value
-  /// through unchanged so `from_u32(to_u32(x)) == x` for every
-  /// unrecognised `x`.
+  /// (`Unknown`=0, `Progressive`=1, `Tt`=2, `Bb`=3, `Tb`=4, `Bt`=5).
+  ///
+  /// [`None`] for [`Self::Other`]: FFmpeg has no code for a name it
+  /// does not know.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
+      Self::Unknown => 0,
       Self::Progressive => 1,
       Self::Tt => 2,
       Self::Bb => 3,
       Self::Tb => 4,
       Self::Bt => 5,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the FFmpeg `AVFieldOrder` code produced by
-  /// [`Self::to_u32`]. The canonical `AV_FIELD_UNKNOWN` code `0`
-  /// (and any other unrecognised id) maps to [`Self::Unknown`]
-  /// carrying the original value, so the round-trip is lossless.
+  /// [`Self::to_u32`]. Code `0` is FFmpeg's own `AV_FIELD_UNKNOWN` and
+  /// decodes to the named [`Self::Unknown`]; any other unrecognised id
+  /// yields [`None`].
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
+      0 => Self::Unknown,
       1 => Self::Progressive,
       2 => Self::Tt,
       3 => Self::Bb,
       4 => Self::Tb,
       5 => Self::Bt,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
@@ -1248,17 +1304,21 @@ impl core::str::FromStr for FieldOrder {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Ok(match s {
+      "unknown" => Self::Unknown,
       "progressive" => Self::Progressive,
       "tt" => Self::Tt,
       "bb" => Self::Bb,
       "tb" => Self::Tb,
       "bt" => Self::Bt,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(crate::parse::ParseError::unrecognised("FieldOrder")),
     })
   }
@@ -1273,16 +1333,16 @@ impl core::str::FromStr for FieldOrder {
 /// `AV_STEREO3D_FRAMESEQUENCE = 3`, `AV_STEREO3D_CHECKERBOARD = 4`,
 /// `AV_STEREO3D_SIDEBYSIDE_QUINCUNX = 5`, `AV_STEREO3D_LINES = 6`,
 /// `AV_STEREO3D_COLUMNS = 7`. Any other / future / corrupt wire
-/// value is preserved verbatim as [`Self::Unknown`] (lossless
-/// `Unknown(u32)` convention shared with [`Rotation`] / the colour
-/// enums).
+/// value is **rejected** by [`Self::from_u32`]; a *name* this build
+/// does not enumerate rides [`Self::Other`], the crate-wide extension
+/// idiom shared with [`Rotation`] / the colour enums.
 ///
 /// The [`Default`] is [`Self::Mono`] — a *real* code (value `0`,
 /// FFmpeg `AV_STEREO3D_2D`, plain monoscopic video), so the default
-/// is a named variant rather than `Unknown(0)` (the colour-enum
-/// named-default precedent, e.g. `DcpTargetGamut::DciP3`), distinct
-/// from [`FieldOrder`] whose `0` *is* FFmpeg's UNKNOWN sentinel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+/// is a real mode rather than an absence (the colour-enum named-default
+/// precedent, e.g. `DcpTargetGamut::DciP3`), distinct from
+/// [`FieldOrder`] whose `0` *is* FFmpeg's UNKNOWN sentinel.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -1291,10 +1351,6 @@ impl core::str::FromStr for FieldOrder {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::stereo_mode")
 )]
 pub enum StereoMode {
-  /// Unknown / unrecognised wire value. The wrapped `u32` is the
-  /// original value passed to [`Self::from_u32`] — preserved so the
-  /// round-trip is lossless.
-  Unknown(u32),
   /// Plain monoscopic (non-stereo) video — `AV_STEREO3D_2D` (code
   /// `0`). The [`Default`].
   Mono,
@@ -1312,12 +1368,23 @@ pub enum StereoMode {
   Lines,
   /// Interleaved by columns — `AV_STEREO3D_COLUMNS`.
   Columns,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for StereoMode {
   /// [`Self::Mono`] — FFmpeg `AV_STEREO3D_2D` (code `0`), plain
-  /// monoscopic video. A named variant (not `Unknown(0)`), the
-  /// colour-enum named-default precedent.
+  /// monoscopic video — a real mode, not an absence; the colour-enum
+  /// named-default precedent.
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn default() -> Self {
     Self::Mono
@@ -1325,12 +1392,11 @@ impl Default for StereoMode {
 }
 
 impl StereoMode {
-  /// Lowercase slug for this stereo mode; [`Self::Unknown`] renders
-  /// as `"unknown"`.
+  /// Lowercase slug for this stereo mode; [`Self::Other`] renders the
+  /// name it carries.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
       Self::Mono => "mono",
       Self::SideBySide => "side-by-side",
       Self::TopBottom => "top-bottom",
@@ -1339,19 +1405,21 @@ impl StereoMode {
       Self::SideBySideQuincunx => "side-by-side-quincunx",
       Self::Lines => "lines",
       Self::Columns => "columns",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
   /// Stable `u32` wire id = the FFmpeg `AVStereo3DType` code
   /// (`Mono`=0, `SideBySide`=1, `TopBottom`=2, `FrameSequence`=3,
   /// `Checkerboard`=4, `SideBySideQuincunx`=5, `Lines`=6,
-  /// `Columns`=7). [`Self::Unknown`] carries its original value
-  /// through unchanged so `from_u32(to_u32(x)) == x` for every
-  /// unrecognised `x`.
+  /// `Columns`=7).
+  ///
+  /// [`None`] for [`Self::Other`]: FFmpeg has no code for a name it
+  /// does not know.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::Mono => 0,
       Self::SideBySide => 1,
       Self::TopBottom => 2,
@@ -1360,17 +1428,17 @@ impl StereoMode {
       Self::SideBySideQuincunx => 5,
       Self::Lines => 6,
       Self::Columns => 7,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the FFmpeg `AVStereo3DType` code produced by
-  /// [`Self::to_u32`]. The canonical codes map to their named
-  /// variants (so a decoded value always round-trips); any other id
-  /// maps to [`Self::Unknown`] carrying the original value, so the
-  /// round-trip is lossless.
+  /// [`Self::to_u32`]. The canonical codes map to their named variants;
+  /// any other id yields [`None`].
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       0 => Self::Mono,
       1 => Self::SideBySide,
       2 => Self::TopBottom,
@@ -1379,8 +1447,19 @@ impl StereoMode {
       5 => Self::SideBySideQuincunx,
       6 => Self::Lines,
       7 => Self::Columns,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
@@ -1393,10 +1472,10 @@ impl core::str::FromStr for StereoMode {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Ok(match s {
       "mono" => Self::Mono,
@@ -1407,6 +1486,9 @@ impl core::str::FromStr for StereoMode {
       "side-by-side-quincunx" => Self::SideBySideQuincunx,
       "lines" => Self::Lines,
       "columns" => Self::Columns,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(crate::parse::ParseError::unrecognised("StereoMode")),
     })
   }
@@ -1497,7 +1579,7 @@ impl<B> Plane<B> {
 /// **No timestamp.** PTS / duration ride on the orthogonal
 /// [`TimestampedFrame<F>`] wrapper so the pixel-data layer stays
 /// independent of the timekeeping layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VideoFrame<P, B> {
   dimensions: Dimensions,
   visible_rect: Option<Rect>,
@@ -1592,8 +1674,8 @@ impl<P, B> VideoFrame<P, B> {
 
   /// Returns the color metadata.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn color(&self) -> crate::color::Info {
-    self.color
+  pub fn color(&self) -> crate::color::Info {
+    self.color.clone()
   }
 
   /// Sets the visible rect to `Some(v)` (consuming builder).
@@ -1615,7 +1697,7 @@ impl<P, B> VideoFrame<P, B> {
   /// Sets the color metadata (consuming builder).
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_color(mut self, v: crate::color::Info) -> Self {
+  pub fn with_color(mut self, v: crate::color::Info) -> Self {
     self.color = v;
     self
   }
@@ -1643,7 +1725,7 @@ impl<P, B> VideoFrame<P, B> {
 
   /// Sets the color metadata in place.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_color(&mut self, v: crate::color::Info) -> &mut Self {
+  pub fn set_color(&mut self, v: crate::color::Info) -> &mut Self {
     self.color = v;
     self
   }
@@ -1806,6 +1888,8 @@ mod subsampled_high_bit_planar;
 use derive_more::{Display, IsVariant};
 #[cfg(feature = "yuv-planar")]
 pub use planar_8bit::*;
+#[cfg(any(feature = "std", feature = "alloc"))]
+use smol_str::SmolStr;
 #[cfg(feature = "yuv-planar")]
 pub use subsampled_high_bit_planar::*;
 
@@ -2001,22 +2085,25 @@ mod tests_primitives {
   }
 
   #[test]
-  fn rotation_u32_round_trip_and_unknown() {
-    for r in [
-      Rotation::D0,
-      Rotation::D90,
-      Rotation::D180,
-      Rotation::D270,
-      Rotation::Unknown(99),
-      Rotation::Unknown(4242),
-    ] {
-      assert_eq!(Rotation::from_u32(r.to_u32()), r);
+  fn rotation_u32_round_trip_and_escape() {
+    for r in [Rotation::D0, Rotation::D90, Rotation::D180, Rotation::D270] {
+      assert_eq!(Rotation::from_u32(r.to_u32().unwrap()), Some(r));
     }
-    assert_eq!(Rotation::from_u32(0), Rotation::D0);
-    assert_eq!(Rotation::from_u32(3), Rotation::D270);
-    // Unrecognised → preserved losslessly (no silent collapse to D0).
-    assert_eq!(Rotation::from_u32(99), Rotation::Unknown(99));
-    assert_eq!(Rotation::from_u32(99).to_u32(), 99);
+    assert_eq!(Rotation::from_u32(0), Some(Rotation::D0));
+    assert_eq!(Rotation::from_u32(3), Some(Rotation::D270));
+    // Unrecognised → rejected, never a silent collapse to D0.
+    assert_eq!(Rotation::from_u32(99), None);
+  }
+
+  /// The escape carries a name, and has no numeric spelling. Needs the
+  /// allocator — at the no-alloc tier the vocabulary is closed.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  #[test]
+  fn rotation_escape_keeps_its_name() {
+    let odd = Rotation::other("45");
+    assert_eq!(odd.as_str(), "45");
+    assert_eq!(odd.to_u32(), None);
+    assert_eq!("45".parse(), Ok(odd));
   }
 
   #[test]
@@ -2404,9 +2491,12 @@ mod tests_primitives {
   // ---------- FieldOrder ------------------------------------------------
 
   #[test]
-  fn field_order_default_is_unknown_zero_and_as_str() {
-    assert_eq!(FieldOrder::default(), FieldOrder::Unknown(0));
-    assert_eq!(FieldOrder::Unknown(0).as_str(), "unknown");
+  fn field_order_default_is_unknown_and_as_str() {
+    assert_eq!(FieldOrder::default(), FieldOrder::Unknown);
+    assert_eq!(FieldOrder::Unknown.as_str(), "unknown");
+    // FFmpeg names its own absence, so `"unknown"` round-trips exactly —
+    // it is a variant, not the old payload-collapsing escape.
+    assert_eq!("unknown".parse(), Ok(FieldOrder::Unknown));
     assert_eq!(FieldOrder::Progressive.as_str(), "progressive");
     assert_eq!(FieldOrder::Tt.as_str(), "tt");
     assert_eq!(FieldOrder::Bb.as_str(), "bb");
@@ -2416,25 +2506,22 @@ mod tests_primitives {
   }
 
   #[test]
-  fn field_order_u32_round_trip_and_unknown() {
+  fn field_order_u32_round_trip_and_escape() {
     for f in [
+      FieldOrder::Unknown,
       FieldOrder::Progressive,
       FieldOrder::Tt,
       FieldOrder::Bb,
       FieldOrder::Tb,
       FieldOrder::Bt,
-      FieldOrder::Unknown(0),
-      FieldOrder::Unknown(99),
-      FieldOrder::Unknown(4242),
     ] {
-      assert_eq!(FieldOrder::from_u32(f.to_u32()), f);
+      assert_eq!(FieldOrder::from_u32(f.to_u32().unwrap()), Some(f));
     }
-    assert_eq!(FieldOrder::from_u32(1), FieldOrder::Progressive);
-    assert_eq!(FieldOrder::from_u32(5), FieldOrder::Bt);
-    // FFmpeg's own UNKNOWN sentinel (0) decodes to Unknown(0).
-    assert_eq!(FieldOrder::from_u32(0), FieldOrder::Unknown(0));
-    assert_eq!(FieldOrder::from_u32(99), FieldOrder::Unknown(99));
-    assert_eq!(FieldOrder::from_u32(99).to_u32(), 99);
+    assert_eq!(FieldOrder::from_u32(1), Some(FieldOrder::Progressive));
+    assert_eq!(FieldOrder::from_u32(5), Some(FieldOrder::Bt));
+    // FFmpeg's own UNKNOWN sentinel (0) decodes to the named variant.
+    assert_eq!(FieldOrder::from_u32(0), Some(FieldOrder::Unknown));
+    assert_eq!(FieldOrder::from_u32(99), None);
   }
 
   // ---------- StereoMode ------------------------------------------------
@@ -2445,12 +2532,11 @@ mod tests_primitives {
     assert_eq!(StereoMode::Mono.as_str(), "mono");
     assert_eq!(StereoMode::SideBySide.as_str(), "side-by-side");
     assert_eq!(StereoMode::Columns.as_str(), "columns");
-    assert_eq!(StereoMode::Unknown(0).as_str(), "unknown");
     assert!(StereoMode::Mono.is_mono());
   }
 
   #[test]
-  fn stereo_mode_u32_round_trip_and_unknown() {
+  fn stereo_mode_u32_round_trip_and_escape() {
     for s in [
       StereoMode::Mono,
       StereoMode::SideBySide,
@@ -2460,16 +2546,21 @@ mod tests_primitives {
       StereoMode::SideBySideQuincunx,
       StereoMode::Lines,
       StereoMode::Columns,
-      StereoMode::Unknown(99),
-      StereoMode::Unknown(4242),
     ] {
-      assert_eq!(StereoMode::from_u32(s.to_u32()), s);
+      assert_eq!(StereoMode::from_u32(s.to_u32().unwrap()), Some(s));
     }
-    assert_eq!(StereoMode::from_u32(0), StereoMode::Mono);
-    assert_eq!(StereoMode::from_u32(7), StereoMode::Columns);
-    // Unrecognised → preserved losslessly.
-    assert_eq!(StereoMode::from_u32(99), StereoMode::Unknown(99));
-    assert_eq!(StereoMode::from_u32(99).to_u32(), 99);
+    assert_eq!(StereoMode::from_u32(0), Some(StereoMode::Mono));
+    assert_eq!(StereoMode::from_u32(7), Some(StereoMode::Columns));
+    assert_eq!(StereoMode::from_u32(99), None);
+  }
+
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  #[test]
+  fn stereo_mode_escape_keeps_its_name() {
+    let vendor = StereoMode::other("Anaglyph");
+    assert_eq!(vendor.as_str(), "anaglyph");
+    assert_eq!(vendor.to_u32(), None);
+    assert_eq!("anaglyph".parse(), Ok(vendor));
   }
 
   /// Every named variant of the three coded frame enums must survive
@@ -2479,28 +2570,28 @@ mod tests_primitives {
     macro_rules! sweep {
       ($ty:ty) => {{
         let mut named = 0usize;
-        let mut seen: [&str; 32] = [""; 32];
+        let mut codes = [0u32; 32];
         for code in 0..=1024u32 {
-          let value = <$ty>::from_u32(code);
-          if value.is_unknown() {
+          let Some(value) = <$ty>::from_u32(code) else {
             continue;
-          }
+          };
           let slug = value.as_str();
           assert_eq!(
             slug.parse::<$ty>(),
-            Ok(value),
+            Ok(value.clone()),
             "{} slug {slug:?} does not parse back to {value:?}",
             stringify!($ty)
           );
-          for prior in seen.iter().take(named) {
+          for prior in codes.iter().take(named) {
+            let prior = <$ty>::from_u32(*prior).expect("recorded code names a variant");
             assert_ne!(
-              *prior,
+              prior.as_str(),
               slug,
               "{} has two variants spelled {slug:?}",
               stringify!($ty)
             );
           }
-          seen[named] = slug;
+          codes[named] = code;
           named += 1;
         }
         assert!(
@@ -2517,16 +2608,22 @@ mod tests_primitives {
   }
 
   #[test]
-  fn frame_enum_unknown_has_no_parseable_spelling() {
-    assert!("unknown".parse::<Rotation>().is_err());
-    assert!("unknown".parse::<FieldOrder>().is_err());
-    assert!("unknown".parse::<StereoMode>().is_err());
+  fn field_order_names_its_own_unknown() {
+    // `"unknown"` is a *name* now, not a payload-collapsing arm: on
+    // `FieldOrder` it is FFmpeg's own variant.
+    assert_eq!("unknown".parse(), Ok(FieldOrder::Unknown));
+  }
+
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  #[test]
+  fn frame_enum_escape_keeps_the_name_it_was_given() {
+    // Elsewhere `"unknown"` rides the escape like any other name this
+    // build does not enumerate.
+    assert_eq!("unknown".parse(), Ok(Rotation::other("unknown")));
+    assert_eq!("unknown".parse(), Ok(StereoMode::other("unknown")));
     assert_eq!(
+      "not-a-rotation".parse::<Rotation>().unwrap().as_str(),
       "not-a-rotation"
-        .parse::<Rotation>()
-        .unwrap_err()
-        .type_name(),
-      "Rotation"
     );
   }
 

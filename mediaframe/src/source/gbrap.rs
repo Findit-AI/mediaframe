@@ -25,7 +25,7 @@ impl SourceFormat for Gbrap {}
 /// G / B / R / A order. Alpha is real (not padding) and is passed
 /// through to RGBA output. Use the [`Self::g`] / [`Self::b`] /
 /// [`Self::r`] / [`Self::a`] accessors.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct GbrapRow<'a> {
   y: &'a [u8],
   u: &'a [u8],
@@ -87,8 +87,8 @@ impl<'a> GbrapRow<'a> {
   }
   /// YUV/RGB conversion matrix carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn matrix(&self) -> Matrix {
-    self.matrix
+  pub fn matrix(&self) -> Matrix {
+    self.matrix.clone()
   }
   /// Full-range vs limited-range flag carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
@@ -133,7 +133,7 @@ pub fn gbrap_to<S: GbrapSink>(
     let a_start = row * a_stride;
     let a = &a_plane[a_start..a_start + w];
 
-    sink.process(GbrapRow::new(y, u, v, a, row, matrix, full_range))?;
+    sink.process(GbrapRow::new(y, u, v, a, row, matrix.clone(), full_range))?;
   }
   Ok(())
 }

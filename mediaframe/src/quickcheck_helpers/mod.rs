@@ -16,6 +16,29 @@
 //! consume `quickcheck::Gen` directly. The two `Arbitrary` features
 //! (`arbitrary` and `quickcheck`) are independent: enable either one alone.
 
+/// Emit one `pub(crate) fn $name(g) -> $ty` for an **open string enum** —
+/// 50/50 a curated slug or an arbitrary string, both through `FromStr`.
+///
+/// `FromStr` is the canonicalising constructor: a named slug yields the
+/// named variant, only a non-named slug yields `Other`. Routing the
+/// arbitrary-string branch through it too (rather than `Other(SmolStr)`
+/// directly) guarantees a string equal to a named slug becomes that named
+/// variant — never a malformed `Other("h264")` that serde would
+/// canonicalise to `H264` on the round trip. An arbitrary string is
+/// virtually never a named slug, so the `Other` arm stays well-covered.
+macro_rules! qc_open_string_enum {
+  ($name:ident, $ty:ty, [$($slug:literal),+ $(,)?]) => {
+    pub(crate) fn $name(g: &mut ::quickcheck::Gen) -> $ty {
+      const SAMPLES: &[&str] = &[$($slug),+];
+      let s = if $crate::quickcheck_helpers::coin(g) {
+        ::std::string::String::from(*g.choose(SAMPLES).unwrap())
+      } else {
+        $crate::quickcheck_helpers::arb_string(g)
+      };
+      <$ty as ::core::str::FromStr>::from_str(&s).unwrap()
+    }
+  };
+}
 pub(crate) mod coded;
 pub(crate) mod composite;
 pub(crate) mod strings;
@@ -113,33 +136,31 @@ mod tests {
   }
 
   #[test]
-  fn reachability_weighted_rotation_hits_named_and_unknown() {
+  fn reachability_rotation_hits_named_and_escape() {
     use crate::frame::Rotation;
     let mut saw_named = false;
-    let mut saw_unknown = false;
+    let mut saw_other = false;
     drive(64, 2048, |g| match Rotation::arbitrary(g) {
-      Rotation::Unknown(_) => saw_unknown = true,
+      Rotation::Other(_) => saw_other = true,
       _ => saw_named = true,
     });
     assert!(
-      saw_named && saw_unknown,
-      "Rotation missing arms: named={saw_named} unknown={saw_unknown}"
+      saw_named && saw_other,
+      "Rotation missing arms: named={saw_named} other={saw_other}"
     );
   }
 
   // Every one of `SampleFormat`'s 12 named variants must be reachable —
-  // plus the `Unknown(_)` and `Other(_)` escape arms. A weaker
-  // "some named appears" check (Codex round-2 finding) would pass even
-  // if half the slug list were missing.
+  // plus the `Other(_)` escape arm. A weaker "some named appears" check
+  // (Codex round-2 finding) would pass even if half the slug list were
+  // missing.
   #[test]
   fn reachability_sample_format_all_named_plus_arms() {
     use crate::audio::SampleFormat;
     use ::std::collections::HashSet;
     let mut named: HashSet<::std::string::String> = HashSet::new();
-    let mut saw_unknown = false;
     let mut saw_other = false;
     drive(64, 4096, |g| match SampleFormat::arbitrary(g) {
-      SampleFormat::Unknown(_) => saw_unknown = true,
       SampleFormat::Other(_) => saw_other = true,
       other => {
         named.insert(other.as_str().to_string());
@@ -150,7 +171,6 @@ mod tests {
       12,
       "missing named SampleFormat variants; observed: {named:?}"
     );
-    assert!(saw_unknown, "SampleFormat: never observed `Unknown(_)`");
     assert!(saw_other, "SampleFormat: never observed `Other(_)`");
   }
 
@@ -165,48 +185,51 @@ mod tests {
     let mut transfer: HashSet<u32> = HashSet::new();
     let mut pixel: HashSet<u32> = HashSet::new();
     drive(64, 8192, |g| {
-      matrix.insert(crate::color::Matrix::arbitrary(g).to_u32());
-      primaries.insert(crate::color::Primaries::arbitrary(g).to_u32());
-      transfer.insert(crate::color::Transfer::arbitrary(g).to_u32());
-      pixel.insert(crate::pixel_format::PixelFormat::arbitrary(g).to_u32());
+      matrix.extend(crate::color::Matrix::arbitrary(g).to_u32());
+      primaries.extend(crate::color::Primaries::arbitrary(g).to_u32());
+      transfer.extend(crate::color::Transfer::arbitrary(g).to_u32());
+      pixel.extend(crate::pixel_format::PixelFormat::arbitrary(g).to_u32());
     });
     let in_range = |s: &HashSet<u32>, max: u32| s.iter().filter(|&&c| c <= max).count();
     assert!(
-      in_range(&matrix, 17) >= 10,
+      in_range(&matrix, 17) >= 3,
       "Matrix named-range coverage too low: {matrix:?}"
     );
     // `Matrix::Bt601` is the domain-extension variant at `DOMAIN_EXT_BASE`
-    // — must be reached by the hand-written 3-way `matrix` helper, not just
-    // the rare full-`u32` fallback.
+    // — it is in the curated slug list precisely so the generator reaches
+    // it; the numeric generator it replaced hit it once in 8.6 billion.
     assert!(
       matrix.contains(&crate::color::DOMAIN_EXT_BASE),
       "Matrix::Bt601 (DOMAIN_EXT_BASE) never generated"
     );
     assert!(
-      in_range(&primaries, 22) >= 8,
+      in_range(&primaries, 22) >= 3,
       "Primaries named-range coverage too low: {primaries:?}"
     );
     assert!(
-      in_range(&transfer, 18) >= 10,
+      in_range(&transfer, 18) >= 3,
       "Transfer named-range coverage too low: {transfer:?}"
     );
-    // PixelFormat: 270 named codes spread over 0..=947 — a generous floor.
+    // PixelFormat draws from a curated 6-slug list plus the escape.
     assert!(
-      in_range(&pixel, 947) >= 40,
+      in_range(&pixel, 947) >= 3,
       "PixelFormat named-range coverage too low: {} distinct",
       in_range(&pixel, 947)
     );
   }
 
   #[test]
-  fn coded_enums_roundtrip_through_code() {
+  fn generated_vocabulary_values_round_trip_through_their_name() {
     drive(64, 128, |g| {
-      let m = crate::color::Matrix::arbitrary(g);
-      assert_eq!(crate::color::Matrix::from_u32(m.to_u32()), m);
-      let p = crate::pixel_format::PixelFormat::arbitrary(g);
-      assert_eq!(crate::pixel_format::PixelFormat::from_u32(p.to_u32()), p);
-      let r = crate::frame::Rotation::arbitrary(g);
-      assert_eq!(crate::frame::Rotation::from_u32(r.to_u32()), r);
+      macro_rules! rt {
+        ($ty:path) => {{
+          let v = <$ty>::arbitrary(g);
+          assert_eq!(v.as_str().parse::<$ty>(), Ok(v.clone()), "{v:?}");
+        }};
+      }
+      rt!(crate::color::Matrix);
+      rt!(crate::pixel_format::PixelFormat);
+      rt!(crate::frame::Rotation);
       let d = crate::disposition::TrackDisposition::arbitrary(g);
       assert_eq!(
         crate::disposition::TrackDisposition::from_u32(d.to_u32()),

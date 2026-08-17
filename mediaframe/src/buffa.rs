@@ -15,23 +15,22 @@
 //!
 //! ```text
 //! Matrix    { uint32 value = 1; }   // value = to_u32()
-//! Primaries { uint32 value = 1; }
-//! Transfer  { uint32 value = 1; }
-//! DynamicRange     { uint32 value = 1; }
-//! ChromaLocation { uint32 value = 1; }
-//! DcpTargetGamut { uint32 value = 1; }
-//! Rotation       { uint32 value = 1; }
-//! FieldOrder     { uint32 value = 1; }   // value = to_u32() (FFmpeg AVFieldOrder code)
-//! StereoMode     { uint32 value = 1; }   // value = to_u32() (FFmpeg AVStereo3DType code)
-//! PixelFormat    { uint32 value = 1; }   // value = to_u32() (Unknown(n) → n)
+//! Primaries { string value = 1; }
+//! Transfer  { string value = 1; }
+//! DynamicRange     { string value = 1; }
+//! ChromaLocation { string value = 1; }
+//! DcpTargetGamut { string value = 1; }
+//! Rotation       { string value = 1; }
+//! FieldOrder     { string value = 1; }
+//! StereoMode     { string value = 1; }
+//! PixelFormat    { string value = 1; }
 //! ```
 //!
-//! Each enum encodes its stable `to_u32()` id as a single `uint32`
-//! at field #1, decoded via `from_u32()`. The colour enums now use
-//! the **FFmpeg code points** (e.g. `Matrix::Unspecified` → 2,
-//! `Matrix::Rgb` → 0); an unrecognised id round-trips losslessly
-//! as `Unknown(n)` (every enum, including `PixelFormat`, has a
-//! data-carrying `Unknown(u32)`).
+//! Each enum encodes its `as_str()` slug as a single `string` at
+//! field #1, decoded via `FromStr` — the same shape the codec family
+//! has always used. The slug is the spelling because `Other(SmolStr)`
+//! is the crate's one extension idiom: a value this build does not
+//! name still has a *name*, and a number would not carry it.
 //!
 //! **Default-elision (not proto3 zero-elision):** the field is
 //! written iff `*self != <Ty>::default()`. The decoder seeds the
@@ -44,7 +43,7 @@
 //! encoded, so it is never conflated with an absent field. Plain
 //! proto3 zero-elision would be **unsound** here (it would drop the
 //! non-default code-`0` `Rgb`); default-elision is exact for every
-//! value and `Unknown(n)` is lossless. Wrong wire type on field #1 →
+//! value. Wrong wire type on field #1 →
 //! `DecodeError::WireTypeMismatch`; unknown fields are skipped via
 //! `skip_field_depth`.
 //!
@@ -153,13 +152,9 @@
 //! ```
 //!
 //! - **String-bearing enums** (`ChannelLayout`, `ContainerFormat`,
-//!   `Format`) encode their `as_str()` slug. Default
+//!   `Format`, `SampleFormat`) encode their `as_str()` slug. Default
 //!   (where defined) elides; `Other(SmolStr)` round-trips losslessly.
-//!   `BitRateMode` and `SampleFormat` encode the `to_u32()` id;
-//!   `SampleFormat::Other(SmolStr)` collapses to `Unknown(u32::MAX)`
-//!   on the wire (string content is not preserved by the numeric
-//!   codec — `Other` is meant for the `FromStr` lossless escape, not
-//!   the wire).
+//!   `BitRateMode` is strictly closed and encodes its `to_u32()` id.
 //! - **`Loudness`** — all four `f32` fields use proto3 zero-elision
 //!   (`Default` is all-zero == proto-zero for `f32`). Each present
 //!   field is wire-type `Fixed32` (4 bytes LE).
@@ -291,136 +286,11 @@ use crate::{
 const VARINT: u8 = WireType::Varint as u8;
 const LEN: u8 = WireType::LengthDelimited as u8;
 
-// ----------------------------------------------------------------------------
-// Enum codec helper.
-//
-// A standalone enum is a one-field message: `uint32 value = 1`,
-// where `value` is the stable `to_u32()` id (the FFmpeg code point
-// for the colour enums). The field is encoded with **default-elision**
-// (NOT proto3 zero-elision): written iff `*self != <Ty>::default()`.
-// The decoder seeds from `Default` (= FFmpeg `UNSPECIFIED` for the
-// colour enums), so an absent field decodes back to the default; a
-// present field always carries the exact code — including code 0
-// (`Matrix::Rgb`), which is non-default and therefore explicitly
-// encoded, so it is never conflated with an absent field. Plain
-// zero-elision would drop that non-default code-0 value and is thus
-// unsound here. `Unknown(n)` round-trips losslessly. Requires
-// `Ty: PartialEq` (every enum derives it).
-// ----------------------------------------------------------------------------
-
-macro_rules! impl_enum_message {
-  ($ty:ty, $to:expr, $from:expr) => {
-    impl DefaultInstance for $ty {
-      fn default_instance() -> &'static Self {
-        static VALUE: buffa::__private::OnceBox<$ty> = buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| buffa::alloc::boxed::Box::new(<$ty>::default()))
-      }
-    }
-
-    impl Message for $ty {
-      fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
-        // Default-elision (NOT proto3 zero-elision): the decoder
-        // seeds from `Default`, so only a non-default value needs
-        // its FFmpeg-code id written. Code 0 (`Matrix::Rgb`)
-        // is non-default and is therefore encoded.
-        if *self != <$ty>::default() {
-          let v: u32 = $to(self);
-          1 + uint32_encoded_len(v) as u32
-        } else {
-          0
-        }
-      }
-
-      fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
-        // Default-elision (NOT proto3 zero-elision): see `compute_size`.
-        if *self != <$ty>::default() {
-          let v: u32 = $to(self);
-          Tag::new(1, WireType::Varint).encode(buf);
-          encode_uint32(v, buf);
-        }
-      }
-
-      fn merge_field(
-        &mut self,
-        tag: Tag,
-        buf: &mut impl Buf,
-        ctx: DecodeContext<'_>,
-      ) -> Result<(), DecodeError> {
-        match tag.field_number() {
-          1 => {
-            if tag.wire_type() != WireType::Varint {
-              return Err(DecodeError::WireTypeMismatch {
-                field_number: 1,
-                expected: VARINT,
-                actual: tag.wire_type() as u8,
-              });
-            }
-            let v = decode_uint32(buf)?;
-            *self = $from(v);
-          }
-          _ => skip_field_depth(tag, buf, ctx.depth())?,
-        }
-        Ok(())
-      }
-
-      fn clear(&mut self) {
-        *self = <$ty>::default();
-      }
-    }
-  };
-}
-
-impl_enum_message!(Matrix, |s: &Matrix| s.to_u32(), Matrix::from_u32);
-impl_enum_message!(Primaries, |s: &Primaries| s.to_u32(), Primaries::from_u32);
-impl_enum_message!(Transfer, |s: &Transfer| s.to_u32(), Transfer::from_u32);
-impl_enum_message!(
-  DynamicRange,
-  |s: &DynamicRange| s.to_u32(),
-  DynamicRange::from_u32
-);
-impl_enum_message!(
-  ChromaLocation,
-  |s: &ChromaLocation| s.to_u32(),
-  ChromaLocation::from_u32
-);
-impl_enum_message!(
-  DcpTargetGamut,
-  |s: &DcpTargetGamut| s.to_u32(),
-  DcpTargetGamut::from_u32
-);
-impl_enum_message!(Rotation, |s: &Rotation| s.to_u32(), Rotation::from_u32);
-// `FieldOrder` default is `Unknown(0)` (FFmpeg `AV_FIELD_UNKNOWN`,
-// code 0): `to_u32` of the default is `0`, so it elides; an absent
-// field decodes via `from_u32(seed)` back to `Unknown(0)` (no
-// canonical id is `0`), so the round-trip is lossless. Named
-// variants and other `Unknown(n)` are non-default and explicitly
-// encoded.
-impl_enum_message!(
-  FieldOrder,
-  |s: &FieldOrder| s.to_u32(),
-  FieldOrder::from_u32
-);
-// `StereoMode` default is `Mono` (FFmpeg `AV_STEREO3D_2D`, a *real*
-// code, value 0). The default elides; an absent field decodes via
-// `from_u32(0)` → `Mono` (the named variant for code 0), so the
-// round-trip is exact. Non-default values (incl. `Unknown(n)`) are
-// explicitly encoded; `Unknown` wrapping a canonical id
-// canonicalises to its named variant on decode (the shared
-// decoder-only `Unknown` convention, like `DcpTargetGamut`).
-impl_enum_message!(
-  StereoMode,
-  |s: &StereoMode| s.to_u32(),
-  StereoMode::from_u32
-);
-// `PixelFormat::to_u32` consumes `self` (it is `Copy`); `from_u32`
-// maps unrecognised ids to `Unknown(n)` so the round-trip is
-// lossless even for the elided-default case (`Unknown(0)` is the
-// `Default`, so it elides and decodes back to `Unknown(0)`).
-impl_enum_message!(
-  PixelFormat,
-  |s: &PixelFormat| s.to_u32(),
-  PixelFormat::from_u32
-);
+// The colour / frame / pixel-format vocabularies carry names, not numbers:
+// `Other(SmolStr)` is the escape, so the slug is the only spelling that
+// survives a value this build has never heard of. They therefore ride the
+// same one-field `{ string value = 1; }` shape as the codec family — see
+// `impl_string_enum_message!` below. The declarations sit there, beside it.
 
 // ----------------------------------------------------------------------------
 // Dimensions — { uint32 width = 1; uint32 height = 2; }
@@ -1002,11 +872,12 @@ impl Message for DolbyVisionConfig {
 }
 
 // ----------------------------------------------------------------------------
-// Info — five enum ids, each a bare `uint32`, ALL always
-// encoded. See the module doc: always-encoding (esp. `matrix`, whose
-// semantic default is `Bt709`) decouples the wire round-trip from
-// the `Matrix` discriminant assignment — the `mediatime`
-// always-encode-nontrivial-default stance. Tags #1–#5 single-byte.
+// Info — five enum slugs, each a bare `string`, ALL always encoded.
+// See the module doc: always-encoding (esp. `matrix`, whose semantic
+// default is `Bt709`) decouples the wire round-trip from the field's own
+// default — the `mediatime` always-encode-nontrivial-default stance.
+// Tags #1–#5 single-byte. The slug is the spelling because the member
+// enums' only escape is `Other(SmolStr)`.
 // ----------------------------------------------------------------------------
 
 impl DefaultInstance for Info {
@@ -1019,24 +890,24 @@ impl DefaultInstance for Info {
 impl Message for Info {
   fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
     // All five are unconditionally encoded (presence-independent).
-    5 + uint32_encoded_len(self.primaries().to_u32()) as u32
-      + uint32_encoded_len(self.transfer().to_u32()) as u32
-      + uint32_encoded_len(self.matrix().to_u32()) as u32
-      + uint32_encoded_len(self.range().to_u32()) as u32
-      + uint32_encoded_len(self.chroma_location().to_u32()) as u32
+    5 + string_encoded_len(self.primaries().as_str()) as u32
+      + string_encoded_len(self.transfer().as_str()) as u32
+      + string_encoded_len(self.matrix().as_str()) as u32
+      + string_encoded_len(self.range().as_str()) as u32
+      + string_encoded_len(self.chroma_location().as_str()) as u32
   }
 
   fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
-    Tag::new(1, WireType::Varint).encode(buf);
-    encode_uint32(self.primaries().to_u32(), buf);
-    Tag::new(2, WireType::Varint).encode(buf);
-    encode_uint32(self.transfer().to_u32(), buf);
-    Tag::new(3, WireType::Varint).encode(buf);
-    encode_uint32(self.matrix().to_u32(), buf);
-    Tag::new(4, WireType::Varint).encode(buf);
-    encode_uint32(self.range().to_u32(), buf);
-    Tag::new(5, WireType::Varint).encode(buf);
-    encode_uint32(self.chroma_location().to_u32(), buf);
+    Tag::new(1, WireType::LengthDelimited).encode(buf);
+    encode_string(self.primaries().as_str(), buf);
+    Tag::new(2, WireType::LengthDelimited).encode(buf);
+    encode_string(self.transfer().as_str(), buf);
+    Tag::new(3, WireType::LengthDelimited).encode(buf);
+    encode_string(self.matrix().as_str(), buf);
+    Tag::new(4, WireType::LengthDelimited).encode(buf);
+    encode_string(self.range().as_str(), buf);
+    Tag::new(5, WireType::LengthDelimited).encode(buf);
+    encode_string(self.chroma_location().as_str(), buf);
   }
 
   fn merge_field(
@@ -1047,59 +918,59 @@ impl Message for Info {
   ) -> Result<(), DecodeError> {
     match tag.field_number() {
       1 => {
-        if tag.wire_type() != WireType::Varint {
+        if tag.wire_type() != WireType::LengthDelimited {
           return Err(DecodeError::WireTypeMismatch {
             field_number: 1,
-            expected: VARINT,
+            expected: LEN,
             actual: tag.wire_type() as u8,
           });
         }
-        let v = decode_uint32(buf)?;
-        self.set_primaries(Primaries::from_u32(v));
+        let s = decode_string(buf)?;
+        self.set_primaries(s.parse().unwrap_or_else(|_| unreachable!()));
       }
       2 => {
-        if tag.wire_type() != WireType::Varint {
+        if tag.wire_type() != WireType::LengthDelimited {
           return Err(DecodeError::WireTypeMismatch {
             field_number: 2,
-            expected: VARINT,
+            expected: LEN,
             actual: tag.wire_type() as u8,
           });
         }
-        let v = decode_uint32(buf)?;
-        self.set_transfer(Transfer::from_u32(v));
+        let s = decode_string(buf)?;
+        self.set_transfer(s.parse().unwrap_or_else(|_| unreachable!()));
       }
       3 => {
-        if tag.wire_type() != WireType::Varint {
+        if tag.wire_type() != WireType::LengthDelimited {
           return Err(DecodeError::WireTypeMismatch {
             field_number: 3,
-            expected: VARINT,
+            expected: LEN,
             actual: tag.wire_type() as u8,
           });
         }
-        let v = decode_uint32(buf)?;
-        self.set_matrix(Matrix::from_u32(v));
+        let s = decode_string(buf)?;
+        self.set_matrix(s.parse().unwrap_or_else(|_| unreachable!()));
       }
       4 => {
-        if tag.wire_type() != WireType::Varint {
+        if tag.wire_type() != WireType::LengthDelimited {
           return Err(DecodeError::WireTypeMismatch {
             field_number: 4,
-            expected: VARINT,
+            expected: LEN,
             actual: tag.wire_type() as u8,
           });
         }
-        let v = decode_uint32(buf)?;
-        self.set_range(DynamicRange::from_u32(v));
+        let s = decode_string(buf)?;
+        self.set_range(s.parse().unwrap_or_else(|_| unreachable!()));
       }
       5 => {
-        if tag.wire_type() != WireType::Varint {
+        if tag.wire_type() != WireType::LengthDelimited {
           return Err(DecodeError::WireTypeMismatch {
             field_number: 5,
-            expected: VARINT,
+            expected: LEN,
             actual: tag.wire_type() as u8,
           });
         }
-        let v = decode_uint32(buf)?;
-        self.set_chroma_location(ChromaLocation::from_u32(v));
+        let s = decode_string(buf)?;
+        self.set_chroma_location(s.parse().unwrap_or_else(|_| unreachable!()));
       }
       _ => skip_field_depth(tag, buf, ctx.depth())?,
     }
@@ -1499,10 +1370,11 @@ impl Message for HdrStaticMetadata {
 // String-bearing enum codec helper.
 //
 // One-field message `{ string value = 1; }` where `value` is the
-// `as_str()` slug. Default-elision: written iff
-// `*self != <Ty>::default()`. For enums without `Default`, the
-// "default" is the wire-zero state (empty string → `Other("")`),
-// and we encode every non-zero value.
+// `as_str()` slug — the crate's one wire shape for a name vocabulary.
+// Default-elision: written iff `*self != $default_expr`. For enums with
+// a `Default` that is a named variant, that default elides and an absent
+// field decodes back to it; for enums without one, the "default" is the
+// wire-zero state (empty string → `Other("")`).
 // ----------------------------------------------------------------------------
 
 macro_rules! impl_string_enum_message {
@@ -1516,23 +1388,21 @@ macro_rules! impl_string_enum_message {
 
     impl Message for $ty {
       fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
-        // Always-encode: every value (including the `Other("")`
-        // wire-zero) round-trips losslessly. The decoder seed is the
-        // wire-zero state, so an absent field decodes to that exact
-        // state — there is no information loss.
-        let s = self.as_str();
-        if !s.is_empty() {
-          1 + string_encoded_len(s) as u32
+        // Default-elision: the decoder seeds from the same default, so an
+        // absent field decodes back to it exactly. Every other value —
+        // including the empty slug where that is not the default —
+        // writes its name.
+        if *self != $default_expr {
+          1 + string_encoded_len(self.as_str()) as u32
         } else {
           0
         }
       }
 
       fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
-        let s = self.as_str();
-        if !s.is_empty() {
+        if *self != $default_expr {
           Tag::new(1, WireType::LengthDelimited).encode(buf);
-          encode_string(s, buf);
+          encode_string(self.as_str(), buf);
         }
       }
 
@@ -1575,6 +1445,21 @@ impl_string_enum_message!(
   ContainerFormat::Other(SmolStr::new_inline(""))
 );
 impl_string_enum_message!(Format, Format::Other(SmolStr::new_inline("")));
+
+// Name vocabularies with a real `Default`: the seed is that default, and
+// every value writes its slug. `Unknown(u32)` is gone, so a number is no
+// longer a spelling any of these has.
+impl_string_enum_message!(Matrix, Matrix::default());
+impl_string_enum_message!(Primaries, Primaries::default());
+impl_string_enum_message!(Transfer, Transfer::default());
+impl_string_enum_message!(DynamicRange, DynamicRange::default());
+impl_string_enum_message!(ChromaLocation, ChromaLocation::default());
+impl_string_enum_message!(DcpTargetGamut, DcpTargetGamut::default());
+impl_string_enum_message!(Rotation, Rotation::default());
+impl_string_enum_message!(FieldOrder, FieldOrder::default());
+impl_string_enum_message!(StereoMode, StereoMode::default());
+impl_string_enum_message!(PixelFormat, PixelFormat::default());
+impl_string_enum_message!(SampleFormat, SampleFormat::default());
 
 // ----------------------------------------------------------------------------
 // BitRateMode — { uint32 value = 1; }
@@ -1633,71 +1518,6 @@ impl Message for BitRateMode {
 
   fn clear(&mut self) {
     *self = BitRateMode::default();
-  }
-}
-
-// ----------------------------------------------------------------------------
-// SampleFormat — { uint32 value = 1; }
-//
-// FFmpeg-coded; `SampleFormat::default() == Unknown(u32::MAX)` (the
-// `AV_SAMPLE_FMT_NONE` sentinel), whose `to_u32() == u32::MAX`.
-// That is NOT proto-zero, so default-elision (NOT proto3
-// zero-elision) is used: written iff `*self != default()`. `U8`
-// (code `0`) is non-default and therefore explicitly encoded —
-// never conflated with the absent / default sentinel.
-// `Other(SmolStr)` collapses to `Unknown(u32::MAX)` on the wire
-// (numeric codec; the slug is preserved only on the `FromStr` path).
-// ----------------------------------------------------------------------------
-
-impl DefaultInstance for SampleFormat {
-  fn default_instance() -> &'static Self {
-    static VALUE: buffa::__private::OnceBox<SampleFormat> = buffa::__private::OnceBox::new();
-    VALUE.get_or_init(|| buffa::alloc::boxed::Box::new(SampleFormat::default()))
-  }
-}
-
-impl Message for SampleFormat {
-  fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
-    if *self != SampleFormat::default() {
-      let v = self.to_u32();
-      1 + uint32_encoded_len(v) as u32
-    } else {
-      0
-    }
-  }
-
-  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
-    if *self != SampleFormat::default() {
-      let v = self.to_u32();
-      Tag::new(1, WireType::Varint).encode(buf);
-      encode_uint32(v, buf);
-    }
-  }
-
-  fn merge_field(
-    &mut self,
-    tag: Tag,
-    buf: &mut impl Buf,
-    ctx: DecodeContext<'_>,
-  ) -> Result<(), DecodeError> {
-    match tag.field_number() {
-      1 => {
-        if tag.wire_type() != WireType::Varint {
-          return Err(DecodeError::WireTypeMismatch {
-            field_number: 1,
-            expected: VARINT,
-            actual: tag.wire_type() as u8,
-          });
-        }
-        *self = SampleFormat::from_u32(decode_uint32(buf)?);
-      }
-      _ => skip_field_depth(tag, buf, ctx.depth())?,
-    }
-    Ok(())
-  }
-
-  fn clear(&mut self) {
-    *self = SampleFormat::default();
   }
 }
 
@@ -2797,9 +2617,9 @@ mod tests {
   // decodes back to `default()`; (b) a non-default value whose
   // `to_u32() == 0` (`Matrix::Rgb`, FFmpeg `AVCOL_SPC_RGB`)
   // encodes to NON-zero bytes and round-trips — proving an absent
-  // field is never conflated with code-0 `Rgb`; (c) `Unknown(12345)`
-  // round-trips losslessly; (d) a normal non-default value
-  // round-trips.
+  // field is never conflated with code-0 `Rgb`; (c) the `Other(name)`
+  // escape round-trips with its name intact; (d) a normal non-default
+  // value round-trips.
 
   #[test]
   fn enum_default_elides_to_zero_bytes() {
@@ -2847,22 +2667,25 @@ mod tests {
   }
 
   #[test]
-  fn enum_unknown_round_trips_losslessly() {
-    // (c) `Unknown(12345)` survives encode/decode for every enum.
-    macro_rules! rt_unknown {
+  fn enum_escape_round_trips_with_its_name() {
+    // (c) A name this build does not enumerate survives encode/decode
+    // for every enum — the whole point of moving the wire to the slug.
+    macro_rules! rt_other {
       ($ty:ty) => {{
-        let v = <$ty>::Unknown(12_345);
+        let v = <$ty>::other("vendor-value-12345");
         let b = v.encode_to_vec();
-        assert_eq!(<$ty>::decode_from_slice(&b).unwrap(), v);
+        let back = <$ty>::decode_from_slice(&b).unwrap();
+        assert_eq!(back, v);
+        assert_eq!(back.as_str(), "vendor-value-12345");
       }};
     }
-    rt_unknown!(Matrix);
-    rt_unknown!(Primaries);
-    rt_unknown!(Transfer);
-    rt_unknown!(DynamicRange);
-    rt_unknown!(ChromaLocation);
-    rt_unknown!(DcpTargetGamut);
-    rt_unknown!(PixelFormat);
+    rt_other!(Matrix);
+    rt_other!(Primaries);
+    rt_other!(Transfer);
+    rt_other!(DynamicRange);
+    rt_other!(ChromaLocation);
+    rt_other!(DcpTargetGamut);
+    rt_other!(PixelFormat);
   }
 
   #[test]
@@ -2888,29 +2711,25 @@ mod tests {
   }
 
   #[test]
-  fn dcp_target_gamut_unknown_canonicalization() {
-    // Codex adversarial-review F8. `Unknown` is decoder-only: the
-    // decoder never emits `Unknown(0..=2)` (`from_u32` maps the
-    // canonical ids to their named variants), so a *decoded* value
-    // always round-trips. Manually wrapping a canonical id in
-    // `Unknown` is a misuse; it canonicalises to the named variant
-    // on a buffa round-trip (correct — the id *is* that gamut),
-    // never silent data loss.
+  fn dcp_target_gamut_escape_canonicalization() {
+    // Codex adversarial-review F8, restated for the name-shaped wire.
+    // Spelling a *named* gamut through the escape is a misuse; it
+    // canonicalises to the named variant on a round-trip (correct — the
+    // name *is* that gamut), never silent data loss.
     for (misuse, named) in [
-      (DcpTargetGamut::Unknown(0), DcpTargetGamut::DciP3),
-      (DcpTargetGamut::Unknown(1), DcpTargetGamut::Rec709),
-      (DcpTargetGamut::Unknown(2), DcpTargetGamut::Rec2020),
+      (DcpTargetGamut::other("dci-p3"), DcpTargetGamut::DciP3),
+      (DcpTargetGamut::other("rec709"), DcpTargetGamut::Rec709),
+      (DcpTargetGamut::other("rec2020"), DcpTargetGamut::Rec2020),
     ] {
       let b = misuse.encode_to_vec();
       assert_eq!(DcpTargetGamut::decode_from_slice(&b).unwrap(), named);
     }
-    // Non-canonical ids are preserved losslessly and the decoder
-    // yields `Unknown` (still F7-rejected by `xyz12_to`).
-    for v in [3u32, 4242, u32::MAX] {
-      let u = DcpTargetGamut::Unknown(v);
+    // A name this build does not enumerate is preserved verbatim (and
+    // still F7-rejected by `xyz12_to`).
+    for name in ["aces-ap0", "vendor-gamut", "rec2100"] {
+      let u = DcpTargetGamut::other(name);
       let b = u.encode_to_vec();
       assert_eq!(DcpTargetGamut::decode_from_slice(&b).unwrap(), u);
-      assert_eq!(DcpTargetGamut::from_u32(v), DcpTargetGamut::Unknown(v));
     }
   }
 
@@ -2919,7 +2738,7 @@ mod tests {
     // `Matrix::Bt601` is a mediaframe-domain id
     // (`DOMAIN_EXT_BASE` = 0x8000_0000), non-default, so it must be
     // explicitly encoded to NON-zero bytes and round-trip losslessly
-    // via the `Message` impl (uint32 carrying 0x8000_0000).
+    // via the `Message` impl (string carrying `"bt601"`).
     let b = Matrix::Bt601.encode_to_vec();
     assert!(!b.is_empty(), "non-default domain Bt601 must be encoded");
     let back = Matrix::decode_from_slice(&b).unwrap();
@@ -2956,17 +2775,17 @@ mod tests {
 
   #[test]
   fn rotation_round_trip() {
-    // `D0` is the default (wire id 0) so it elides. `Unknown(n)`
-    // preserves unrecognised / corrupt / future wire ids losslessly
-    // through the shared enum codec — no silent collapse to `D0`
-    // (Codex adversarial-review F1).
+    // `D0` is the default so it elides. `Other(name)` preserves an
+    // unrecognised / future rotation name losslessly through the shared
+    // enum codec — no silent collapse to `D0` (Codex adversarial-review
+    // F1).
     for r in [
       Rotation::D0,
       Rotation::D90,
       Rotation::D180,
       Rotation::D270,
-      Rotation::Unknown(7),
-      Rotation::Unknown(4242),
+      Rotation::other("45"),
+      Rotation::other("vendor-tilt"),
     ] {
       let b = r.encode_to_vec();
       assert_eq!(Rotation::decode_from_slice(&b).unwrap(), r);
@@ -2976,12 +2795,12 @@ mod tests {
   #[test]
   fn enum_wrong_wire_type_errors() {
     let mut buf: Vec<u8> = Vec::new();
-    Tag::new(1, WireType::LengthDelimited).encode(&mut buf);
+    Tag::new(1, WireType::Varint).encode(&mut buf);
     encode_varint(0, &mut buf);
     let err = <Matrix as Message>::decode_from_slice(&buf).unwrap_err();
     assert!(
       matches!(err, DecodeError::WireTypeMismatch { field_number: 1, expected, actual }
-        if expected == VARINT && actual == LEN),
+        if expected == LEN && actual == VARINT),
       "got {err:?}"
     );
   }
@@ -2998,24 +2817,25 @@ mod tests {
   }
 
   #[test]
-  fn enum_unknown_id_decodes_losslessly() {
-    // An unrecognised on-wire id now decodes to `Unknown(n)` (no
-    // silent collapse to `default()`), preserving the value.
+  fn enum_unknown_name_decodes_losslessly() {
+    // An unrecognised on-wire name decodes to `Other(name)` (no silent
+    // collapse to `default()`), preserving the value a newer producer
+    // wrote.
     let mut buf: Vec<u8> = Vec::new();
-    Tag::new(1, WireType::Varint).encode(&mut buf);
-    encode_uint32(9_999, &mut buf);
+    Tag::new(1, WireType::LengthDelimited).encode(&mut buf);
+    encode_string("st-2065-1", &mut buf);
     assert_eq!(
       <Transfer as Message>::decode_from_slice(&buf).unwrap(),
-      Transfer::Unknown(9_999)
+      Transfer::other("st-2065-1")
     );
   }
 
   #[test]
-  fn pixel_format_round_trip_including_unknown() {
+  fn pixel_format_round_trip_including_escape() {
     for p in [
       PixelFormat::Yuv420p,
-      PixelFormat::default(), // Unknown(0) → elided → Unknown(0)
-      PixelFormat::Unknown(77),
+      PixelFormat::default(), // `None` → elided → `None`
+      PixelFormat::other("vendor_raw12"),
     ] {
       let b = p.encode_to_vec();
       assert_eq!(PixelFormat::decode_from_slice(&b).unwrap(), p);
@@ -3223,12 +3043,12 @@ mod tests {
   #[test]
   fn color_info_wrong_wire_type_and_unknown_skip() {
     let mut buf: Vec<u8> = Vec::new();
-    Tag::new(3, WireType::LengthDelimited).encode(&mut buf);
+    Tag::new(3, WireType::Varint).encode(&mut buf);
     encode_varint(0, &mut buf);
     assert!(matches!(
       <Info as Message>::decode_from_slice(&buf).unwrap_err(),
       DecodeError::WireTypeMismatch { field_number: 3, expected, actual }
-        if expected == VARINT && actual == LEN
+        if expected == LEN && actual == VARINT
     ));
     let mut ok = Info::UNSPECIFIED
       .with_range(DynamicRange::Full)
@@ -3395,19 +3215,18 @@ mod tests {
 
   #[test]
   fn field_order_round_trip() {
-    // `Unknown(0)` is the default (FFmpeg `AV_FIELD_UNKNOWN`, code 0)
-    // so it elides and decodes back to `Unknown(0)`. Named variants
-    // and other `Unknown(n)` are non-default and round-trip via the
-    // shared enum codec — lossless, no silent collapse.
+    // `Unknown` is the default (FFmpeg's own `AV_FIELD_UNKNOWN`) so it
+    // elides and decodes back to itself. Named variants and the
+    // `Other(name)` escape are non-default and round-trip via the shared
+    // enum codec — lossless, no silent collapse.
     for f in [
-      FieldOrder::Unknown(0),
+      FieldOrder::Unknown,
       FieldOrder::Progressive,
       FieldOrder::Tt,
       FieldOrder::Bb,
       FieldOrder::Tb,
       FieldOrder::Bt,
-      FieldOrder::Unknown(7),
-      FieldOrder::Unknown(4242),
+      FieldOrder::other("segmented-frame"),
     ] {
       let b = f.encode_to_vec();
       assert_eq!(FieldOrder::decode_from_slice(&b).unwrap(), f);
@@ -3423,12 +3242,12 @@ mod tests {
   #[test]
   fn field_order_wrong_wire_type_errors() {
     let mut buf: Vec<u8> = Vec::new();
-    Tag::new(1, WireType::LengthDelimited).encode(&mut buf);
+    Tag::new(1, WireType::Varint).encode(&mut buf);
     encode_varint(0, &mut buf);
     let err = <FieldOrder as Message>::decode_from_slice(&buf).unwrap_err();
     assert!(
       matches!(err, DecodeError::WireTypeMismatch { field_number: 1, expected, actual }
-        if expected == VARINT && actual == LEN),
+        if expected == LEN && actual == VARINT),
       "got {err:?}"
     );
   }
@@ -3437,9 +3256,9 @@ mod tests {
 
   #[test]
   fn stereo_mode_round_trip() {
-    // `Mono` is the default (FFmpeg `AV_STEREO3D_2D`, code 0) so it
-    // elides and decodes back via `from_u32(0)` → `Mono`. Other
-    // named variants and `Unknown(n)` round-trip losslessly.
+    // `Mono` is the default (FFmpeg `AV_STEREO3D_2D`) so it elides and
+    // decodes back to itself. Other named variants and the
+    // `Other(name)` escape round-trip losslessly.
     for s in [
       StereoMode::Mono,
       StereoMode::SideBySide,
@@ -3449,8 +3268,8 @@ mod tests {
       StereoMode::SideBySideQuincunx,
       StereoMode::Lines,
       StereoMode::Columns,
-      StereoMode::Unknown(99),
-      StereoMode::Unknown(4242),
+      StereoMode::other("anaglyph"),
+      StereoMode::other("vendor-packing"),
     ] {
       let b = s.encode_to_vec();
       assert_eq!(StereoMode::decode_from_slice(&b).unwrap(), s);
@@ -3464,39 +3283,36 @@ mod tests {
   }
 
   #[test]
-  fn stereo_mode_unknown_canonicalization() {
-    // `Unknown` is decoder-only: the decoder never emits
-    // `Unknown(0..=7)` (`from_u32` maps the canonical codes to their
-    // named variants). Manually wrapping a canonical id in `Unknown`
-    // is a misuse; it canonicalises to the named variant on a buffa
-    // round-trip (correct — the id *is* that mode), never silent
-    // data loss. Mirrors `dcp_target_gamut_unknown_canonicalization`.
+  fn stereo_mode_escape_canonicalization() {
+    // Spelling a *named* mode through the escape is a misuse; it
+    // canonicalises to the named variant on a round-trip (correct — the
+    // name *is* that mode), never silent data loss. Mirrors
+    // `dcp_target_gamut_escape_canonicalization`.
     for (misuse, named) in [
-      (StereoMode::Unknown(0), StereoMode::Mono),
-      (StereoMode::Unknown(1), StereoMode::SideBySide),
-      (StereoMode::Unknown(7), StereoMode::Columns),
+      (StereoMode::other("mono"), StereoMode::Mono),
+      (StereoMode::other("side-by-side"), StereoMode::SideBySide),
+      (StereoMode::other("columns"), StereoMode::Columns),
     ] {
       let b = misuse.encode_to_vec();
       assert_eq!(StereoMode::decode_from_slice(&b).unwrap(), named);
     }
-    // Non-canonical ids are preserved losslessly as `Unknown`.
-    for v in [8u32, 4242, u32::MAX] {
-      let u = StereoMode::Unknown(v);
+    // A name this build does not enumerate is preserved verbatim.
+    for name in ["anaglyph", "vendor-packing", "interleaved-quincunx"] {
+      let u = StereoMode::other(name);
       let b = u.encode_to_vec();
       assert_eq!(StereoMode::decode_from_slice(&b).unwrap(), u);
-      assert_eq!(StereoMode::from_u32(v), StereoMode::Unknown(v));
     }
   }
 
   #[test]
   fn stereo_mode_wrong_wire_type_errors() {
     let mut buf: Vec<u8> = Vec::new();
-    Tag::new(1, WireType::LengthDelimited).encode(&mut buf);
+    Tag::new(1, WireType::Varint).encode(&mut buf);
     encode_varint(0, &mut buf);
     let err = <StereoMode as Message>::decode_from_slice(&buf).unwrap_err();
     assert!(
       matches!(err, DecodeError::WireTypeMismatch { field_number: 1, expected, actual }
-        if expected == VARINT && actual == LEN),
+        if expected == LEN && actual == VARINT),
       "got {err:?}"
     );
   }
@@ -3726,8 +3542,8 @@ mod tests {
       SampleFormat::decode_from_slice(&b).unwrap(),
       SampleFormat::Fltp
     );
-    // Unknown(n) round-trips.
-    let v = SampleFormat::Unknown(12_345);
+    // The escape round-trips with its name.
+    let v = SampleFormat::other("vendor_s24");
     assert_eq!(
       SampleFormat::decode_from_slice(&v.encode_to_vec()).unwrap(),
       v

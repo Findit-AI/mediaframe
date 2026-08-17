@@ -5,17 +5,17 @@
 //! async-graphql) independently chose, so a serde-`json` column matches
 //! their representation byte-for-byte:
 //!
-//! - **Open** codec / format enums (those with an `Other(SmolStr)` escape
-//!   arm and a total [`FromStr`](core::str::FromStr)) serialize as their
-//!   canonical `as_str()` slug — e.g. `VideoCodec::H264` ⇄ `"h264"`,
-//!   `Other("x265")` ⇄ `"x265"` (no `{"Other": …}` wrapper). Round-trip
-//!   total: an unrecognised slug rides the `Other` arm.
-//! - **Closed FFmpeg-coded enums with a lossless `Unknown(u32)` escape**
-//!   (color enums, pixel-format, frame coded enums, `TrackDisposition`
-//!   bitflags) serialize as their `u32` code — e.g. `color::Matrix::Bt709`
-//!   ⇄ `1`. Round-trip total: an unrecognised code rides the `Unknown`
-//!   arm.
-//! - **Strictly-closed coded enums (no `Unknown` arm)** —
+//! - **Every vocabulary enum** — codecs, formats, the colour enums, the
+//!   pixel format, the frame coded enums — serializes as its canonical
+//!   `as_str()` slug: `VideoCodec::H264` ⇄ `"h264"`, `color::Matrix::Bt709`
+//!   ⇄ `"bt709"`, `Other("x265")` ⇄ `"x265"` (no `{"Other": …}` wrapper).
+//!   One extension idiom, one wire shape. Round-trip total wherever the
+//!   `Other(SmolStr)` arm exists (the `alloc` tier); at the no-alloc tier
+//!   the same enums are closed, so an unrecognised slug is a serde error
+//!   rather than a silently-invented value.
+//! - **`TrackDisposition`** is the one numeric wire left: it is a bit set,
+//!   not a name vocabulary, so it serializes as its `u32` bits.
+//! - **Strictly-closed coded enums (no `Other` arm)** —
 //!   [`crate::subtitle::TrackOrigin`] and [`crate::audio::BitRateMode`] —
 //!   serialize as their `u32` code but **reject** unknown wire codes as
 //!   serde errors instead of silently collapsing them to the default
@@ -23,12 +23,6 @@
 //!   or out-of-range value on the wire must fail loudly rather than
 //!   masquerade as `Embedded` / `Cbr`. The check is backed by each type's
 //!   `try_from_u32(v: u32) -> Option<Self>` method.
-//! - **[`crate::audio::SampleFormat`]** — has BOTH `Unknown(u32)` and
-//!   `Other(SmolStr)` escape arms. Bespoke impl preserves both: on
-//!   self-describing formats (JSON/YAML/etc.) it emits a bare value
-//!   (number for `Unknown`, string for named / `Other`); on
-//!   non-self-describing binary formats (bincode/postcard) it routes
-//!   through an explicit `{Code(u32), Slug(Cow<str>)}` tagged enum.
 //!
 //! The plain data structs (`color::Info`, `frame::Dimensions`,
 //! `audio::Tags`, …) derive serde at their definition site; the
@@ -44,9 +38,6 @@
 /// serde error for forward-compatibility.
 ///
 /// [`FromStr`]: core::str::FromStr
-// All invocations are heap-tier (codecs / formats); unused under the
-// no-alloc tier where only the coded enums exist.
-#[allow(unused_macros)]
 macro_rules! serde_via_str {
   ($t:path) => {
     impl serde::Serialize for $t {
@@ -75,10 +66,10 @@ macro_rules! serde_via_str {
   };
 }
 
-/// Implements `Serialize` / `Deserialize` for a *closed* FFmpeg-coded enum
-/// **whose `from_u32` is lossless** — i.e. it has an `Unknown(u32)` escape
-/// arm so any code round-trips losslessly. Use this for enums where every
-/// `u32` is meaningful wire data.
+/// Implements `Serialize` / `Deserialize` via a `u32` whose every value is
+/// meaningful wire data — the bit-set case, where the number *is* the
+/// value and there is no name to spell. `TrackDisposition` is the only
+/// such type; name vocabularies use [`serde_via_str!`] instead.
 macro_rules! serde_via_code {
   ($t:path) => {
     impl serde::Serialize for $t {
@@ -100,7 +91,7 @@ macro_rules! serde_via_code {
 }
 
 /// Implements `Serialize` / `Deserialize` for a **strictly-closed**
-/// FFmpeg-coded enum — one with NO `Unknown(u32)` escape arm — via its
+/// FFmpeg-coded enum — one with no escape arm at all — via its
 /// `to_u32()` / `try_from_u32()` pair. Adversarial / corrupt codes outside
 /// the enumerated set are rejected as serde errors instead of silently
 /// canonicalising to the default variant (which `from_u32` would do).
@@ -134,112 +125,24 @@ macro_rules! serde_via_code_strict {
   };
 }
 
-/// Bespoke serde for [`SampleFormat`](crate::audio::SampleFormat) — it has
-/// *both* `Unknown(u32)` (lossless numeric escape) **and** `Other(SmolStr)`
-/// (lossless string escape). The generic `serde_via_str!` would route
-/// `Unknown(12345)` through `as_str()` → `"unknown"` → `Other("unknown")`,
-/// destroying the original code; the generic `serde_via_code!` would lose
-/// the `Other` string variants.
-///
-/// **Wire shape — branches on `Serializer::is_human_readable()`:**
-///
-/// - **Self-describing (JSON / YAML / RON / TOML / etc.)** — bare value:
-///   `Unknown(v)` → number; named slug + `Other` → string. The visitor
-///   uses `deserialize_any` to choose the arm at decode time.
-/// - **Non-self-describing (bincode / postcard / etc.)** — explicit
-///   2-variant tagged enum (`{Code(u32), Slug(String)}`), since
-///   `deserialize_any` is not supported on these formats. Wire bytes are
-///   compact and the variant tag drives reconstruction unambiguously.
-#[cfg(any(feature = "std", feature = "alloc"))]
-const _: () = {
-  use crate::audio::SampleFormat;
-  use core::{fmt, str::FromStr};
-
-  // Tagged representation used only on non-self-describing formats. The
-  // derive picks a compact discriminant + payload; downstream binary serde
-  // drivers know exactly how to round-trip it without `deserialize_any`.
-  #[derive(serde::Serialize, serde::Deserialize)]
-  enum BinaryWire<'a> {
-    Code(u32),
-    Slug(::std::borrow::Cow<'a, str>),
-  }
-
-  impl serde::Serialize for SampleFormat {
-    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
-      if ser.is_human_readable() {
-        // Bare value — current human-readable shape.
-        match self {
-          SampleFormat::Unknown(v) => ser.serialize_u32(*v),
-          other => ser.serialize_str(other.as_str()),
-        }
-      } else {
-        // Tagged wire for binary formats.
-        match self {
-          SampleFormat::Unknown(v) => BinaryWire::Code(*v).serialize(ser),
-          other => BinaryWire::Slug(::std::borrow::Cow::Borrowed(other.as_str())).serialize(ser),
-        }
-      }
-    }
-  }
-
-  impl<'de> serde::Deserialize<'de> for SampleFormat {
-    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-      if de.is_human_readable() {
-        // Self-describing: accept either a u32 OR a string via `deserialize_any`.
-        struct V;
-        impl serde::de::Visitor<'_> for V {
-          type Value = SampleFormat;
-          fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str("a SampleFormat slug string or a u32 FFmpeg code")
-          }
-          fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-            // `FromStr` is `Infallible`; non-named slugs ride `Other(SmolStr)`.
-            SampleFormat::from_str(v).map_err(serde::de::Error::custom)
-          }
-          // Numeric inputs route through `from_u32` so `Unknown(v)` survives.
-          // Cover the integer width spread serde drivers actually produce.
-          fn visit_u32<E: serde::de::Error>(self, v: u32) -> Result<Self::Value, E> {
-            Ok(SampleFormat::from_u32(v))
-          }
-          fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
-            u32::try_from(v)
-              .map(SampleFormat::from_u32)
-              .map_err(|_| serde::de::Error::custom("SampleFormat u32 code overflow"))
-          }
-          fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
-            u32::try_from(v)
-              .map(SampleFormat::from_u32)
-              .map_err(|_| serde::de::Error::custom("SampleFormat u32 code out of range"))
-          }
-        }
-        de.deserialize_any(V)
-      } else {
-        // Non-self-describing: drive the tagged wire enum, then convert.
-        let w = BinaryWire::deserialize(de)?;
-        Ok(match w {
-          BinaryWire::Code(v) => SampleFormat::from_u32(v),
-          // `FromStr` is `Infallible` for `SampleFormat`.
-          BinaryWire::Slug(s) => SampleFormat::from_str(&s).unwrap(),
-        })
-      }
-    }
-  }
-};
-
-// ── Closed FFmpeg-coded enums (available at every capability tier) ──
-serde_via_code!(crate::color::Matrix);
-serde_via_code!(crate::color::Primaries);
-serde_via_code!(crate::color::Transfer);
-serde_via_code!(crate::color::DynamicRange);
-serde_via_code!(crate::color::ChromaLocation);
-serde_via_code!(crate::color::DcpTargetGamut);
-serde_via_code!(crate::pixel_format::PixelFormat);
-serde_via_code!(crate::frame::Rotation);
-serde_via_code!(crate::frame::FieldOrder);
-serde_via_code!(crate::frame::StereoMode);
+// ── The bit set: a number is its only faithful spelling ──
 serde_via_code!(crate::disposition::TrackDisposition);
 
-// ── Open slug enums (heap-tier: codecs / formats carry `Other(SmolStr)`) ──
+// ── Name vocabularies available at every capability tier ──
+// Open at the `alloc` tier (an unrecognised slug rides `Other`), closed at
+// the no-alloc tier (it is a serde error) — one wire shape either way.
+serde_via_str!(crate::color::Matrix);
+serde_via_str!(crate::color::Primaries);
+serde_via_str!(crate::color::Transfer);
+serde_via_str!(crate::color::DynamicRange);
+serde_via_str!(crate::color::ChromaLocation);
+serde_via_str!(crate::color::DcpTargetGamut);
+serde_via_str!(crate::pixel_format::PixelFormat);
+serde_via_str!(crate::frame::Rotation);
+serde_via_str!(crate::frame::FieldOrder);
+serde_via_str!(crate::frame::StereoMode);
+
+// ── Name vocabularies that need the allocator for their own payloads ──
 #[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_str!(crate::codec::VideoCodec);
 #[cfg(any(feature = "std", feature = "alloc"))]
@@ -252,10 +155,8 @@ serde_via_str!(crate::container::Format);
 serde_via_str!(crate::subtitle::Format);
 #[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_str!(crate::audio::ChannelLayout);
-// `SampleFormat` has BOTH `Unknown(u32)` and `Other(SmolStr)` — the bespoke
-// impl below (immediately after the macros) covers it; do NOT route it
-// through `serde_via_str!` (would silently drop `Unknown(v)` codes through
-// `as_str()` → `"unknown"` → `Other("unknown")`).
+#[cfg(any(feature = "std", feature = "alloc"))]
+serde_via_str!(crate::audio::SampleFormat);
 #[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_str!(crate::audio::ContainerFormat);
 
@@ -305,13 +206,15 @@ mod tests {
   }
 
   #[test]
-  fn closed_enum_serializes_as_code() {
-    let json = serde_json::to_string(&Matrix::Bt709).unwrap();
-    assert_eq!(json, Matrix::Bt709.to_u32().to_string());
+  fn colour_enum_serializes_as_its_name() {
+    assert_eq!(serde_json::to_string(&Matrix::Bt709).unwrap(), "\"bt709\"");
     round_trip(&Matrix::Bt709);
-    // Unknown code rides the `Unknown` arm losslessly.
-    let unknown: Matrix = serde_json::from_str("250").unwrap();
-    assert_eq!(unknown.to_u32(), 250);
+    // A name this build does not enumerate rides the `Other` arm, and
+    // keeps its name across the wire — the old numeric shape handed the
+    // reader a bare code with nothing to call it.
+    let vendor = Matrix::other("acescct");
+    assert_eq!(serde_json::to_string(&vendor).unwrap(), "\"acescct\"");
+    round_trip(&vendor);
   }
 
   #[test]
@@ -381,38 +284,24 @@ mod tests {
 
   // ── Codex round 1 findings ──
 
-  /// `SampleFormat` has both `Unknown(u32)` (lossless numeric escape) and
-  /// `Other(SmolStr)` (lossless string escape). Every round-trip must
-  /// preserve which arm a value came from — earlier the type rode the pure
-  /// string path, so `Unknown(12345)` → `"unknown"` → `Other("unknown")`
-  /// silently destroyed the FFmpeg code.
+  /// `SampleFormat` is a plain name vocabulary now: the numeric arm that
+  /// forced a bespoke two-shape codec is gone, so it rides the same slug
+  /// wire as every other vocabulary, on both human-readable and binary
+  /// formats.
   #[test]
-  fn sample_format_preserves_unknown_u32() {
+  fn sample_format_rides_the_slug_wire() {
     use crate::audio::SampleFormat;
-    // Named variant — slug.
     assert_eq!(
       serde_json::to_string(&SampleFormat::S16).unwrap(),
       "\"s16\""
     );
     round_trip(&SampleFormat::S16);
-    // `Other` slug variant — string.
-    let other = SampleFormat::Other(smol_str::SmolStr::new("custom"));
+    let other = SampleFormat::other("custom");
     assert_eq!(serde_json::to_string(&other).unwrap(), "\"custom\"");
     round_trip(&other);
-    // `Unknown(v)` — numeric, MUST stay `Unknown(v)` after round-trip.
-    for v in [12_345u32, 0xDEAD_BEEFu32, u32::MAX] {
-      let fmt = SampleFormat::Unknown(v);
-      assert_eq!(serde_json::to_string(&fmt).unwrap(), v.to_string());
-      let back: SampleFormat = serde_json::from_str(&v.to_string()).unwrap();
-      assert_eq!(back, fmt, "lost Unknown({v}) on round-trip");
-    }
-    // A pure numeric input that happens to match a named variant's code
-    // *does* canonicalise to the named arm — that's `from_u32`'s contract.
-    let from_named_code: SampleFormat = serde_json::from_str("1").unwrap();
-    assert_eq!(from_named_code, SampleFormat::S16);
   }
 
-  /// Strictly-closed coded enums (no `Unknown` arm) must REJECT unknown
+  /// Strictly-closed coded enums (no escape arm) must REJECT unknown
   /// wire codes instead of silently mapping them to the default. Previously
   /// `from_u32(999)` quietly returned `Embedded` / `Cbr`, so corrupt input
   /// looked like valid data on the consumer side.
@@ -440,11 +329,9 @@ mod tests {
 
   // ── Codex round 2 findings ──
 
-  /// `SampleFormat`'s `deserialize_any` path only works on self-describing
-  /// formats. Non-self-describing binary formats (bincode/postcard) need
-  /// an explicit tagged wire; the impl branches on `is_human_readable()`
-  /// and serializes through a 2-variant `BinaryWire` enum. This test
-  /// exercises the binary branch via postcard.
+  /// The slug wire has to survive a non-self-describing binary format
+  /// too — the earlier bespoke codec branched on `is_human_readable()`
+  /// precisely because a bare `deserialize_any` does not work there.
   #[test]
   fn sample_format_postcard_binary_roundtrip() {
     use crate::audio::SampleFormat;
@@ -454,17 +341,9 @@ mod tests {
       postcard::from_bytes::<SampleFormat>(&bytes).expect("postcard deserialize")
     }
 
-    // Named — `Slug` arm of the wire.
     assert_eq!(binary_round_trip(&SampleFormat::S16), SampleFormat::S16);
-    // `Other` slug — also `Slug` arm.
-    let other = SampleFormat::Other(smol_str::SmolStr::new("custom"));
+    let other = SampleFormat::other("custom");
     assert_eq!(binary_round_trip(&other), other);
-    // `Unknown(v)` — `Code` arm; the u32 must survive losslessly.
-    for v in [12_345u32, 0xDEAD_BEEFu32, u32::MAX] {
-      let fmt = SampleFormat::Unknown(v);
-      let back = binary_round_trip(&fmt);
-      assert_eq!(back, fmt, "lost Unknown({v}) on postcard round-trip");
-    }
   }
 
   /// Default-backed metadata structs must accept sparse JSON — missing

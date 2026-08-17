@@ -2,6 +2,8 @@
 //! chroma location — all closed-form per ITU-T H.273.
 
 use derive_more::{Display, IsVariant};
+#[cfg(any(feature = "std", feature = "alloc"))]
+use smol_str::SmolStr;
 
 /// Base id for **mediaframe-domain** colour concepts that have no
 /// ITU-T H.273 / FFmpeg `AVCol*` code point.
@@ -45,9 +47,10 @@ pub const DOMAIN_EXT_BASE: u32 = 0x8000_0000;
 /// FFmpeg is the source of truth (the downstream consumer reads these
 /// via a `buffa` `extern_path`). [`Self::Bt601`] is a
 /// **mediaframe-domain** id (no H.273 code; see [`DOMAIN_EXT_BASE`]).
-/// [`Self::Unknown`] carries any unrecognised code through unchanged
-/// so the round-trip is lossless.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+/// [`Self::Other`] carries any name this build does not enumerate, so
+/// the *text* round-trip is lossless; the numeric helpers speak only
+/// FFmpeg's code space and return [`None`] outside it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -56,10 +59,6 @@ pub const DOMAIN_EXT_BASE: u32 = 0x8000_0000;
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::matrix")
 )]
 pub enum Matrix {
-  /// Unknown / unrecognised `AVColorSpace` code. The wrapped `u32`
-  /// is the original value passed to [`Self::from_u32`] — preserved
-  /// so round-tripping unknown codes is lossless.
-  Unknown(u32),
   /// GBR (sRGB / ST 428-1); FFmpeg `AVCOL_SPC_RGB` (code `0`).
   Rgb,
   /// **mediaframe-domain** unified ITU-R BT.601 YCbCr matrix
@@ -105,6 +104,17 @@ pub enum Matrix {
   YCgCoRe,
   /// YCgCo-R, odd bit addition.
   YCgCoRo,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for Matrix {
@@ -118,9 +128,8 @@ impl Matrix {
   /// Lowercase FFmpeg-style identifier for this variant
   /// (`AVCOL_SPC_*` slug).
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
       Self::Rgb => "rgb",
       Self::Bt601 => "bt601",
       Self::Bt709 => "bt709",
@@ -139,21 +148,22 @@ impl Matrix {
       Self::IptC2 => "ipt-c2",
       Self::YCgCoRe => "ycgco-re",
       Self::YCgCoRo => "ycgco-ro",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
-  /// Stable wire id — the **FFmpeg `AVColorSpace` code point**
+  /// The **FFmpeg `AVColorSpace` code point**
   /// (ITU-T H.273 MatrixCoefficients) for the H.273 variants, or a
   /// **mediaframe-domain** id `>= DOMAIN_EXT_BASE` for concepts
   /// H.273 does not enumerate ([`Self::Bt601`] is the first, at
-  /// offset `0`). [`Self::Unknown`] carries its original `u32`
-  /// through unchanged so `from_u32(to_u32(x)) == x` for every `x`.
-  /// Note `Rgb` is code `0` (non-default, so the `buffa` codec
-  /// encodes it explicitly).
+  /// offset `0`).
+  ///
+  /// [`None`] for [`Self::Other`]: it names something FFmpeg has no
+  /// code for, and inventing one would lose the name.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::Rgb => 0,
       // domain ext offsets (append-only): 0 = Bt601
       Self::Bt601 => DOMAIN_EXT_BASE,
@@ -173,7 +183,9 @@ impl Matrix {
       Self::IptC2 => 15,
       Self::YCgCoRe => 16,
       Self::YCgCoRo => 17,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the code produced by [`Self::to_u32`]. FFmpeg
@@ -183,11 +195,11 @@ impl Matrix {
   /// domain variant). [`DOMAIN_EXT_BASE`] (offset `0`) decodes to the
   /// mediaframe-domain [`Self::Bt601`]. Any other unrecognised code
   /// (including reserved code `3`, or an unassigned `>=
-  /// DOMAIN_EXT_BASE` id) maps to [`Self::Unknown`] carrying the
-  /// original value, so the round-trip is lossless.
+  /// DOMAIN_EXT_BASE` id) yields [`None`] — a number is FFmpeg's
+  /// spelling, not a name to preserve.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       0 => Self::Rgb,
       1 => Self::Bt709,
       2 => Self::Unspecified,
@@ -208,8 +220,19 @@ impl Matrix {
       // mediaframe-domain ids (append-only): DOMAIN_EXT_BASE + 0 =
       // Bt601. Never reached by the FFmpeg ingest path above.
       DOMAIN_EXT_BASE => Self::Bt601,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
@@ -222,10 +245,10 @@ impl core::str::FromStr for Matrix {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Ok(match s {
       "rgb" => Self::Rgb,
@@ -246,6 +269,9 @@ impl core::str::FromStr for Matrix {
       "ipt-c2" => Self::IptC2,
       "ycgco-re" => Self::YCgCoRe,
       "ycgco-ro" => Self::YCgCoRo,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(crate::parse::ParseError::unrecognised("Matrix")),
     })
   }
@@ -261,10 +287,10 @@ impl core::str::FromStr for Matrix {
 /// `AVColorPrimaries` code points** (ITU-T H.273 ColourPrimaries);
 /// FFmpeg is the source of truth (the downstream consumer reads these
 /// via a `buffa` `extern_path`). `Default` is [`Self::Unspecified`]
-/// (FFmpeg `AVCOL_PRI_UNSPECIFIED`, code `2`); [`Self::Unknown`]
-/// carries any unrecognised code (incl. reserved `0`/`3`) through
-/// unchanged so the round-trip is lossless.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+/// (FFmpeg `AVCOL_PRI_UNSPECIFIED`, code `2`); [`Self::Other`] carries
+/// any name this build does not enumerate, so the *text* round-trip is
+/// lossless.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -273,11 +299,6 @@ impl core::str::FromStr for Matrix {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::primaries")
 )]
 pub enum Primaries {
-  /// Unknown / unrecognised `AVColorPrimaries` code (incl. the
-  /// reserved `0`/`3`). The wrapped `u32` is the original value
-  /// passed to [`Self::from_u32`] — preserved so round-tripping
-  /// unknown codes is lossless.
-  Unknown(u32),
   /// ITU-R BT.709 (HDTV).
   Bt709,
   /// Unspecified — caller infers from height.
@@ -302,6 +323,17 @@ pub enum Primaries {
   SmpteEg432,
   /// EBU Tech. 3213-E (legacy) / JEDEC P22.
   Ebu3213E,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for Primaries {
@@ -315,9 +347,8 @@ impl Primaries {
   /// Lowercase FFmpeg-style identifier for this variant
   /// (`AVCOL_PRI_*` slug).
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
       Self::Bt709 => "bt709",
       Self::Unspecified => "unspecified",
       Self::Bt470M => "bt470m",
@@ -330,17 +361,19 @@ impl Primaries {
       Self::SmpteRp431 => "smpte431",
       Self::SmpteEg432 => "smpte432",
       Self::Ebu3213E => "ebu3213",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
-  /// Stable wire id — the **FFmpeg `AVColorPrimaries` code point**
-  /// (ITU-T H.273 ColourPrimaries). [`Self::Unknown`] carries its
-  /// original `u32` through unchanged so `from_u32(to_u32(x)) == x`
-  /// for every `x`.
+  /// The **FFmpeg `AVColorPrimaries` code point**
+  /// (ITU-T H.273 ColourPrimaries).
+  ///
+  /// [`None`] for [`Self::Other`]: it names something FFmpeg has no
+  /// code for, and inventing one would lose the name.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::Bt709 => 1,
       Self::Unspecified => 2,
       Self::Bt470M => 4,
@@ -353,16 +386,19 @@ impl Primaries {
       Self::SmpteRp431 => 11,
       Self::SmpteEg432 => 12,
       Self::Ebu3213E => 22,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the FFmpeg `AVColorPrimaries` code produced by
-  /// [`Self::to_u32`]. Unrecognised codes (including reserved `0`
-  /// and `3`) map to [`Self::Unknown`] carrying the original value,
-  /// so the round-trip is lossless.
+  /// [`Self::to_u32`].
+  ///
+  /// [`None`] for a code this build names nothing for — a number is
+  /// FFmpeg's spelling, not a name to preserve.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       1 => Self::Bt709,
       2 => Self::Unspecified,
       4 => Self::Bt470M,
@@ -375,8 +411,8 @@ impl Primaries {
       11 => Self::SmpteRp431,
       12 => Self::SmpteEg432,
       22 => Self::Ebu3213E,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
   }
 
   // CIE 1931 xy white points in [`ChromaCoord`] SMPTE ST 2086 units
@@ -398,7 +434,7 @@ impl Primaries {
   /// units (0.00002 increments; floating value = `raw / 50000.0`), so
   /// BT.709 red `(0.640, 0.330)` is `(32000, 16500)`.
   ///
-  /// Returns [`None`] for [`Self::Unknown`] and [`Self::Unspecified`],
+  /// Returns [`None`] for [`Self::Unspecified`] and [`Self::Other`],
   /// which carry no defined primaries.
   ///
   /// [`Self::SmpteSt428`] reports FFmpeg's tabulated D-Cinema primaries
@@ -408,7 +444,9 @@ impl Primaries {
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn chromaticities(&self) -> Option<[ChromaCoord; 3]> {
     match self {
-      Self::Unknown(_) | Self::Unspecified => None,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => None,
+      Self::Unspecified => None,
       Self::Bt709 => Some([
         ChromaCoord::new(32000, 16500),
         ChromaCoord::new(15000, 30000),
@@ -470,11 +508,13 @@ impl Primaries {
   /// (equal-energy E `(1/3, 1/3)`). Coordinates use the same
   /// [`ChromaCoord`] ST 2086 units as [`Self::chromaticities`].
   ///
-  /// Returns [`None`] for [`Self::Unknown`] and [`Self::Unspecified`].
+  /// Returns [`None`] for [`Self::Unspecified`] and [`Self::Other`].
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn white_point(&self) -> Option<ChromaCoord> {
     match self {
-      Self::Unknown(_) | Self::Unspecified => None,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => None,
+      Self::Unspecified => None,
       Self::Bt709
       | Self::Bt470Bg
       | Self::Smpte170M
@@ -506,6 +546,17 @@ impl Primaries {
   pub const fn is_cie_xyz(&self) -> bool {
     matches!(self, Self::SmpteSt428)
   }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+  }
 }
 
 impl core::str::FromStr for Primaries {
@@ -517,10 +568,10 @@ impl core::str::FromStr for Primaries {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Ok(match s {
       "bt709" => Self::Bt709,
@@ -535,6 +586,9 @@ impl core::str::FromStr for Primaries {
       "smpte431" => Self::SmpteRp431,
       "smpte432" => Self::SmpteEg432,
       "ebu3213" => Self::Ebu3213E,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(crate::parse::ParseError::unrecognised("Primaries")),
     })
   }
@@ -550,10 +604,10 @@ impl core::str::FromStr for Primaries {
 /// TransferCharacteristics); FFmpeg is the source of truth (the
 /// downstream consumer reads these via a `buffa` `extern_path`).
 /// `Default` is [`Self::Unspecified`] (FFmpeg
-/// `AVCOL_TRC_UNSPECIFIED`, code `2`); [`Self::Unknown`] carries any
-/// unrecognised code (incl. reserved `0`/`3`) through unchanged so
-/// the round-trip is lossless.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+/// `AVCOL_TRC_UNSPECIFIED`, code `2`); [`Self::Other`] carries any
+/// name this build does not enumerate, so the *text* round-trip is
+/// lossless.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -562,11 +616,6 @@ impl core::str::FromStr for Primaries {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::transfer")
 )]
 pub enum Transfer {
-  /// Unknown / unrecognised `AVColorTransferCharacteristic` code
-  /// (incl. the reserved `0`/`3`). The wrapped `u32` is the original
-  /// value passed to [`Self::from_u32`] — preserved so round-tripping
-  /// unknown codes is lossless.
-  Unknown(u32),
   /// ITU-R BT.709.
   Bt709,
   /// Unspecified.
@@ -601,6 +650,17 @@ pub enum Transfer {
   SmpteSt428,
   /// ARIB STD-B67 — Hybrid Log-Gamma.
   AribStdB67Hlg,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for Transfer {
@@ -614,9 +674,8 @@ impl Transfer {
   /// Lowercase FFmpeg-style identifier for this variant
   /// (`AVCOL_TRC_*` slug).
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
       Self::Bt709 => "bt709",
       Self::Unspecified => "unspecified",
       Self::Gamma22 => "gamma22",
@@ -634,18 +693,20 @@ impl Transfer {
       Self::SmpteSt2084Pq => "smpte2084",
       Self::SmpteSt428 => "smpte428",
       Self::AribStdB67Hlg => "arib-std-b67",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
-  /// Stable wire id — the **FFmpeg
+  /// The **FFmpeg
   /// `AVColorTransferCharacteristic` code point** (ITU-T H.273
-  /// TransferCharacteristics). [`Self::Unknown`] carries its original
-  /// `u32` through unchanged so `from_u32(to_u32(x)) == x` for every
-  /// `x`.
+  /// TransferCharacteristics).
+  ///
+  /// [`None`] for [`Self::Other`]: it names something FFmpeg has no
+  /// code for, and inventing one would lose the name.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::Bt709 => 1,
       Self::Unspecified => 2,
       Self::Gamma22 => 4,
@@ -663,16 +724,19 @@ impl Transfer {
       Self::SmpteSt2084Pq => 16,
       Self::SmpteSt428 => 17,
       Self::AribStdB67Hlg => 18,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the FFmpeg `AVColorTransferCharacteristic` code
-  /// produced by [`Self::to_u32`]. Unrecognised codes (including
-  /// reserved `0` and `3`) map to [`Self::Unknown`] carrying the
-  /// original value, so the round-trip is lossless.
+  /// produced by [`Self::to_u32`].
+  ///
+  /// [`None`] for a code this build names nothing for — a number is
+  /// FFmpeg's spelling, not a name to preserve.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       1 => Self::Bt709,
       2 => Self::Unspecified,
       4 => Self::Gamma22,
@@ -690,8 +754,19 @@ impl Transfer {
       16 => Self::SmpteSt2084Pq,
       17 => Self::SmpteSt428,
       18 => Self::AribStdB67Hlg,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
@@ -704,10 +779,10 @@ impl core::str::FromStr for Transfer {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Ok(match s {
       "bt709" => Self::Bt709,
@@ -727,6 +802,9 @@ impl core::str::FromStr for Transfer {
       "smpte2084" => Self::SmpteSt2084Pq,
       "smpte428" => Self::SmpteSt428,
       "arib-std-b67" => Self::AribStdB67Hlg,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(crate::parse::ParseError::unrecognised("Transfer")),
     })
   }
@@ -738,9 +816,9 @@ impl core::str::FromStr for Transfer {
 /// `AVColorRange` code points** (`UNSPECIFIED`=0, `MPEG`=1,
 /// `JPEG`=2); FFmpeg is the source of truth. `Default` is
 /// [`Self::Unspecified`] (FFmpeg `AVCOL_RANGE_UNSPECIFIED`, code
-/// `0`); [`Self::Unknown`] carries any unrecognised code through
-/// unchanged so the round-trip is lossless.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+/// `0`); [`Self::Other`] carries any name this build does not
+/// enumerate, so the *text* round-trip is lossless.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -749,10 +827,6 @@ impl core::str::FromStr for Transfer {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::dynamic_range")
 )]
 pub enum DynamicRange {
-  /// Unknown / unrecognised `AVColorRange` code. The wrapped `u32`
-  /// is the original value passed to [`Self::from_u32`] — preserved
-  /// so round-tripping unknown codes is lossless.
-  Unknown(u32),
   /// Unspecified — caller assumes Limited.
   Unspecified,
   /// Limited / studio swing (8-bit luma 16..235, chroma 16..240);
@@ -760,6 +834,17 @@ pub enum DynamicRange {
   Limited,
   /// Full / PC swing (8-bit 0..255); FFmpeg `AVCOL_RANGE_JPEG`.
   Full,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for DynamicRange {
@@ -773,39 +858,55 @@ impl DynamicRange {
   /// Lowercase FFmpeg-style identifier for this variant
   /// (`AVCOL_RANGE_*` slug; `tv` / `pc`).
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
       Self::Unspecified => "unspecified",
       Self::Limited => "tv",
       Self::Full => "pc",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
-  /// Stable wire id — the **FFmpeg `AVColorRange` code point**.
-  /// [`Self::Unknown`] carries its original `u32` through unchanged
-  /// so `from_u32(to_u32(x)) == x` for every `x`.
+  /// The **FFmpeg `AVColorRange` code point**.
+  ///
+  /// [`None`] for [`Self::Other`]: it names something FFmpeg has no
+  /// code for, and inventing one would lose the name.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::Unspecified => 0,
       Self::Limited => 1,
       Self::Full => 2,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the FFmpeg `AVColorRange` code produced by
-  /// [`Self::to_u32`]. Unrecognised codes map to [`Self::Unknown`]
-  /// carrying the original value, so the round-trip is lossless.
+  /// [`Self::to_u32`].
+  ///
+  /// [`None`] for a code this build names nothing for — a number is
+  /// FFmpeg's spelling, not a name to preserve.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       0 => Self::Unspecified,
       1 => Self::Limited,
       2 => Self::Full,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
@@ -818,15 +919,18 @@ impl core::str::FromStr for DynamicRange {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Ok(match s {
       "unspecified" => Self::Unspecified,
       "tv" => Self::Limited,
       "pc" => Self::Full,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(crate::parse::ParseError::unrecognised("DynamicRange")),
     })
   }
@@ -839,10 +943,10 @@ impl core::str::FromStr for DynamicRange {
 /// [`Self::to_u32`] / [`Self::from_u32`] use the **FFmpeg
 /// `AVChromaLocation` code points**; FFmpeg is the source of truth.
 /// `Default` is [`Self::Unspecified`] (FFmpeg
-/// `AVCHROMA_LOC_UNSPECIFIED`, code `0`); [`Self::Unknown`] carries
-/// any unrecognised code through unchanged so the round-trip is
+/// `AVCHROMA_LOC_UNSPECIFIED`, code `0`); [`Self::Other`] carries any
+/// name this build does not enumerate, so the *text* round-trip is
 /// lossless.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -851,10 +955,6 @@ impl core::str::FromStr for DynamicRange {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::chroma_location")
 )]
 pub enum ChromaLocation {
-  /// Unknown / unrecognised `AVChromaLocation` code. The wrapped
-  /// `u32` is the original value passed to [`Self::from_u32`] —
-  /// preserved so round-tripping unknown codes is lossless.
-  Unknown(u32),
   /// Unspecified.
   Unspecified,
   /// MPEG-2 / H.264 default (chroma at the left of two luma samples).
@@ -869,6 +969,17 @@ pub enum ChromaLocation {
   BottomLeft,
   /// Bottom.
   Bottom,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for ChromaLocation {
@@ -882,9 +993,8 @@ impl ChromaLocation {
   /// Lowercase FFmpeg-style identifier for this variant
   /// (`AVCHROMA_LOC_*` slug).
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
       Self::Unspecified => "unspecified",
       Self::Left => "left",
       Self::Center => "center",
@@ -892,16 +1002,18 @@ impl ChromaLocation {
       Self::Top => "top",
       Self::BottomLeft => "bottomleft",
       Self::Bottom => "bottom",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
-  /// Stable wire id — the **FFmpeg `AVChromaLocation` code point**.
-  /// [`Self::Unknown`] carries its original `u32` through unchanged
-  /// so `from_u32(to_u32(x)) == x` for every `x`.
+  /// The **FFmpeg `AVChromaLocation` code point**.
+  ///
+  /// [`None`] for [`Self::Other`]: it names something FFmpeg has no
+  /// code for, and inventing one would lose the name.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::Unspecified => 0,
       Self::Left => 1,
       Self::Center => 2,
@@ -909,15 +1021,19 @@ impl ChromaLocation {
       Self::Top => 4,
       Self::BottomLeft => 5,
       Self::Bottom => 6,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the FFmpeg `AVChromaLocation` code produced by
-  /// [`Self::to_u32`]. Unrecognised codes map to [`Self::Unknown`]
-  /// carrying the original value, so the round-trip is lossless.
+  /// [`Self::to_u32`].
+  ///
+  /// [`None`] for a code this build names nothing for — a number is
+  /// FFmpeg's spelling, not a name to preserve.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       0 => Self::Unspecified,
       1 => Self::Left,
       2 => Self::Center,
@@ -925,8 +1041,19 @@ impl ChromaLocation {
       4 => Self::Top,
       5 => Self::BottomLeft,
       6 => Self::Bottom,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
@@ -939,10 +1066,10 @@ impl core::str::FromStr for ChromaLocation {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Ok(match s {
       "unspecified" => Self::Unspecified,
@@ -952,6 +1079,9 @@ impl core::str::FromStr for ChromaLocation {
       "top" => Self::Top,
       "bottomleft" => Self::BottomLeft,
       "bottom" => Self::Bottom,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(crate::parse::ParseError::unrecognised("ChromaLocation")),
     })
   }
@@ -969,7 +1099,7 @@ impl core::str::FromStr for ChromaLocation {
   derive(::quickcheck_richderive::Arbitrary),
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::info")
 )]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Info {
   primaries: Primaries,
   transfer: Transfer,
@@ -1023,38 +1153,38 @@ impl Info {
 
   /// Returns the color primaries.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn primaries(&self) -> Primaries {
-    self.primaries
+  pub fn primaries(&self) -> Primaries {
+    self.primaries.clone()
   }
 
   /// Returns the transfer characteristics.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn transfer(&self) -> Transfer {
-    self.transfer
+  pub fn transfer(&self) -> Transfer {
+    self.transfer.clone()
   }
 
   /// Returns the YUV→RGB matrix coefficients.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn matrix(&self) -> Matrix {
-    self.matrix
+  pub fn matrix(&self) -> Matrix {
+    self.matrix.clone()
   }
 
   /// Returns the sample range (limited / full).
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn range(&self) -> DynamicRange {
-    self.range
+  pub fn range(&self) -> DynamicRange {
+    self.range.clone()
   }
 
   /// Returns the chroma sample location.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn chroma_location(&self) -> ChromaLocation {
-    self.chroma_location
+  pub fn chroma_location(&self) -> ChromaLocation {
+    self.chroma_location.clone()
   }
 
   /// Sets the primaries (consuming builder).
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_primaries(mut self, v: Primaries) -> Self {
+  pub fn with_primaries(mut self, v: Primaries) -> Self {
     self.primaries = v;
     self
   }
@@ -1062,7 +1192,7 @@ impl Info {
   /// Sets the transfer (consuming builder).
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_transfer(mut self, v: Transfer) -> Self {
+  pub fn with_transfer(mut self, v: Transfer) -> Self {
     self.transfer = v;
     self
   }
@@ -1070,7 +1200,7 @@ impl Info {
   /// Sets the matrix (consuming builder).
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_matrix(mut self, v: Matrix) -> Self {
+  pub fn with_matrix(mut self, v: Matrix) -> Self {
     self.matrix = v;
     self
   }
@@ -1078,7 +1208,7 @@ impl Info {
   /// Sets the range (consuming builder).
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_range(mut self, v: DynamicRange) -> Self {
+  pub fn with_range(mut self, v: DynamicRange) -> Self {
     self.range = v;
     self
   }
@@ -1086,42 +1216,42 @@ impl Info {
   /// Sets the chroma location (consuming builder).
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_chroma_location(mut self, v: ChromaLocation) -> Self {
+  pub fn with_chroma_location(mut self, v: ChromaLocation) -> Self {
     self.chroma_location = v;
     self
   }
 
   /// Sets the primaries in place.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_primaries(&mut self, v: Primaries) -> &mut Self {
+  pub fn set_primaries(&mut self, v: Primaries) -> &mut Self {
     self.primaries = v;
     self
   }
 
   /// Sets the transfer in place.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_transfer(&mut self, v: Transfer) -> &mut Self {
+  pub fn set_transfer(&mut self, v: Transfer) -> &mut Self {
     self.transfer = v;
     self
   }
 
   /// Sets the matrix in place.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_matrix(&mut self, v: Matrix) -> &mut Self {
+  pub fn set_matrix(&mut self, v: Matrix) -> &mut Self {
     self.matrix = v;
     self
   }
 
   /// Sets the range in place.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_range(&mut self, v: DynamicRange) -> &mut Self {
+  pub fn set_range(&mut self, v: DynamicRange) -> &mut Self {
     self.range = v;
     self
   }
 
   /// Sets the chroma location in place.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_chroma_location(&mut self, v: ChromaLocation) -> &mut Self {
+  pub fn set_chroma_location(&mut self, v: ChromaLocation) -> &mut Self {
     self.chroma_location = v;
     self
   }
@@ -1147,17 +1277,14 @@ impl Info {
 /// This enum has **no FFmpeg analog** (it selects a mediaframe XYZ →
 /// RGB matrix); it keeps its own mediaframe-local wire numbering
 /// (`DciP3`=0, `Rec709`=1, `Rec2020`=2) rather than an FFmpeg code.
-/// `Default` is [`Self::DciP3`]. [`Self::Unknown`] is
-/// **decoder-only**: [`Self::from_u32`] returns a named variant for a
-/// canonical id (`0`/`1`/`2`) and `Unknown(v)` only for a
-/// non-canonical `v`, so a *decoded* value always round-trips
-/// losslessly and `Unknown` never aliases a known gamut in practice.
-/// Manually constructing `Unknown(0..=2)` is a misuse (those ids have
-/// named variants); it canonicalises to the named variant on a buffa
+/// `Default` is [`Self::DciP3`]. [`Self::Other`] carries any gamut
+/// name this build does not enumerate; [`Self::from_u32`] returns a
+/// named variant for a canonical id (`0`/`1`/`2`) and [`None`]
+/// otherwise. Construct the escape through [`Self::other`] so the name
+/// is ASCII-folded to the crate's canon; it survives a buffa
 /// round-trip — which is correct (the id *is* that gamut), not data
-/// loss. Shared convention of every lossless `Unknown(u32)` enum here
-/// (Codex adversarial-review F8).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IsVariant, Display)]
+/// loss. The crate-wide extension idiom (Codex adversarial-review F8).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, IsVariant, Display)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -1166,10 +1293,6 @@ impl Info {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::dcp_target_gamut")
 )]
 pub enum DcpTargetGamut {
-  /// Unknown / unrecognised wire id. The wrapped `u32` is the
-  /// original value passed to [`Self::from_u32`] — preserved so
-  /// round-tripping unknown ids is lossless.
-  Unknown(u32),
   /// **DCI-P3 (theatrical, DCI white)** — the SMPTE ST 428-1 / RP
   /// 431-2 §5.1 D-Cinema decode target. White point is **DCI white**
   /// `(0.314, 0.351)` (~6300 K), *not* D65. Default for `xyz12_to`
@@ -1183,6 +1306,17 @@ pub enum DcpTargetGamut {
   Rec709,
   /// **Rec.2020** (D65) — for HDR theatrical / archival.
   Rec2020,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for DcpTargetGamut {
@@ -1204,45 +1338,60 @@ impl DcpTargetGamut {
   /// Lowercase identifier for this variant, in the same style as the
   /// five H.273 colour enums (`"dci-p3"` / `"rec709"` / `"rec2020"`).
   ///
-  /// [`Self::Unknown`] renders as `"unknown"` for every payload, so
-  /// this rendering is **not** injective on that arm — the same reason
-  /// [`FromStr`](core::str::FromStr) rejects `"unknown"` rather than
-  /// inventing a payload for it.
+  /// [`Self::Other`] renders the name it carries, so the rendering is
+  /// injective across the whole value space and
+  /// [`FromStr`](core::str::FromStr) is its exact inverse.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
       Self::DciP3 => "dci-p3",
       Self::Rec709 => "rec709",
       Self::Rec2020 => "rec2020",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
-  /// Stable mediaframe-local wire id (no FFmpeg analog); `DciP3`
-  /// (the default) is `0`. [`Self::Unknown`] carries its original
-  /// `u32` through unchanged so `from_u32(to_u32(x)) == x` for every
-  /// `x`.
+  /// The mediaframe-local id (no FFmpeg analog); `DciP3` (the default)
+  /// is `0`.
+  ///
+  /// [`None`] for [`Self::Other`]: it names something FFmpeg has no
+  /// code for, and inventing one would lose the name.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::DciP3 => 0,
       Self::Rec709 => 1,
       Self::Rec2020 => 2,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the mediaframe-local wire id produced by
-  /// [`Self::to_u32`]. Unrecognised ids map to [`Self::Unknown`]
-  /// carrying the original value, so the round-trip is lossless.
+  /// [`Self::to_u32`].
+  ///
+  /// [`None`] for a code this build names nothing for — a number is
+  /// FFmpeg's spelling, not a name to preserve.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       0 => Self::DciP3,
       1 => Self::Rec709,
       2 => Self::Rec2020,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
@@ -1255,15 +1404,18 @@ impl core::str::FromStr for DcpTargetGamut {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Ok(match s {
       "dci-p3" => Self::DciP3,
       "rec709" => Self::Rec709,
       "rec2020" => Self::Rec2020,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(crate::parse::ParseError::unrecognised("DcpTargetGamut")),
     })
   }
@@ -1882,9 +2034,11 @@ mod tests {
   }
 
   #[test]
-  fn copy_and_eq() {
+  fn clone_and_eq() {
+    // `Copy` went with `Other(SmolStr)` — the escape carries a name, and
+    // a name is not a register-sized value.
     let m1 = Matrix::Bt709;
-    let m2 = m1; // Copy
+    let m2 = m1.clone();
     assert_eq!(m1, m2);
   }
 
@@ -1971,19 +2125,19 @@ mod tests {
   fn enum_u32_uses_ffmpeg_codes_and_round_trips() {
     // `to_u32()` returns the real FFmpeg n8.1 code point for the
     // named variants (spot-checks against libavutil/pixfmt.h).
-    assert_eq!(Primaries::Unspecified.to_u32(), 2);
-    assert_eq!(Primaries::Bt709.to_u32(), 1);
-    assert_eq!(Primaries::Ebu3213E.to_u32(), 22);
-    assert_eq!(Transfer::Unspecified.to_u32(), 2);
-    assert_eq!(Transfer::SmpteSt2084Pq.to_u32(), 16);
-    assert_eq!(Transfer::AribStdB67Hlg.to_u32(), 18);
-    assert_eq!(Matrix::Rgb.to_u32(), 0);
-    assert_eq!(Matrix::Unspecified.to_u32(), 2);
-    assert_eq!(Matrix::Ictcp.to_u32(), 14);
-    assert_eq!(DynamicRange::Unspecified.to_u32(), 0);
-    assert_eq!(DynamicRange::Limited.to_u32(), 1);
-    assert_eq!(DynamicRange::Full.to_u32(), 2);
-    assert_eq!(ChromaLocation::Unspecified.to_u32(), 0);
+    assert_eq!(Primaries::Unspecified.to_u32(), Some(2));
+    assert_eq!(Primaries::Bt709.to_u32(), Some(1));
+    assert_eq!(Primaries::Ebu3213E.to_u32(), Some(22));
+    assert_eq!(Transfer::Unspecified.to_u32(), Some(2));
+    assert_eq!(Transfer::SmpteSt2084Pq.to_u32(), Some(16));
+    assert_eq!(Transfer::AribStdB67Hlg.to_u32(), Some(18));
+    assert_eq!(Matrix::Rgb.to_u32(), Some(0));
+    assert_eq!(Matrix::Unspecified.to_u32(), Some(2));
+    assert_eq!(Matrix::Ictcp.to_u32(), Some(14));
+    assert_eq!(DynamicRange::Unspecified.to_u32(), Some(0));
+    assert_eq!(DynamicRange::Limited.to_u32(), Some(1));
+    assert_eq!(DynamicRange::Full.to_u32(), Some(2));
+    assert_eq!(ChromaLocation::Unspecified.to_u32(), Some(0));
 
     // `default()` is the `Unspecified` variant for the five FFmpeg
     // enums (NOT necessarily wire id 0).
@@ -2015,7 +2169,7 @@ mod tests {
       Matrix::YCgCoRe,
       Matrix::YCgCoRo,
     ] {
-      assert_eq!(Matrix::from_u32(m.to_u32()), m);
+      assert_eq!(Matrix::from_u32(m.to_u32().unwrap()), Some(m));
     }
     for p in [
       Primaries::Bt709,
@@ -2031,7 +2185,7 @@ mod tests {
       Primaries::SmpteEg432,
       Primaries::Ebu3213E,
     ] {
-      assert_eq!(Primaries::from_u32(p.to_u32()), p);
+      assert_eq!(Primaries::from_u32(p.to_u32().unwrap()), Some(p));
     }
     for t in [
       Transfer::Bt709,
@@ -2052,14 +2206,14 @@ mod tests {
       Transfer::SmpteSt428,
       Transfer::AribStdB67Hlg,
     ] {
-      assert_eq!(Transfer::from_u32(t.to_u32()), t);
+      assert_eq!(Transfer::from_u32(t.to_u32().unwrap()), Some(t));
     }
     for r in [
       DynamicRange::Unspecified,
       DynamicRange::Limited,
       DynamicRange::Full,
     ] {
-      assert_eq!(DynamicRange::from_u32(r.to_u32()), r);
+      assert_eq!(DynamicRange::from_u32(r.to_u32().unwrap()), Some(r));
     }
     for c in [
       ChromaLocation::Unspecified,
@@ -2070,32 +2224,40 @@ mod tests {
       ChromaLocation::BottomLeft,
       ChromaLocation::Bottom,
     ] {
-      assert_eq!(ChromaLocation::from_u32(c.to_u32()), c);
+      assert_eq!(ChromaLocation::from_u32(c.to_u32().unwrap()), Some(c));
     }
     for g in [
       DcpTargetGamut::DciP3,
       DcpTargetGamut::Rec709,
       DcpTargetGamut::Rec2020,
     ] {
-      assert_eq!(DcpTargetGamut::from_u32(g.to_u32()), g);
+      assert_eq!(DcpTargetGamut::from_u32(g.to_u32().unwrap()), Some(g));
     }
 
-    // Unrecognised codes are now LOSSLESS via `Unknown(n)` (no
-    // silent collapse to the default), and round-trip exactly.
-    assert_eq!(Matrix::from_u32(9_999), Matrix::Unknown(9_999));
-    assert_eq!(Matrix::Unknown(9_999).to_u32(), 9_999);
-    // Reserved FFmpeg code 3 is Unknown for every FFmpeg enum.
-    assert_eq!(Primaries::from_u32(3), Primaries::Unknown(3));
-    assert_eq!(Primaries::from_u32(0), Primaries::Unknown(0));
-    assert_eq!(Transfer::from_u32(3), Transfer::Unknown(3));
-    assert_eq!(DynamicRange::from_u32(7), DynamicRange::Unknown(7));
-    assert_eq!(DynamicRange::Unknown(7).to_u32(), 7);
-    assert_eq!(ChromaLocation::from_u32(42), ChromaLocation::Unknown(42));
-    assert_eq!(
-      DcpTargetGamut::from_u32(9_999),
-      DcpTargetGamut::Unknown(9_999)
-    );
-    assert_eq!(DcpTargetGamut::Unknown(9_999).to_u32(), 9_999);
+    // A code this build names nothing for is REJECTED, not invented
+    // into a payload-bearing value: `from_u32` is a boundary helper
+    // over FFmpeg's number space, and a number carries no name.
+    assert_eq!(Matrix::from_u32(9_999), None);
+    // Reserved FFmpeg code 3 is named by no FFmpeg enum.
+    assert_eq!(Primaries::from_u32(3), None);
+    assert_eq!(Primaries::from_u32(0), None);
+    assert_eq!(Transfer::from_u32(3), None);
+    assert_eq!(DynamicRange::from_u32(7), None);
+    assert_eq!(ChromaLocation::from_u32(42), None);
+    assert_eq!(DcpTargetGamut::from_u32(9_999), None);
+  }
+
+  /// …and the name a downstream backend brings survives instead, on the
+  /// text side, where a name is what there is to keep. Needs the
+  /// allocator: at the no-alloc tier there is nowhere to put the name and
+  /// the vocabulary is closed.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  #[test]
+  fn a_name_this_build_does_not_enumerate_survives_as_a_name() {
+    let vendor = Matrix::other("ACEScct");
+    assert_eq!(vendor.as_str(), "acescct");
+    assert_eq!(vendor.to_u32(), None);
+    assert_eq!("acescct".parse(), Ok(vendor));
   }
 
   #[test]
@@ -2110,27 +2272,29 @@ mod tests {
 
     // `Bt601` lives in the mediaframe-domain extension band at
     // offset 0, NOT an FFmpeg code; it round-trips losslessly.
-    assert_eq!(Matrix::Bt601.to_u32(), DOMAIN_EXT_BASE);
-    assert_eq!(Matrix::Bt601.to_u32(), 0x8000_0000);
-    assert_eq!(Matrix::from_u32(0x8000_0000), Matrix::Bt601);
-    assert_eq!(Matrix::from_u32(Matrix::Bt601.to_u32()), Matrix::Bt601);
+    assert_eq!(Matrix::Bt601.to_u32(), Some(DOMAIN_EXT_BASE));
+    assert_eq!(Matrix::Bt601.to_u32(), Some(0x8000_0000));
+    assert_eq!(Matrix::from_u32(0x8000_0000), Some(Matrix::Bt601));
+    assert_eq!(
+      Matrix::from_u32(Matrix::Bt601.to_u32().unwrap()),
+      Some(Matrix::Bt601)
+    );
 
     // Regression: FFmpeg codes 5/6 stay BT.470BG / SMPTE170M and are
     // NEVER decoded as the domain `Bt601` (FFmpeg ingest path never
     // yields a domain variant).
-    assert_eq!(Matrix::from_u32(5), Matrix::Bt470Bg);
-    assert_eq!(Matrix::from_u32(6), Matrix::Smpte170M);
-    assert_ne!(Matrix::from_u32(5), Matrix::Bt601);
-    assert_ne!(Matrix::from_u32(6), Matrix::Bt601);
+    assert_eq!(Matrix::from_u32(5), Some(Matrix::Bt470Bg));
+    assert_eq!(Matrix::from_u32(6), Some(Matrix::Smpte170M));
+    assert_ne!(Matrix::from_u32(5), Some(Matrix::Bt601));
+    assert_ne!(Matrix::from_u32(6), Some(Matrix::Bt601));
 
     // `Bt601` is NOT the default (stays `Unspecified`).
     assert_eq!(Matrix::default(), Matrix::Unspecified);
     assert_ne!(Matrix::default(), Matrix::Bt601);
 
-    // An unassigned bit-31 id stays lossless `Unknown` and
-    // round-trips (domain band is append-only, not exhaustive).
-    assert_eq!(Matrix::from_u32(0x8000_00FF), Matrix::Unknown(0x8000_00FF));
-    assert_eq!(Matrix::Unknown(0x8000_00FF).to_u32(), 0x8000_00FF);
+    // An unassigned bit-31 id names nothing (the domain band is
+    // append-only, not exhaustive), so it is rejected.
+    assert_eq!(Matrix::from_u32(0x8000_00FF), None);
 
     // `is_variant` helper is generated for the new variant.
     assert!(Matrix::Bt601.is_bt_601());
@@ -2271,11 +2435,14 @@ mod tests {
 
   #[test]
   fn primaries_chromaticities_and_white_point() {
-    // Unknown / Unspecified carry no defined primaries.
+    // Unspecified / a name we do not know carry no defined primaries.
     assert!(Primaries::Unspecified.chromaticities().is_none());
     assert!(Primaries::Unspecified.white_point().is_none());
-    assert!(Primaries::Unknown(123).chromaticities().is_none());
-    assert!(Primaries::Unknown(123).white_point().is_none());
+    #[cfg(any(feature = "std", feature = "alloc"))]
+    {
+      assert!(Primaries::other("vendor-gamut").chromaticities().is_none());
+      assert!(Primaries::other("vendor-gamut").white_point().is_none());
+    }
 
     // Every defined variant has both primaries and a white point.
     for p in [
@@ -2397,7 +2564,6 @@ mod tests {
       Primaries::SmpteEg432,
       Primaries::Ebu3213E,
       Primaries::Unspecified,
-      Primaries::Unknown(10),
     ] {
       assert!(!p.is_cie_xyz(), "{p:?} is an RGB gamut, not CIE XYZ");
     }
@@ -2425,28 +2591,28 @@ mod tests {
     macro_rules! sweep {
       ($ty:ty) => {{
         let mut named = 0usize;
-        let mut seen: [&str; 64] = [""; 64];
+        let mut codes = [0u32; 64];
         for code in (0..=1024u32).chain(DOMAIN_EXT_BASE..=DOMAIN_EXT_BASE + 1024) {
-          let value = <$ty>::from_u32(code);
-          if value.is_unknown() {
+          let Some(value) = <$ty>::from_u32(code) else {
             continue;
-          }
+          };
           let slug = value.as_str();
           assert_eq!(
             slug.parse::<$ty>(),
-            Ok(value),
+            Ok(value.clone()),
             "{} slug {slug:?} does not parse back to {value:?}",
             stringify!($ty)
           );
-          for prior in seen.iter().take(named) {
+          for prior in codes.iter().take(named) {
+            let prior = <$ty>::from_u32(*prior).expect("recorded code names a variant");
             assert_ne!(
-              *prior,
+              prior.as_str(),
               slug,
               "{} has two variants spelled {slug:?}",
               stringify!($ty)
             );
           }
-          seen[named] = slug;
+          codes[named] = code;
           named += 1;
         }
         assert!(
@@ -2465,30 +2631,41 @@ mod tests {
     sweep!(DcpTargetGamut);
   }
 
-  /// `Unknown(_)` renders as the single string `"unknown"` for every
-  /// payload, so it has no parseable spelling: rejecting it is the only
-  /// answer that never returns a value the caller did not write.
+  /// `"unknown"` is no longer a value any colour enum can hold: the arm
+  /// that collapsed every payload onto that one string is gone, so the
+  /// word is just another name the vocabulary does not enumerate and it
+  /// rides `Other` like any other.
+  #[cfg(any(feature = "std", feature = "alloc"))]
   #[test]
-  fn unknown_has_no_parseable_spelling() {
-    assert_eq!(Matrix::Unknown(250).as_str(), "unknown");
-    assert!("unknown".parse::<Matrix>().is_err());
-    assert!("unknown".parse::<Primaries>().is_err());
-    assert!("unknown".parse::<Transfer>().is_err());
-    assert!("unknown".parse::<DynamicRange>().is_err());
-    assert!("unknown".parse::<ChromaLocation>().is_err());
-    assert!("unknown".parse::<DcpTargetGamut>().is_err());
-
-    // …and the numeric id is still the way to carry one.
-    assert_eq!(Matrix::from_u32(250), Matrix::Unknown(250));
+  fn unknown_is_no_longer_a_colour_value() {
+    assert_eq!("unknown".parse(), Ok(Matrix::other("unknown")));
+    assert_eq!("unknown".parse::<Matrix>().unwrap().as_str(), "unknown");
+    for parsed in [
+      "unknown".parse::<Primaries>().unwrap().as_str(),
+      "unknown".parse::<Transfer>().unwrap().as_str(),
+      "unknown".parse::<DynamicRange>().unwrap().as_str(),
+      "unknown".parse::<ChromaLocation>().unwrap().as_str(),
+      "unknown".parse::<DcpTargetGamut>().unwrap().as_str(),
+    ] {
+      assert_eq!(parsed, "unknown");
+    }
   }
 
+  /// The escape is total on the `alloc` tier: every name round-trips, and
+  /// it is folded to the crate's lowercase canon on the way in, so two
+  /// spellings of one name are one value.
+  #[cfg(any(feature = "std", feature = "alloc"))]
   #[test]
-  fn unrecognised_slugs_are_rejected_and_name_their_vocabulary() {
-    let err = "definitely-not-a-matrix".parse::<Matrix>().unwrap_err();
-    assert_eq!(err.type_name(), "Matrix");
-    // Case matters — the slugs are canonical, not normalised.
-    assert!("BT709".parse::<Matrix>().is_err());
-    assert!("".parse::<Matrix>().is_err());
+  fn unnamed_slugs_ride_the_folded_escape() {
+    let m: Matrix = "definitely-not-a-matrix".parse().unwrap();
+    assert!(m.is_other());
+    assert_eq!(m.as_str(), "definitely-not-a-matrix");
+    assert_eq!(
+      "VENDOR-Gamut".parse::<Matrix>().unwrap().as_str(),
+      "vendor-gamut",
+      "the escape must fold to the crate's lowercase canon"
+    );
+    assert_eq!("".parse::<Matrix>().unwrap().as_str(), "");
   }
 
   /// `DcpTargetGamut` gained `as_str`/`Display` to match the five H.273

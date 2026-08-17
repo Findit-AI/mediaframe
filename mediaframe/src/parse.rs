@@ -62,6 +62,24 @@ impl ParseError {
   }
 }
 
+/// ASCII-fold a slug to the crate's lowercase canon.
+///
+/// The one gate every `Other(SmolStr)` escape is built through, so the whole
+/// value space stays lowercase-canonical and the derived `Eq` / `Hash` on
+/// those enums compare *names*, not spellings. Deliberately ASCII-only:
+/// these are FFmpeg/H.273 identifiers, and Unicode case folding is
+/// locale-sensitive in ways a wire vocabulary must not be.
+///
+/// Allocates only when the input is not already folded.
+#[cfg(any(feature = "std", feature = "alloc"))]
+pub(crate) fn fold_owned(s: &str) -> smol_str::SmolStr {
+  if s.bytes().any(|b| b.is_ascii_uppercase()) {
+    smol_str::SmolStr::new(s.to_ascii_lowercase())
+  } else {
+    smol_str::SmolStr::new(s)
+  }
+}
+
 /// Kept private: the three reasons are a diagnostic detail, not a
 /// classification callers branch on. Promoting it later is additive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

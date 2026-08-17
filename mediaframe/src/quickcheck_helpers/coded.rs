@@ -1,8 +1,8 @@
-//! Cluster B — closed FFmpeg-coded enums w/ lossless `from_u32`, colour /
-//! pixel-format / frame geometry / disposition structs.
+//! Cluster B — the FFmpeg-coded name vocabularies, colour / pixel-format /
+//! frame geometry / disposition structs.
 //!
-//! Coded enums: `T::from_u32(u32::arbitrary(g))` — covers `Unknown(u32)` /
-//! `Reserved(_)` arms.
+//! Name vocabularies: a curated slug or an arbitrary string, both through
+//! `FromStr`, so every generated value is canonical.
 //!
 //! Structs: build via public `new(...)` with each field via
 //! `<FieldT>::arbitrary(g)`. Watch `Rational`'s `NonZeroI64` denom —
@@ -14,13 +14,8 @@
 use ::quickcheck::{Arbitrary, Gen};
 
 /// Emits a `pub(crate) fn snake(g: &mut Gen) -> Ty` that decodes an arbitrary
-/// `u32` through the type's lossless `from_u32` — total coverage of
-/// `Unknown(u32)` / `Reserved(_)` arms in one line per type.
-///
-/// Used for LARGE coded enums (matrix / primaries / transfer / pixel format /
-/// disposition bitflags) where a uniform-`u32` decode hits named code points
-/// often enough that the long tail of `Unknown` codes is the dominant
-/// contributor and a `choose`-biased weighting would only slow coverage.
+/// `u32` through the type's `from_u32`. Only `TrackDisposition` uses it: it
+/// is a bit set, so every `u32` is a meaningful value.
 macro_rules! arb_via_code {
   ($($fn:ident => $ty:path),* $(,)?) => { $(
     #[inline]
@@ -46,49 +41,6 @@ macro_rules! qc_via_named_variants {
   )* };
 }
 
-/// Closed coded enum with `Unknown(u32)` arm — 50/50 between named variants
-/// (via `choose`) and an arbitrary `u32` (via `from_u32`, which may land on a
-/// named code or fall through to `Unknown`).
-///
-/// Without the bias, small enums like `Rotation` (4 named + `Unknown`)
-/// virtually never sample a named variant from a uniform `u32` decode. The
-/// 50/50 split keeps `Unknown` reachable while guaranteeing named-arm coverage.
-macro_rules! qc_via_code_weighted {
-  ($($fn:ident => $ty:path, [$($variant:ident),+ $(,)?]);* $(;)?) => { $(
-    #[inline]
-    pub(crate) fn $fn(g: &mut Gen) -> $ty {
-      if bool::arbitrary(g) {
-        const NAMED: &[$ty] = &[$(<$ty>::$variant),+];
-        *g.choose(NAMED).expect("non-empty NAMED slice")
-      } else {
-        <$ty>::from_u32(u32::arbitrary(g))
-      }
-    }
-  )* };
-}
-
-/// Closed coded enum with `Unknown(u32)` arm whose named codes cluster in a
-/// low-integer range (FFmpeg `AV*` colour / pixel-format enums). Listing
-/// every named variant would be unwieldy (`PixelFormat` has 270), so this
-/// 50/50-splits an in-`0..=max_named` code (`u32 % (max+1)` — most land on
-/// named variants; gaps fall on `Unknown`) against a full-range `u32` (broad
-/// `Unknown` exercise). `arb_via_code!` alone almost never reaches the named
-/// range for these — uniform `u32` lands in `0..=947` ~1-in-4.5-million.
-macro_rules! qc_via_code_weighted_range {
-  ($($fn:ident => $ty:path, max_named = $max:expr);* $(;)?) => { $(
-    #[inline]
-    pub(crate) fn $fn(g: &mut Gen) -> $ty {
-      let code = if bool::arbitrary(g) {
-        // `$max < u32::MAX` for every covered type, so `+ 1` is safe.
-        u32::arbitrary(g) % ($max + 1)
-      } else {
-        u32::arbitrary(g)
-      };
-      <$ty>::from_u32(code)
-    }
-  )* };
-}
-
 // ─── coded enums (13) ────────────────────────────────────────────────────────
 
 // Bitflags: uniform `u32` produces reasonable flag combinations directly —
@@ -97,53 +49,98 @@ arb_via_code! {
   track_disposition => crate::disposition::TrackDisposition,
 }
 
-// Large coded enums with an `Unknown(u32)` arm whose named codes cluster in
-// a low-integer range. Uniform `u32` essentially never reaches the named
-// range (Codex round-2 finding); `qc_via_code_weighted_range!` 50/50-splits
-// an in-range pick against a broad `Unknown` exercise. `max_named` = the
-// highest code emitted by each type's `to_u32`:
-//   - Primaries   — Self::Ebu3213E     => 22
-//   - Transfer    — Self::AribStdB67Hlg => 18
-//   - PixelFormat — 270 named codes spanning 0..=947 (FFmpeg AVPixelFormat)
-// `Matrix` is hand-written below — it has an out-of-range domain variant.
-qc_via_code_weighted_range! {
-  primaries    => crate::color::Primaries,         max_named = 22;
-  transfer     => crate::color::Transfer,          max_named = 18;
-  pixel_format => crate::pixel_format::PixelFormat, max_named = 947;
-}
-
-/// `Matrix` is the only coded enum with a **mediaframe-domain** variant:
-/// `Bt601` sits at `DOMAIN_EXT_BASE` (`0x8000_0000`), far outside the
-/// H.273 `0..=17` range (Codex round-3 finding — the plain range-weighted
-/// helper reaches `Bt601` only via the full-`u32` fallback, ~1-in-8.6-
-/// billion). 3-way: in-range H.273 code / the domain-ext code / full-range
-/// `u32` (broad `Unknown` exercise).
-#[inline]
-pub(crate) fn matrix(g: &mut Gen) -> crate::color::Matrix {
-  let code = match *g.choose(&[0u8, 1, 2]).expect("non-empty arm-tag slice") {
-    0 => u32::arbitrary(g) % 18,        // H.273 named range 0..=17
-    1 => crate::color::DOMAIN_EXT_BASE, // domain variant: Matrix::Bt601
-    _ => u32::arbitrary(g),
-  };
-  crate::color::Matrix::from_u32(code)
-}
+// The colour / frame / pixel-format vocabularies are open string enums now:
+// `Other(SmolStr)` is their escape, so they generate the way the codec
+// family does. The numeric generators these replaced existed to reach
+// `Unknown(u32)`, which no longer exists. `Matrix::Bt601` is in the curated
+// slugs deliberately — it is the one mediaframe-domain variant, and the
+// numeric generator reached it roughly one draw in 8.6 billion.
+qc_open_string_enum!(
+  matrix,
+  crate::color::Matrix,
+  [
+    "bt709",
+    "bt601",
+    "bt470bg",
+    "smpte170m",
+    "bt2020nc",
+    "unspecified"
+  ]
+);
+qc_open_string_enum!(
+  primaries,
+  crate::color::Primaries,
+  [
+    "bt709",
+    "bt470bg",
+    "smpte170m",
+    "bt2020",
+    "smpte431",
+    "unspecified"
+  ]
+);
+qc_open_string_enum!(
+  transfer,
+  crate::color::Transfer,
+  [
+    "bt709",
+    "smpte170m",
+    "iec61966-2-1",
+    "smpte2084",
+    "arib-std-b67",
+    "unspecified"
+  ]
+);
+qc_open_string_enum!(
+  dynamic_range,
+  crate::color::DynamicRange,
+  ["tv", "pc", "unspecified"]
+);
+qc_open_string_enum!(
+  chroma_location,
+  crate::color::ChromaLocation,
+  [
+    "left",
+    "center",
+    "topleft",
+    "top",
+    "bottomleft",
+    "unspecified"
+  ]
+);
+qc_open_string_enum!(
+  dcp_target_gamut,
+  crate::color::DcpTargetGamut,
+  ["dci-p3", "rec709", "rec2020"]
+);
+qc_open_string_enum!(
+  pixel_format,
+  crate::pixel_format::PixelFormat,
+  ["yuv420p", "yuv422p10le", "nv12", "rgb24", "rgba", "p010le"]
+);
+qc_open_string_enum!(rotation, crate::frame::Rotation, ["0", "90", "180", "270"]);
+qc_open_string_enum!(
+  field_order,
+  crate::frame::FieldOrder,
+  ["unknown", "progressive", "tt", "bb", "tb", "bt"]
+);
+qc_open_string_enum!(
+  stereo_mode,
+  crate::frame::StereoMode,
+  [
+    "mono",
+    "side-by-side",
+    "top-bottom",
+    "frame-sequence",
+    "checkerboard",
+    "lines"
+  ]
+);
 
 // Strictly-closed (no `Unknown` arm) — pick uniformly from named variants.
 qc_via_named_variants! {
   bit_rate_mode => crate::audio::BitRateMode,        [Cbr, Vbr, Abr];
   track_origin  => crate::subtitle::TrackOrigin,     [Embedded, Sidecar, External];
-}
-
-// Closed + `Unknown(u32)`, < 10 named variants — 50/50 named-vs-`from_u32`.
-qc_via_code_weighted! {
-  rotation         => crate::frame::Rotation,        [D0, D90, D180, D270];
-  field_order      => crate::frame::FieldOrder,      [Progressive, Tt, Bb, Tb, Bt];
-  stereo_mode      => crate::frame::StereoMode,
-    [Mono, SideBySide, TopBottom, FrameSequence, Checkerboard, SideBySideQuincunx, Lines, Columns];
-  dynamic_range    => crate::color::DynamicRange,    [Unspecified, Limited, Full];
-  chroma_location  => crate::color::ChromaLocation,
-    [Unspecified, Left, Center, TopLeft, Top, BottomLeft, Bottom];
-  dcp_target_gamut => crate::color::DcpTargetGamut,  [DciP3, Rec709, Rec2020];
 }
 
 // ─── colour structs ──────────────────────────────────────────────────────────

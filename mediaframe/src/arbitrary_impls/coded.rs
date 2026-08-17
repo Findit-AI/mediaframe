@@ -1,72 +1,96 @@
-// Cluster B — closed FFmpeg-coded enums w/ lossless `from_u32`, colour /
-// pixel-format / frame geometry / disposition structs, frame coded enums.
+// Cluster B — the FFmpeg-coded name vocabularies, colour / pixel-format /
+// frame geometry / disposition structs, frame coded enums.
 
-use super::{
-  arb_via_code, arb_via_code_weighted, arb_via_code_weighted_range, arb_via_named_variants,
-};
+use super::{arb_via_code, arb_via_named_variants};
 
 // Bitflags: uniform `u32` produces reasonable flag combinations directly,
 // and every bit pattern is meaningful — keep `TrackDisposition` on raw u32.
 arb_via_code!(crate::disposition::TrackDisposition);
 
-// Large coded enums with an `Unknown(u32)` arm whose named codes cluster
-// in a low-integer range. Uniform `u32` alone almost never reaches the
-// named range (Codex round-2 finding); `arb_via_code_weighted_range!`
-// 50/50-splits an in-range pick against a broad `Unknown` exercise.
-// `max_named` = the highest code emitted by each type's `to_u32`:
-//   - Primaries    — Self::Ebu3213E => 22
-//   - Transfer     — Self::AribStdB67Hlg => 18
-//   - PixelFormat  — 270 named codes spanning 0..=947 (FFmpeg AVPixelFormat)
-// `Matrix` is hand-written below — it has an out-of-range domain variant.
-arb_via_code_weighted_range!(crate::color::Primaries, max_named = 22);
-arb_via_code_weighted_range!(crate::color::Transfer, max_named = 18);
-arb_via_code_weighted_range!(crate::pixel_format::PixelFormat, max_named = 947);
-
-// `Matrix` is the only coded enum with a **mediaframe-domain** variant:
-// `Bt601` sits at `DOMAIN_EXT_BASE` (`0x8000_0000`), far outside the H.273
-// `0..=17` range (Codex round-3 finding — the plain range-weighted helper
-// reaches `Bt601` only via the full-`u32` fallback, ~1-in-8.6-billion).
-// 3-way: in-range H.273 code / the domain-ext code / full-range `u32`.
-impl<'a> ::arbitrary::Arbitrary<'a> for crate::color::Matrix {
-  fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
-    let code = match u.int_in_range(0u8..=2)? {
-      0 => u.int_in_range(0u32..=17)?,    // H.273 named range
-      1 => crate::color::DOMAIN_EXT_BASE, // domain variant: Matrix::Bt601
-      _ => <u32 as ::arbitrary::Arbitrary>::arbitrary(u)?,
-    };
-    Ok(crate::color::Matrix::from_u32(code))
-  }
-}
-
-// Closed coded enums WITH an `Unknown(u32)` arm and < 10 named variants:
-// 50/50 weighted between named picks and arbitrary u32 (Codex round-1
-// finding — uniform u32 alone almost never lands on the small named
-// numeric range).
-arb_via_code_weighted!(crate::color::DynamicRange, [Unspecified, Limited, Full]);
-arb_via_code_weighted!(
-  crate::color::ChromaLocation,
-  [Unspecified, Left, Center, TopLeft, Top, BottomLeft, Bottom]
+// The colour / frame / pixel-format vocabularies are open string enums now:
+// `Other(SmolStr)` is their escape, so they generate the same way the codec
+// family does — a curated slug, or an arbitrary string, both routed through
+// `FromStr` so every generated value is canonical. The old numeric
+// generators (`arb_via_code_weighted*`) existed to reach `Unknown(u32)`,
+// which no longer exists.
+//
+// Curated slugs are drawn from each type's own `as_str()` table, favouring
+// values a real file carries; `Matrix::Bt601` is included deliberately —
+// it is the one mediaframe-domain variant, and the numeric generator used
+// to reach it roughly one draw in 8.6 billion.
+super::arb_open_string_enum!(
+  crate::color::Matrix,
+  [
+    "bt709",
+    "bt601",
+    "bt470bg",
+    "smpte170m",
+    "bt2020nc",
+    "unspecified"
+  ]
 );
-arb_via_code_weighted!(crate::color::DcpTargetGamut, [DciP3, Rec709, Rec2020]);
-arb_via_code_weighted!(crate::frame::Rotation, [D0, D90, D180, D270]);
-arb_via_code_weighted!(crate::frame::FieldOrder, [Progressive, Tt, Bb, Tb, Bt]);
-arb_via_code_weighted!(
+super::arb_open_string_enum!(
+  crate::color::Primaries,
+  [
+    "bt709",
+    "bt470bg",
+    "smpte170m",
+    "bt2020",
+    "smpte431",
+    "unspecified"
+  ]
+);
+super::arb_open_string_enum!(
+  crate::color::Transfer,
+  [
+    "bt709",
+    "smpte170m",
+    "iec61966-2-1",
+    "smpte2084",
+    "arib-std-b67",
+    "unspecified"
+  ]
+);
+super::arb_open_string_enum!(crate::color::DynamicRange, ["tv", "pc", "unspecified"]);
+super::arb_open_string_enum!(
+  crate::color::ChromaLocation,
+  [
+    "left",
+    "center",
+    "topleft",
+    "top",
+    "bottomleft",
+    "unspecified"
+  ]
+);
+super::arb_open_string_enum!(
+  crate::color::DcpTargetGamut,
+  ["dci-p3", "rec709", "rec2020"]
+);
+super::arb_open_string_enum!(
+  crate::pixel_format::PixelFormat,
+  ["yuv420p", "yuv422p10le", "nv12", "rgb24", "rgba", "p010le"]
+);
+super::arb_open_string_enum!(crate::frame::Rotation, ["0", "90", "180", "270"]);
+super::arb_open_string_enum!(
+  crate::frame::FieldOrder,
+  ["unknown", "progressive", "tt", "bb", "tb", "bt"]
+);
+super::arb_open_string_enum!(
   crate::frame::StereoMode,
   [
-    Mono,
-    SideBySide,
-    TopBottom,
-    FrameSequence,
-    Checkerboard,
-    SideBySideQuincunx,
-    Lines,
-    Columns,
+    "mono",
+    "side-by-side",
+    "top-bottom",
+    "frame-sequence",
+    "checkerboard",
+    "lines"
   ]
 );
 
-// Strictly closed coded enums (NO `Unknown(u32)` arm — unrecognised
-// codes collapse to the default on `from_u32`). Uniform u32 would skew
-// to the default; pick uniformly from the named variants instead.
+// Strictly closed coded enums (no escape arm at all — an unrecognised
+// code has nowhere to go). Uniform u32 would skew to the default; pick
+// uniformly from the named variants instead.
 arb_via_named_variants!(crate::audio::BitRateMode, [Cbr, Vbr, Abr]);
 arb_via_named_variants!(crate::subtitle::TrackOrigin, [Embedded, Sidecar, External]);
 

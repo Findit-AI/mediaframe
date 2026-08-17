@@ -18,7 +18,7 @@ impl crate::SourceFormat for Monoblack {}
 
 /// A single row from a [`MonoblackFrame`](crate::frame::MonoblackFrame) — byte buffer
 /// (8 pixels per byte, MSB first).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct MonoblackRow<'a> {
   data: &'a [u8],
   width: u32,
@@ -60,8 +60,8 @@ impl<'a> MonoblackRow<'a> {
 
   /// Color matrix carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn matrix(&self) -> Matrix {
-    self.matrix
+  pub fn matrix(&self) -> Matrix {
+    self.matrix.clone()
   }
 
   /// Full-range flag carried through from the kernel call.
@@ -103,7 +103,13 @@ pub fn monoblack_to<S: MonoblackSink>(
     let start = row * stride;
     let avail = data.len().saturating_sub(start);
     let row_data = &data[start..start + packed_bytes.min(avail)];
-    sink.process(MonoblackRow::new(row_data, w, row, matrix, full_range))?;
+    sink.process(MonoblackRow::new(
+      row_data,
+      w,
+      row,
+      matrix.clone(),
+      full_range,
+    ))?;
   }
   Ok(())
 }

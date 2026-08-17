@@ -28,7 +28,7 @@ impl SourceFormat for Gbrp {}
 /// One output row of a [`Gbrp`] source — three full-width planes in
 /// G / B / R order. Use the [`Self::g`] / [`Self::b`] / [`Self::r`]
 /// accessors.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct GbrpRow<'a> {
   y: &'a [u8],
   u: &'a [u8],
@@ -82,8 +82,8 @@ impl<'a> GbrpRow<'a> {
   }
   /// YUV/RGB conversion matrix carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn matrix(&self) -> Matrix {
-    self.matrix
+  pub fn matrix(&self) -> Matrix {
+    self.matrix.clone()
   }
   /// Full-range vs limited-range flag carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
@@ -123,7 +123,7 @@ pub fn gbrp_to<S: GbrpSink>(
     let u = &u_plane[u_start..u_start + w];
     let v = &v_plane[v_start..v_start + w];
 
-    sink.process(GbrpRow::new(y, u, v, row, matrix, full_range))?;
+    sink.process(GbrpRow::new(y, u, v, row, matrix.clone(), full_range))?;
   }
   Ok(())
 }

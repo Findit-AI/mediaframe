@@ -70,7 +70,7 @@ pub type Xyz12Be = Xyz12<true>;
 /// `with_luma_u16` sinker accessors can apply the gamut-matched
 /// coefficients without going through the YUV-leaning `Matrix`
 /// enum (which has no DCI-P3 entry — codex round-2 finding).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Xyz12Row<'a, const BE: bool = false> {
   xyz: &'a [u16],
   row: usize,
@@ -108,8 +108,8 @@ impl<'a, const BE: bool> Xyz12Row<'a, BE> {
 
   /// Target RGB gamut chosen at the walker call site.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn target_gamut(&self) -> DcpTargetGamut {
-    self.target_gamut
+  pub fn target_gamut(&self) -> DcpTargetGamut {
+    self.target_gamut.clone()
   }
 
   /// Q15 luma weights `(k_r, k_g, k_b)` matched to the target gamut.
@@ -160,14 +160,14 @@ impl<'a, const BE: bool> Xyz12Row<'a, BE> {
 /// - **Rec.2020** (D65) — `Y = 0.2627 R + 0.6780 G + 0.0593 B`
 ///   → `(8607, 22217, 1944)`. (Matches `Matrix::Bt2020Ncl`.)
 ///
-/// Returns `None` for [`DcpTargetGamut::Unknown`]: an unknown /
+/// Returns `None` for [`DcpTargetGamut::Other`]: an unknown /
 /// future / corrupt gamut id has no defined luma basis and **must
 /// not** be silently colour-converted as if it were DCI-P3 (Codex
-/// adversarial-review F4). Callers must resolve `Unknown(_)` to a
+/// adversarial-review F4). Callers must resolve `Other(_)` to a
 /// concrete gamut before conversion.
 #[cfg_attr(not(tarpaulin), inline(always))]
-pub(crate) const fn luma_weights_q15_for_gamut(g: DcpTargetGamut) -> Option<(i32, i32, i32)> {
-  match g {
+pub(crate) fn luma_weights_q15_for_gamut(g: &DcpTargetGamut) -> Option<(i32, i32, i32)> {
+  match *g {
     // Rec.709 / sRGB: Y = 0.2126 R + 0.7152 G + 0.0722 B (D65).
     DcpTargetGamut::Rec709 => Some((6966, 23436, 2366)),
     // DCI-P3 theatrical (DCI white): Y row of the P3-DCI rgb_to_xyz
@@ -178,9 +178,10 @@ pub(crate) const fn luma_weights_q15_for_gamut(g: DcpTargetGamut) -> Option<(i32
     DcpTargetGamut::DciP3 => Some((6865, 23645, 2258)),
     // Rec.2020: Y = 0.2627 R + 0.6780 G + 0.0593 B (D65).
     DcpTargetGamut::Rec2020 => Some((8607, 22217, 1944)),
-    // Unknown has no defined luma basis — explicit `None`, never a
-    // silent DCI-P3 fallback.
-    DcpTargetGamut::Unknown(_) => None,
+    // A gamut this build does not name has no defined luma basis —
+    // explicit `None`, never a silent DCI-P3 fallback.
+    #[cfg(any(feature = "std", feature = "alloc"))]
+    DcpTargetGamut::Other(_) => None,
   }
 }
 
@@ -206,23 +207,23 @@ pub trait Xyz12Sink<const BE: bool = false>:
 /// # Panics
 ///
 /// `target_gamut` must be a concrete gamut. Passing
-/// [`DcpTargetGamut::Unknown`] is a caller error (an unknown / future
-/// / corrupt gamut has no defined luma basis and must not be silently
+/// [`DcpTargetGamut::Other`] is a caller error (a gamut this build does
+/// not name has no defined luma basis and must not be silently
 /// colour-converted) and panics with a descriptive message — resolve
-/// `Unknown(_)` to `Rec709` / `DciP3` / `Rec2020` before calling.
+/// `Other(_)` to `Rec709` / `DciP3` / `Rec2020` before calling.
 pub fn xyz12_to<const BE: bool, S: Xyz12Sink<BE>>(
   src: &Xyz12Frame<'_, BE>,
   target_gamut: DcpTargetGamut,
   sink: &mut S,
 ) -> Result<(), S::Error> {
   // Enforce the gamut precondition BEFORE touching the sink: an
-  // `Unknown(_)` gamut must panic before any `begin_frame` side
+  // `Other(_)` gamut must panic before any `begin_frame` side
   // effects, and the panic must not be maskable by a `begin_frame`
   // error (Codex adversarial-review F7).
-  let luma_q15 = luma_weights_q15_for_gamut(target_gamut).expect(
-    "xyz12_to: target_gamut is DcpTargetGamut::Unknown(_); resolve it \
+  let luma_q15 = luma_weights_q15_for_gamut(&target_gamut).expect(
+    "xyz12_to: target_gamut is DcpTargetGamut::Other(_); resolve it \
      to a concrete gamut (Rec709/DciP3/Rec2020) before XYZ->RGB \
-     conversion -- an unknown gamut must not be silently colour-converted",
+     conversion -- an unnamed gamut must not be silently colour-converted",
   );
 
   sink.begin_frame(src.width(), src.height())?;
@@ -236,7 +237,12 @@ pub fn xyz12_to<const BE: bool, S: Xyz12Sink<BE>>(
   for row in 0..h {
     let start = row * stride;
     let xyz = &plane[start..start + row_elems];
-    sink.process(Xyz12Row::<BE>::new(xyz, row, target_gamut, luma_q15))?;
+    sink.process(Xyz12Row::<BE>::new(
+      xyz,
+      row,
+      target_gamut.clone(),
+      luma_q15,
+    ))?;
   }
   Ok(())
 }
@@ -248,12 +254,15 @@ mod tests {
   use core::convert::Infallible;
 
   #[test]
-  fn unknown_gamut_has_no_luma_weights() {
-    assert!(luma_weights_q15_for_gamut(DcpTargetGamut::Unknown(7)).is_none());
-    assert!(luma_weights_q15_for_gamut(DcpTargetGamut::Unknown(0)).is_none());
-    assert!(luma_weights_q15_for_gamut(DcpTargetGamut::Rec709).is_some());
-    assert!(luma_weights_q15_for_gamut(DcpTargetGamut::DciP3).is_some());
-    assert!(luma_weights_q15_for_gamut(DcpTargetGamut::Rec2020).is_some());
+  fn unnamed_gamut_has_no_luma_weights() {
+    #[cfg(any(feature = "std", feature = "alloc"))]
+    {
+      assert!(luma_weights_q15_for_gamut(&DcpTargetGamut::other("aces-ap0")).is_none());
+      assert!(luma_weights_q15_for_gamut(&DcpTargetGamut::other("")).is_none());
+    }
+    assert!(luma_weights_q15_for_gamut(&DcpTargetGamut::Rec709).is_some());
+    assert!(luma_weights_q15_for_gamut(&DcpTargetGamut::DciP3).is_some());
+    assert!(luma_weights_q15_for_gamut(&DcpTargetGamut::Rec2020).is_some());
   }
 
   // `begin_frame` panics with a distinct sentinel. If the gamut
@@ -267,18 +276,19 @@ mod tests {
       panic!("begin_frame ran before the gamut precondition check");
     }
     fn process(&mut self, _row: Xyz12Row<'_, false>) -> Result<(), Infallible> {
-      unreachable!("process must not run for an Unknown gamut");
+      unreachable!("process must not run for an unnamed gamut");
     }
   }
   impl Xyz12Sink for PanicBeginSink {}
 
+  #[cfg(any(feature = "std", feature = "alloc"))]
   #[test]
-  #[should_panic(expected = "DcpTargetGamut::Unknown")]
-  fn xyz12_to_unknown_gamut_panics_before_begin_frame() {
+  #[should_panic(expected = "DcpTargetGamut::Other")]
+  fn xyz12_to_unnamed_gamut_panics_before_begin_frame() {
     let plane = [0u16; 3];
     let frame = Xyz12Frame::new(&plane, 1, 1, 3);
     let mut sink = PanicBeginSink;
-    let _ = xyz12_to(&frame, DcpTargetGamut::Unknown(7), &mut sink);
+    let _ = xyz12_to(&frame, DcpTargetGamut::other("aces-ap0"), &mut sink);
   }
 
   struct CountingSink {

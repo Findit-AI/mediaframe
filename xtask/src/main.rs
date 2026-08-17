@@ -724,13 +724,13 @@ fn parse_vendored(text: &str) -> BTreeSet<String> {
     .collect()
 }
 
-/// Parse the `as_str(&self) -> &'static str` match block in
-/// `src/pixel_format.rs`, extracting every literal slug.
-/// Excludes the `unknown` sentinel.
+/// Parse the `as_str` match block in `src/pixel_format.rs`, extracting
+/// every literal slug. Excludes the `none` sentinel (FFmpeg's
+/// `AV_PIX_FMT_NONE`, which the vendored slug list does not carry).
 fn parse_as_str_slugs(rs: &str) -> BTreeSet<String> {
   let mut out = BTreeSet::new();
   // Lines look like:   Self::Yuv420p => "yuv420p",
-  //               or:  Self::Unknown(_) => "unknown",
+  //               or:  Self::None => "none",
   for line in rs.lines() {
     let line = line.trim();
     if let Some(rest) = line.strip_prefix("Self::") {
@@ -738,7 +738,7 @@ fn parse_as_str_slugs(rs: &str) -> BTreeSet<String> {
       if let Some(arrow) = rest.find("=>") {
         let after = &rest[arrow + 2..].trim_start();
         if let Some(slug) = extract_first_string_literal(after)
-          && slug != "unknown"
+          && slug != "none"
         {
           out.insert(slug);
         }
@@ -787,8 +787,8 @@ fn parse_color_vendored(text: &str) -> BTreeMap<String, BTreeMap<u32, String>> {
 /// One named arm of a colour enum's `to_u32()` match, joined with
 /// its `as_str()` slug: `Self::<ident> => <value>` paired with the
 /// `Self::<ident> => "<slug>"` literal from the same enum's
-/// `as_str()`. The `Unknown(v) => *v` passthrough and the
-/// `Unknown(_) => "unknown"` sentinel are excluded.
+/// `as_str()`. The `Other(_)` escape arms carry no code and no literal
+/// slug, so they fall out of both scans on their own.
 struct NamedCode {
   value: u32,
   /// `true` iff the matching `as_str()` arm yields a non-empty slug.
@@ -899,7 +899,7 @@ fn parse_color_named_codes(
     let Some(rest) = line.strip_prefix("Self::") else {
       continue;
     };
-    if rest.starts_with("Unknown") {
+    if rest.starts_with("Other") {
       continue;
     }
     let Some(arrow) = rest.find("=>") else {

@@ -39,7 +39,7 @@ impl<const BE: bool> SourceFormat for Gbrap32<BE> {}
 /// [`Self::r`] / [`Self::a`]. Endianness is recorded on the parent
 /// [`Gbrap32Frame<'_, BE>`](crate::frame::Gbrap32Frame) / sinker, not on the
 /// Row itself.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Gbrap32Row<'a> {
   g: &'a [u32],
   b: &'a [u32],
@@ -100,8 +100,8 @@ impl<'a> Gbrap32Row<'a> {
   }
   /// YUV/RGB conversion matrix carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn matrix(&self) -> Matrix {
-    self.matrix
+  pub fn matrix(&self) -> Matrix {
+    self.matrix.clone()
   }
   /// Full-range vs limited-range flag carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
@@ -151,7 +151,7 @@ where
     let b = &b_plane[row * b_stride..row * b_stride + w];
     let r = &r_plane[row * r_stride..row * r_stride + w];
     let a = &a_plane[row * a_stride..row * a_stride + w];
-    sink.process(Gbrap32Row::new(g, b, r, a, row, matrix, full_range))?;
+    sink.process(Gbrap32Row::new(g, b, r, a, row, matrix.clone(), full_range))?;
   }
   Ok(())
 }

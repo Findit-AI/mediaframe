@@ -53,21 +53,19 @@ pub enum SampleFormat {
   S64,
   /// `AV_SAMPLE_FMT_S64P` (code `11`) — signed 64-bit, planar.
   S64p,
-  /// Unknown / unrecognised FFmpeg `AV_SAMPLE_FMT_*` code. The
-  /// wrapped `u32` is the original value passed to
-  /// [`Self::from_u32`] — preserved so the round-trip is lossless.
-  Unknown(u32),
   /// A format slug not enumerated above — carries the slug verbatim
   /// (the [`Self::from_str`] lossless escape).
   Other(SmolStr),
 }
 
 impl Default for SampleFormat {
-  /// `AV_SAMPLE_FMT_NONE` is `-1` in FFmpeg; we use [`Self::Unknown`]
-  /// at code `u32::MAX` as the sentinel (no real code overlaps).
+  /// `Other("")` — the wire-zero / "absent" sentinel, matching
+  /// [`ContainerFormat`]. FFmpeg's `AV_SAMPLE_FMT_NONE` is `-1`, outside
+  /// the `u32` code space, so it has no numeric spelling here; the empty
+  /// slug is the one that round-trips.
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn default() -> Self {
-    Self::Unknown(u32::MAX)
+    Self::Other(SmolStr::new_inline(""))
   }
 }
 
@@ -87,21 +85,19 @@ impl SampleFormat {
       Self::Dblp => "dblp",
       Self::S64 => "s64",
       Self::S64p => "s64p",
-      Self::Unknown(_) => "unknown",
       Self::Other(s) => s.as_str(),
     }
   }
 
-  /// Stable wire id — the FFmpeg `AV_SAMPLE_FMT_*` enum index for
-  /// the named variants. [`Self::Unknown`] carries its original
-  /// `u32` through unchanged so `from_u32(to_u32(x)) == x` for every
-  /// `x`. [`Self::Other`] (slug-bearing escape) encodes as
-  /// `u32::MAX` — it carries no FFmpeg numeric id, so it
-  /// canonicalises through the wire to [`Self::Unknown(u32::MAX)`]
-  /// (the slug is preserved only on the string-codec path).
+  /// The FFmpeg `AV_SAMPLE_FMT_*` enum index for the named variants —
+  /// a boundary helper for FFmpeg interop, not a wire form.
+  ///
+  /// [`Self::Other`] returns [`None`]: it names a format FFmpeg has no
+  /// code for, and inventing one would lose the name. The slug from
+  /// [`Self::as_str`] is the spelling that always survives.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::U8 => 0,
       Self::S16 => 1,
       Self::S32 => 2,
@@ -114,17 +110,16 @@ impl SampleFormat {
       Self::Dblp => 9,
       Self::S64 => 10,
       Self::S64p => 11,
-      Self::Unknown(v) => *v,
-      Self::Other(_) => u32::MAX,
-    }
+      Self::Other(_) => return None,
+    })
   }
 
-  /// Decodes from the FFmpeg `AV_SAMPLE_FMT_*` code produced by
-  /// [`Self::to_u32`]. Unrecognised codes round-trip as
-  /// [`Self::Unknown`] (lossless).
+  /// Decodes an FFmpeg `AV_SAMPLE_FMT_*` code, or [`None`] if this build
+  /// names no format for it. The numeric space is FFmpeg's, so an
+  /// unrecognised code carries no name to preserve.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       0 => Self::U8,
       1 => Self::S16,
       2 => Self::S32,
@@ -137,8 +132,18 @@ impl SampleFormat {
       9 => Self::Dblp,
       10 => Self::S64,
       11 => Self::S64p,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings.
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 
   /// `true` for the planar layout variants (`*p`).
@@ -169,7 +174,7 @@ impl FromStr for SampleFormat {
       "dblp" => Self::Dblp,
       "s64" => Self::S64,
       "s64p" => Self::S64p,
-      other => Self::Other(SmolStr::new(other)),
+      other => Self::other(other),
     })
   }
 }
@@ -364,15 +369,22 @@ mod tests {
       SampleFormat::S64,
       SampleFormat::S64p,
     ] {
-      let back = SampleFormat::from_u32(v.to_u32());
-      assert_eq!(back, v, "round-trip mismatch for `{}`", v.as_str());
+      let back = SampleFormat::from_u32(v.to_u32().expect("named format has a code"));
+      assert_eq!(
+        back,
+        Some(v.clone()),
+        "round-trip mismatch for `{}`",
+        v.as_str()
+      );
     }
   }
 
   #[test]
-  fn audio_format_unknown_u32_round_trips() {
-    let v = SampleFormat::Unknown(12_345);
-    assert_eq!(SampleFormat::from_u32(v.to_u32()), v);
+  fn audio_format_unnamed_code_is_rejected_and_the_escape_keeps_its_name() {
+    assert_eq!(SampleFormat::from_u32(12_345), None);
+    let vendor = SampleFormat::other("VENDOR_S24");
+    assert_eq!(vendor.as_str(), "vendor_s24");
+    assert_eq!(vendor.to_u32(), None);
   }
 
   #[test]

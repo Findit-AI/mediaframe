@@ -66,7 +66,7 @@ impl TrackOrigin {
   /// Decodes from the stable `u32` wire id produced by
   /// [`Self::to_u32`]. Unknown ids fall back to the default
   /// ([`Self::Embedded`]) — this is a closed enum with no lossless
-  /// `Unknown(u32)` escape, so the round-trip is exact only for
+  /// escape arm at all, so the round-trip is exact only for
   /// the enumerated ids `0`/`1`/`2`.
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn from_u32(v: u32) -> Self {
