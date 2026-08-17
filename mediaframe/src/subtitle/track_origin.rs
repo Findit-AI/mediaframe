@@ -93,6 +93,26 @@ impl TrackOrigin {
   }
 }
 
+impl core::str::FromStr for TrackOrigin {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders — the exact
+  /// inverse of [`Display`](core::fmt::Display).
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any input
+  /// outside this closed vocabulary.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "embedded" => Self::Embedded,
+      "sidecar" => Self::Sidecar,
+      "external" => Self::External,
+      _ => return Err(crate::parse::ParseError::unrecognised("TrackOrigin")),
+    })
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -141,5 +161,26 @@ mod tests {
     assert!(!TrackOrigin::Embedded.is_sidecar());
     assert!(TrackOrigin::Sidecar.is_sidecar());
     assert!(TrackOrigin::External.is_external());
+  }
+
+  /// `TrackOrigin` is a closed unit vocabulary — the slug round-trips for
+  /// every variant and nothing else parses. The `match` makes the list
+  /// exhaustive by construction.
+  #[test]
+  fn every_origin_round_trips_through_its_slug() {
+    const fn _is_exhaustive(o: TrackOrigin) {
+      match o {
+        TrackOrigin::Embedded | TrackOrigin::Sidecar | TrackOrigin::External => (),
+      }
+    }
+
+    for origin in ALL {
+      assert_eq!(origin.as_str().parse(), Ok(*origin));
+    }
+
+    let err = "broadcast".parse::<TrackOrigin>().unwrap_err();
+    assert_eq!(err.type_name(), "TrackOrigin");
+    assert!("Embedded".parse::<TrackOrigin>().is_err());
+    assert!("".parse::<TrackOrigin>().is_err());
   }
 }

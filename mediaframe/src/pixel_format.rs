@@ -1774,6 +1774,310 @@ impl PixelFormat {
   }
 }
 
+impl core::str::FromStr for PixelFormat {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders, the exact
+  /// inverse of [`Display`](core::fmt::Display) for every **named**
+  /// variant.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any other
+  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
+  /// string for every payload, so there is no code to recover; use
+  /// [`Self::from_u32`] when the numeric id is what you hold.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "yuv420p" => Self::Yuv420p,
+      "yuv422p" => Self::Yuv422p,
+      "yuv440p" => Self::Yuv440p,
+      "yuv444p" => Self::Yuv444p,
+      "yuv411p" => Self::Yuv411p,
+      "yuv410p" => Self::Yuv410p,
+      "yuvj411p" => Self::Yuvj411p,
+      "yuvj420p" => Self::Yuvj420p,
+      "yuvj422p" => Self::Yuvj422p,
+      "yuvj440p" => Self::Yuvj440p,
+      "yuvj444p" => Self::Yuvj444p,
+      "yuv420p9le" => Self::Yuv420p9Le,
+      "yuv420p9be" => Self::Yuv420p9Be,
+      "yuv420p10le" => Self::Yuv420p10Le,
+      "yuv420p10be" => Self::Yuv420p10Be,
+      "yuv420p12le" => Self::Yuv420p12Le,
+      "yuv420p12be" => Self::Yuv420p12Be,
+      "yuv420p14le" => Self::Yuv420p14Le,
+      "yuv420p14be" => Self::Yuv420p14Be,
+      "yuv420p16le" => Self::Yuv420p16Le,
+      "yuv420p16be" => Self::Yuv420p16Be,
+      "yuv422p9le" => Self::Yuv422p9Le,
+      "yuv422p9be" => Self::Yuv422p9Be,
+      "yuv422p10le" => Self::Yuv422p10Le,
+      "yuv422p10be" => Self::Yuv422p10Be,
+      "yuv422p12le" => Self::Yuv422p12Le,
+      "yuv422p12be" => Self::Yuv422p12Be,
+      "yuv422p14le" => Self::Yuv422p14Le,
+      "yuv422p14be" => Self::Yuv422p14Be,
+      "yuv422p16le" => Self::Yuv422p16Le,
+      "yuv422p16be" => Self::Yuv422p16Be,
+      "yuv440p10le" => Self::Yuv440p10Le,
+      "yuv440p10be" => Self::Yuv440p10Be,
+      "yuv440p12le" => Self::Yuv440p12Le,
+      "yuv440p12be" => Self::Yuv440p12Be,
+      "yuv444p9le" => Self::Yuv444p9Le,
+      "yuv444p9be" => Self::Yuv444p9Be,
+      "yuv444p10le" => Self::Yuv444p10Le,
+      "yuv444p10be" => Self::Yuv444p10Be,
+      "yuv444p12le" => Self::Yuv444p12Le,
+      "yuv444p12be" => Self::Yuv444p12Be,
+      "yuv444p14le" => Self::Yuv444p14Le,
+      "yuv444p14be" => Self::Yuv444p14Be,
+      "yuv444p16le" => Self::Yuv444p16Le,
+      "yuv444p16be" => Self::Yuv444p16Be,
+      "yuv444p10msble" => Self::Yuv444p10MsbLe,
+      "yuv444p10msbbe" => Self::Yuv444p10MsbBe,
+      "yuv444p12msble" => Self::Yuv444p12MsbLe,
+      "yuv444p12msbbe" => Self::Yuv444p12MsbBe,
+      "yuva420p" => Self::Yuva420p,
+      "yuva422p" => Self::Yuva422p,
+      "yuva444p" => Self::Yuva444p,
+      "yuva420p9le" => Self::Yuva420p9Le,
+      "yuva420p9be" => Self::Yuva420p9Be,
+      "yuva422p9le" => Self::Yuva422p9Le,
+      "yuva422p9be" => Self::Yuva422p9Be,
+      "yuva444p9le" => Self::Yuva444p9Le,
+      "yuva444p9be" => Self::Yuva444p9Be,
+      "yuva420p10le" => Self::Yuva420p10Le,
+      "yuva420p10be" => Self::Yuva420p10Be,
+      "yuva422p10le" => Self::Yuva422p10Le,
+      "yuva422p10be" => Self::Yuva422p10Be,
+      "yuva444p10le" => Self::Yuva444p10Le,
+      "yuva444p10be" => Self::Yuva444p10Be,
+      "yuva420p12le" => Self::Yuva420p12Le,
+      "yuva420p12be" => Self::Yuva420p12Be,
+      "yuva422p12le" => Self::Yuva422p12Le,
+      "yuva422p12be" => Self::Yuva422p12Be,
+      "yuva444p12le" => Self::Yuva444p12Le,
+      "yuva444p12be" => Self::Yuva444p12Be,
+      "yuva444p14le" => Self::Yuva444p14Le,
+      "yuva420p16le" => Self::Yuva420p16Le,
+      "yuva420p16be" => Self::Yuva420p16Be,
+      "yuva422p16le" => Self::Yuva422p16Le,
+      "yuva422p16be" => Self::Yuva422p16Be,
+      "yuva444p16le" => Self::Yuva444p16Le,
+      "yuva444p16be" => Self::Yuva444p16Be,
+      "nv12" => Self::Nv12,
+      "nv21" => Self::Nv21,
+      "nv16" => Self::Nv16,
+      "nv24" => Self::Nv24,
+      "nv42" => Self::Nv42,
+      "nv20le" => Self::Nv20Le,
+      "nv20be" => Self::Nv20Be,
+      "p010le" => Self::P010Le,
+      "p010be" => Self::P010Be,
+      "p012le" => Self::P012Le,
+      "p012be" => Self::P012Be,
+      "p016le" => Self::P016Le,
+      "p016be" => Self::P016Be,
+      "p210le" => Self::P210Le,
+      "p210be" => Self::P210Be,
+      "p212le" => Self::P212Le,
+      "p212be" => Self::P212Be,
+      "p216le" => Self::P216Le,
+      "p216be" => Self::P216Be,
+      "p410le" => Self::P410Le,
+      "p410be" => Self::P410Be,
+      "p412le" => Self::P412Le,
+      "p412be" => Self::P412Be,
+      "p416le" => Self::P416Le,
+      "p416be" => Self::P416Be,
+      "yuyv422" => Self::Yuyv422,
+      "uyvy422" => Self::Uyvy422,
+      "yvyu422" => Self::Yvyu422,
+      "uyyvyy411" => Self::Uyyvyy411,
+      "y210le" => Self::Y210Le,
+      "y210be" => Self::Y210Be,
+      "y212le" => Self::Y212Le,
+      "y212be" => Self::Y212Be,
+      "y216le" => Self::Y216Le,
+      "y216be" => Self::Y216Be,
+      "v210" => Self::V210,
+      "v410le" => Self::V410Le,
+      "v410be" => Self::V410Be,
+      "xv30le" => Self::Xv30Le,
+      "xv30be" => Self::Xv30Be,
+      "v30xle" => Self::V30xLe,
+      "v30xbe" => Self::V30xBe,
+      "xv36le" => Self::Xv36Le,
+      "xv36be" => Self::Xv36Be,
+      "xv48le" => Self::Xv48Le,
+      "xv48be" => Self::Xv48Be,
+      "vuya" => Self::Vuya,
+      "vuyx" => Self::Vuyx,
+      "ayuv" => Self::Ayuv,
+      "ayuv64le" => Self::Ayuv64Le,
+      "ayuv64be" => Self::Ayuv64Be,
+      "uyva" => Self::Uyva,
+      "vyu444" => Self::Vyu444,
+      "xyz12le" => Self::Xyz12Le,
+      "xyz12be" => Self::Xyz12Be,
+      "rgb24" => Self::Rgb24,
+      "bgr24" => Self::Bgr24,
+      "rgba" => Self::Rgba,
+      "bgra" => Self::Bgra,
+      "argb" => Self::Argb,
+      "abgr" => Self::Abgr,
+      "rgb0" => Self::Rgbx,
+      "bgr0" => Self::Bgrx,
+      "0rgb" => Self::Xrgb,
+      "0bgr" => Self::Xbgr,
+      "x2rgb10le" => Self::X2Rgb10Le,
+      "x2rgb10be" => Self::X2Rgb10Be,
+      "x2bgr10le" => Self::X2Bgr10Le,
+      "x2bgr10be" => Self::X2Bgr10Be,
+      "gbr24p" => Self::Gbr24p,
+      "rgb4" => Self::Rgb4,
+      "rgb4_byte" => Self::Rgb4Byte,
+      "rgb8" => Self::Rgb8,
+      "bgr4" => Self::Bgr4,
+      "bgr4_byte" => Self::Bgr4Byte,
+      "bgr8" => Self::Bgr8,
+      "rgb444le" => Self::Rgb444Le,
+      "rgb444be" => Self::Rgb444Be,
+      "bgr444le" => Self::Bgr444Le,
+      "bgr444be" => Self::Bgr444Be,
+      "rgb555le" => Self::Rgb555Le,
+      "rgb555be" => Self::Rgb555Be,
+      "bgr555le" => Self::Bgr555Le,
+      "bgr555be" => Self::Bgr555Be,
+      "rgb565le" => Self::Rgb565Le,
+      "rgb565be" => Self::Rgb565Be,
+      "bgr565le" => Self::Bgr565Le,
+      "bgr565be" => Self::Bgr565Be,
+      "rgb48le" => Self::Rgb48Le,
+      "rgb48be" => Self::Rgb48Be,
+      "bgr48le" => Self::Bgr48Le,
+      "bgr48be" => Self::Bgr48Be,
+      "rgba64le" => Self::Rgba64Le,
+      "rgba64be" => Self::Rgba64Be,
+      "bgra64le" => Self::Bgra64Le,
+      "bgra64be" => Self::Bgra64Be,
+      "rgb96le" => Self::Rgb96Le,
+      "rgb96be" => Self::Rgb96Be,
+      "rgba128le" => Self::Rgba128Le,
+      "rgba128be" => Self::Rgba128Be,
+      "rgbf16le" => Self::Rgbf16Le,
+      "rgbf16be" => Self::Rgbf16Be,
+      "rgbf32le" => Self::Rgbf32Le,
+      "rgbf32be" => Self::Rgbf32Be,
+      "rgbaf16le" => Self::Rgbaf16Le,
+      "rgbaf16be" => Self::Rgbaf16Be,
+      "rgbaf32le" => Self::Rgbaf32Le,
+      "rgbaf32be" => Self::Rgbaf32Be,
+      "gbrp" => Self::Gbrp,
+      "gbrp9le" => Self::Gbrp9Le,
+      "gbrp9be" => Self::Gbrp9Be,
+      "gbrp10le" => Self::Gbrp10Le,
+      "gbrp10be" => Self::Gbrp10Be,
+      "gbrp10msble" => Self::Gbrp10MsbLe,
+      "gbrp10msbbe" => Self::Gbrp10MsbBe,
+      "gbrp12le" => Self::Gbrp12Le,
+      "gbrp12be" => Self::Gbrp12Be,
+      "gbrp12msble" => Self::Gbrp12MsbLe,
+      "gbrp12msbbe" => Self::Gbrp12MsbBe,
+      "gbrp14le" => Self::Gbrp14Le,
+      "gbrp14be" => Self::Gbrp14Be,
+      "gbrp16le" => Self::Gbrp16Le,
+      "gbrp16be" => Self::Gbrp16Be,
+      "gbrpf16le" => Self::Gbrpf16Le,
+      "gbrpf16be" => Self::Gbrpf16Be,
+      "gbrpf32le" => Self::Gbrpf32Le,
+      "gbrpf32be" => Self::Gbrpf32Be,
+      "gbrap" => Self::Gbrap,
+      "gbrap10le" => Self::Gbrap10Le,
+      "gbrap10be" => Self::Gbrap10Be,
+      "gbrap12le" => Self::Gbrap12Le,
+      "gbrap12be" => Self::Gbrap12Be,
+      "gbrap14le" => Self::Gbrap14Le,
+      "gbrap14be" => Self::Gbrap14Be,
+      "gbrap16le" => Self::Gbrap16Le,
+      "gbrap16be" => Self::Gbrap16Be,
+      "gbrap32le" => Self::Gbrap32Le,
+      "gbrap32be" => Self::Gbrap32Be,
+      "gbrapf16le" => Self::Gbrapf16Le,
+      "gbrapf16be" => Self::Gbrapf16Be,
+      "gbrapf32le" => Self::Gbrapf32Le,
+      "gbrapf32be" => Self::Gbrapf32Be,
+      "gray8" => Self::Gray8,
+      "gray8a" => Self::Gray8a,
+      "gray9le" => Self::Gray9Le,
+      "gray9be" => Self::Gray9Be,
+      "gray10le" => Self::Gray10Le,
+      "gray10be" => Self::Gray10Be,
+      "gray12le" => Self::Gray12Le,
+      "gray12be" => Self::Gray12Be,
+      "gray14le" => Self::Gray14Le,
+      "gray14be" => Self::Gray14Be,
+      "gray16le" => Self::Gray16Le,
+      "gray16be" => Self::Gray16Be,
+      "gray32le" => Self::Gray32Le,
+      "gray32be" => Self::Gray32Be,
+      "grayf32le" => Self::Grayf32Le,
+      "grayf32be" => Self::Grayf32Be,
+      "grayf16le" => Self::Grayf16Le,
+      "grayf16be" => Self::Grayf16Be,
+      "ya8" => Self::Ya8,
+      "y400a" => Self::Y400a,
+      "ya16le" => Self::Ya16Le,
+      "ya16be" => Self::Ya16Be,
+      "yaf16le" => Self::Yaf16Le,
+      "yaf16be" => Self::Yaf16Be,
+      "yaf32le" => Self::Yaf32Le,
+      "yaf32be" => Self::Yaf32Be,
+      "monowhite" => Self::Monowhite,
+      "monoblack" => Self::Monoblack,
+      "pal8" => Self::Pal8,
+      "bayer_bggr8" => Self::BayerBggr8,
+      "bayer_rggb8" => Self::BayerRggb8,
+      "bayer_gbrg8" => Self::BayerGbrg8,
+      "bayer_grbg8" => Self::BayerGrbg8,
+      "bayer_bggr10le" => Self::BayerBggr10Le,
+      "bayer_bggr10be" => Self::BayerBggr10Be,
+      "bayer_rggb10le" => Self::BayerRggb10Le,
+      "bayer_rggb10be" => Self::BayerRggb10Be,
+      "bayer_gbrg10le" => Self::BayerGbrg10Le,
+      "bayer_gbrg10be" => Self::BayerGbrg10Be,
+      "bayer_grbg10le" => Self::BayerGrbg10Le,
+      "bayer_grbg10be" => Self::BayerGrbg10Be,
+      "bayer_bggr12le" => Self::BayerBggr12Le,
+      "bayer_bggr12be" => Self::BayerBggr12Be,
+      "bayer_rggb12le" => Self::BayerRggb12Le,
+      "bayer_rggb12be" => Self::BayerRggb12Be,
+      "bayer_gbrg12le" => Self::BayerGbrg12Le,
+      "bayer_gbrg12be" => Self::BayerGbrg12Be,
+      "bayer_grbg12le" => Self::BayerGrbg12Le,
+      "bayer_grbg12be" => Self::BayerGrbg12Be,
+      "bayer_bggr14le" => Self::BayerBggr14Le,
+      "bayer_bggr14be" => Self::BayerBggr14Be,
+      "bayer_rggb14le" => Self::BayerRggb14Le,
+      "bayer_rggb14be" => Self::BayerRggb14Be,
+      "bayer_gbrg14le" => Self::BayerGbrg14Le,
+      "bayer_gbrg14be" => Self::BayerGbrg14Be,
+      "bayer_grbg14le" => Self::BayerGrbg14Le,
+      "bayer_grbg14be" => Self::BayerGrbg14Be,
+      "bayer_bggr16le" => Self::BayerBggr16Le,
+      "bayer_bggr16be" => Self::BayerBggr16Be,
+      "bayer_rggb16le" => Self::BayerRggb16Le,
+      "bayer_rggb16be" => Self::BayerRggb16Be,
+      "bayer_gbrg16le" => Self::BayerGbrg16Le,
+      "bayer_gbrg16be" => Self::BayerGbrg16Be,
+      "bayer_grbg16le" => Self::BayerGrbg16Le,
+      "bayer_grbg16be" => Self::BayerGrbg16Be,
+      _ => return Err(crate::parse::ParseError::unrecognised("PixelFormat")),
+    })
+  }
+}
+
 impl PixelFormat {
   /// Lowercase FFmpeg-style identifier for this variant — the FFmpeg
   /// `AV_PIX_FMT_*` lowercase slug where one exists, or the same
@@ -2291,5 +2595,56 @@ mod tests {
         "canonical form {canon:?} of alias {alias:?} must be a fixed point with no pinned range"
       );
     }
+  }
+
+  /// Every named pixel format must survive `as_str()` → `FromStr`
+  /// unchanged, with no two variants sharing a slug. The sweep enumerates
+  /// through `from_u32` (ids run `0..=947`) rather than a hand-written
+  /// list, so a format added later is covered without touching this test.
+  #[test]
+  fn every_named_pixel_format_round_trips_through_its_slug() {
+    // A fixed array, not a `Vec`: this type is available at the crate's
+    // no-alloc tier and the test has to build there too.
+    let mut named = 0usize;
+    let mut seen: [&str; 512] = [""; 512];
+    for code in 0..=4096u32 {
+      let value = PixelFormat::from_u32(code);
+      if value.is_unknown() {
+        continue;
+      }
+      let slug = value.as_str();
+      assert_eq!(
+        slug.parse::<PixelFormat>(),
+        Ok(value),
+        "slug {slug:?} does not parse back to {value:?}"
+      );
+      for prior in seen.iter().take(named) {
+        assert_ne!(*prior, slug, "two pixel formats are spelled {slug:?}");
+      }
+      seen[named] = slug;
+      named += 1;
+    }
+    assert!(
+      named > 200,
+      "sweep found only {named} named formats — the id range is wrong"
+    );
+  }
+
+  /// `Unknown(_)` renders as `"unknown"` for every payload, so it has no
+  /// parseable spelling; `from_u32` remains the way to carry an
+  /// unrecognised id.
+  #[test]
+  fn unknown_pixel_format_has_no_parseable_spelling() {
+    assert_eq!(PixelFormat::Unknown(99_999).as_str(), "unknown");
+    assert!("unknown".parse::<PixelFormat>().is_err());
+    assert_eq!(PixelFormat::from_u32(99_999), PixelFormat::Unknown(99_999));
+  }
+
+  #[test]
+  fn unrecognised_pixel_format_slug_is_rejected() {
+    let err = "yuv420q".parse::<PixelFormat>().unwrap_err();
+    assert_eq!(err.type_name(), "PixelFormat");
+    assert!("YUV420P".parse::<PixelFormat>().is_err());
+    assert!("".parse::<PixelFormat>().is_err());
   }
 }
