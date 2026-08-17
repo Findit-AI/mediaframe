@@ -368,6 +368,94 @@ impl Dimensions {
   pub const fn is_zero(&self) -> bool {
     self.width == 0 && self.height == 0
   }
+
+  /// The **storage** aspect ratio `width / height`, exact and
+  /// unreduced.
+  ///
+  /// This is the raster's own shape, ignoring pixel geometry. Compose
+  /// it with a [`SampleAspectRatio`] through [`Self::display_size`] to
+  /// get what a viewer actually sees.
+  ///
+  /// [`None`] when `height == 0`: the ratio is undefined, and
+  /// [`Dimensions::default`] is `0×0`, so that is an ordinary state
+  /// rather than an exceptional one. Mirrors [`Rational::try_new`] —
+  /// the same invariant (`den > 0`) at the same altitude.
+  ///
+  /// Like [`Rational`] generally the result is **not** reduced to
+  /// lowest terms: `1920×1080` reads back as `1920/1080`, not `16/9`.
+  ///
+  /// ```
+  /// use mediaframe::frame::Dimensions;
+  ///
+  /// let r = Dimensions::new(1920, 1080).aspect_ratio().unwrap();
+  /// assert_eq!(r.num(), 1920);
+  /// assert_eq!(r.den().get(), 1080);
+  /// assert!(Dimensions::default().aspect_ratio().is_none());
+  /// ```
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn aspect_ratio(&self) -> Option<Rational> {
+    match core::num::NonZeroI64::new(self.height as i64) {
+      Some(den) => Rational::try_new(self.width as i64, den),
+      None => None,
+    }
+  }
+
+  /// Applies a [`SampleAspectRatio`] to these **coded** dimensions,
+  /// returning the size the picture occupies in *square* pixels.
+  ///
+  /// A SAR is a pixel's display width over its display height, so it
+  /// scales the horizontal axis and leaves the vertical one alone —
+  /// FFmpeg's `scale=iw*sar:ih` / `setsar` convention, and the meaning
+  /// of ISO/IEC 14496-12 `pasp`. Height comes back unchanged, so the
+  /// derivation never discards detail.
+  ///
+  /// # Rounding
+  ///
+  /// `width × num / den` is rounded **half away from zero**, matching
+  /// FFmpeg's `av_rescale` — `av_rescale_rnd` with `AV_ROUND_NEAR_INF`,
+  /// which computes `(a * b + c / 2) / c`. The intermediate product is
+  /// taken in `i128`, so no representable input can overflow it.
+  ///
+  /// [`None`] in exactly two cases:
+  ///
+  /// - `sar.num() == 0`. That is FFmpeg's spelling of an *unknown*
+  ///   pixel aspect (see [`Rational::is_zero`]), and there is no
+  ///   display size to derive from it. [`SampleAspectRatio`]'s own
+  ///   contract asks callers to normalise it to the `1:1` default
+  ///   before construction — do that first if the square-pixel reading
+  ///   is what you want.
+  /// - the derived width exceeds [`u32::MAX`], which [`Dimensions`]
+  ///   cannot hold.
+  ///
+  /// ```
+  /// use core::num::NonZeroI64;
+  ///
+  /// use mediaframe::frame::{Dimensions, SampleAspectRatio};
+  ///
+  /// // ITU-R BT.601 NTSC 16:9: 720×480 at SAR 40:33 displays as
+  /// // 873×480 — (720 × 40 + 16) / 33 = 873.2… → 873.
+  /// let coded = Dimensions::new(720, 480);
+  /// let sar = SampleAspectRatio::new(40, NonZeroI64::new(33).unwrap());
+  /// assert_eq!(coded.display_size(sar), Some(Dimensions::new(873, 480)));
+  ///
+  /// // Square pixels are the identity.
+  /// assert_eq!(coded.display_size(SampleAspectRatio::default()), Some(coded));
+  /// ```
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn display_size(&self, sar: SampleAspectRatio) -> Option<Self> {
+    let num = sar.num() as i128;
+    if num == 0 {
+      return None;
+    }
+    let den = sar.den().get() as i128;
+    // `av_rescale`'s AV_ROUND_NEAR_INF: `(a * b + c / 2) / c`. Both
+    // operands are non-negative here, so that is round-half-up.
+    let scaled = (self.width as i128 * num + den / 2) / den;
+    if scaled > u32::MAX as i128 {
+      return None;
+    }
+    Some(Self::new(scaled as u32, self.height))
+  }
 }
 
 impl core::fmt::Display for Dimensions {
@@ -510,6 +598,28 @@ impl Rect {
   pub const fn set_height(&mut self, h: u32) -> &mut Self {
     self.height = h;
     self
+  }
+
+  /// The rectangle's own aspect ratio `width / height`, exact and
+  /// unreduced — [`Dimensions::aspect_ratio`] over the visible
+  /// subregion rather than the coded raster.
+  ///
+  /// The origin does not enter into it. [`None`] when `height == 0`,
+  /// for the same reason as [`Dimensions::aspect_ratio`].
+  ///
+  /// ```
+  /// use mediaframe::frame::Rect;
+  ///
+  /// // A 1440×1080 crop out of a 1920×1080 frame is 4:3 of itself.
+  /// let r = Rect::new(240, 0, 1440, 1080).aspect_ratio().unwrap();
+  /// assert_eq!((r.num(), r.den().get()), (1440, 1080));
+  /// ```
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn aspect_ratio(&self) -> Option<Rational> {
+    match core::num::NonZeroI64::new(self.height as i64) {
+      Some(den) => Rational::try_new(self.width as i64, den),
+      None => None,
+    }
   }
 }
 
@@ -2151,6 +2261,12 @@ pub use mono1bit::*;
 pub use pal8::*;
 
 // === Tests ===
+
+// The geometry *projections* keep their own suite: they are about
+// derived shape (aspect ratio, display size), not about the primitives'
+// construction and accessors that `tests_primitives` covers.
+#[cfg(test)]
+mod aspect_tests;
 
 #[cfg(test)]
 mod tests_primitives {
