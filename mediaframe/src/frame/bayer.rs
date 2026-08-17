@@ -550,6 +550,11 @@ impl BayerSampleOutOfRange {
 /// won't ride on this enum. See
 /// `docs/color-conversion-functions.md` § "Cleanup follow-ups
 /// → Tier 14 RAW family extensions" for the full roadmap.
+#[cfg_attr(
+  feature = "quickcheck",
+  derive(::quickcheck_richderive::Arbitrary),
+  quickcheck(arbitrary = "crate::quickcheck_helpers::coded::bayer_pattern")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IsVariant, Display)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -615,6 +620,11 @@ impl core::str::FromStr for BayerPattern {
 /// model. See `docs/color-conversion-functions.md` §
 /// "Cleanup follow-ups → Higher-quality Bayer demosaic algorithms"
 /// for the full design notes.
+#[cfg_attr(
+  feature = "quickcheck",
+  derive(::quickcheck_richderive::Arbitrary),
+  quickcheck(arbitrary = "crate::quickcheck_helpers::coded::bayer_demosaic")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, IsVariant, Display)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -670,6 +680,11 @@ impl core::str::FromStr for BayerDemosaic {
 /// A neutral [`WhiteBalance::neutral`] (`R = G = B = 1.0`) means
 /// "no white-balance correction" — the sensor's native primaries are
 /// passed through unchanged.
+#[cfg_attr(
+  feature = "quickcheck",
+  derive(::quickcheck_richderive::Arbitrary),
+  quickcheck(arbitrary = "crate::quickcheck_helpers::coded::white_balance")
+)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WhiteBalance {
   r: f32,
@@ -834,6 +849,11 @@ impl Default for WhiteBalance {
 /// tonemap layer. See `docs/color-conversion-functions.md` §
 /// "Cleanup follow-ups → Color-space handling" for the deferred
 /// in-crate convenience-layer roadmap.
+#[cfg_attr(
+  feature = "quickcheck",
+  derive(::quickcheck_richderive::Arbitrary),
+  quickcheck(arbitrary = "crate::quickcheck_helpers::coded::color_correction_matrix")
+)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorCorrectionMatrix {
   m: [[f32; 3]; 3],
@@ -923,7 +943,69 @@ impl Default for ColorCorrectionMatrix {
   }
 }
 
+// Optional `serde` impls for the two RAW-development float structs,
+// grouped in one gated `const` block: a single `#[cfg]` covers both
+// directions, and the validate-on-deserialize shadows stay private to the
+// block. The three RAW *enums* ride the shared slug codec in
+// `crate::serde_impls` with the rest of the vocabulary; these two cannot,
+// because a derived field assignment would be a second construction path
+// that mints values `try_new` refuses — a NaN gain or a 1e30 CCM
+// coefficient propagates silently through the fused per-pixel transform.
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+const _: () = {
+  use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+  #[derive(Serialize, Deserialize)]
+  #[serde(rename = "WhiteBalance")]
+  struct WhiteBalanceShadow {
+    r: f32,
+    g: f32,
+    b: f32,
+  }
+
+  impl Serialize for WhiteBalance {
+    fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+      WhiteBalanceShadow {
+        r: self.r,
+        g: self.g,
+        b: self.b,
+      }
+      .serialize(ser)
+    }
+  }
+
+  impl<'de> Deserialize<'de> for WhiteBalance {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+      let s = WhiteBalanceShadow::deserialize(de)?;
+      // The error names the offending channel and its value, so a
+      // rejected record says which gain was wrong, not merely that one
+      // was.
+      WhiteBalance::try_new(s.r, s.g, s.b).map_err(serde::de::Error::custom)
+    }
+  }
+
+  impl Serialize for ColorCorrectionMatrix {
+    fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+      self.m.serialize(ser)
+    }
+  }
+
+  impl<'de> Deserialize<'de> for ColorCorrectionMatrix {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+      let m = <[[f32; 3]; 3]>::deserialize(de)?;
+      // Names the `(row, col)` of the first out-of-spec element.
+      ColorCorrectionMatrix::try_new(m).map_err(serde::de::Error::custom)
+    }
+  }
+};
+
 /// Identifies which white-balance channel failed validation.
+#[cfg_attr(
+  feature = "quickcheck",
+  derive(::quickcheck_richderive::Arbitrary),
+  quickcheck(arbitrary = "crate::quickcheck_helpers::coded::wb_channel")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IsVariant, Display)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -1652,6 +1734,73 @@ pub fn bayer16_to<const BITS: u32, S: BayerSink16<BITS, false>>(
 
 #[cfg(test)]
 mod tests {
+  // ── serde / arbitrary / quickcheck wiring ──
+  //
+  // These five types sat outside every feature matrix while their
+  // `frame::` siblings were in all of them, and `lib.rs` states that
+  // arbitrary "mirrors the surface covered by serde" — an invariant that
+  // was true only because both were absent. The three matrices move
+  // together or that sentence stops being true.
+
+  #[cfg(all(feature = "serde", feature = "std"))]
+  #[test]
+  fn raw_vocabulary_round_trips_through_serde() {
+    fn round_trip<T>(v: &T)
+    where
+      T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + core::fmt::Debug,
+    {
+      let json = serde_json::to_string(v).unwrap();
+      let back: T = serde_json::from_str(&json).unwrap();
+      assert_eq!(*v, back, "round-trip mismatch via {json}");
+    }
+
+    // The enums ride their slug, like every other vocabulary.
+    for p in [
+      BayerPattern::Rggb,
+      BayerPattern::Bggr,
+      BayerPattern::Grbg,
+      BayerPattern::Gbrg,
+    ] {
+      round_trip(&p);
+    }
+    assert_eq!(
+      serde_json::to_string(&BayerPattern::Rggb).unwrap(),
+      "\"rggb\""
+    );
+    round_trip(&BayerDemosaic::Bilinear);
+    for c in [WbChannel::R, WbChannel::G, WbChannel::B] {
+      round_trip(&c);
+    }
+    // Closed vocabularies: an unrecognised slug is an error, not an
+    // invented value.
+    assert!(serde_json::from_str::<BayerPattern>("\"xtrans\"").is_err());
+    assert!(serde_json::from_str::<WbChannel>("\"y\"").is_err());
+
+    round_trip(&WhiteBalance::neutral());
+    round_trip(&WhiteBalance::try_new(2.1, 1.0, 1.45).unwrap());
+    round_trip(&ColorCorrectionMatrix::identity());
+  }
+
+  /// The float structs deserialize through `try_new`, so the wire cannot
+  /// mint a value the constructor refuses. A NaN gain or a pathological
+  /// coefficient would otherwise propagate through the fused per-pixel
+  /// transform and silently blacken unrelated channels.
+  #[cfg(all(feature = "serde", feature = "std"))]
+  #[test]
+  fn raw_float_structs_validate_on_deserialize() {
+    assert!(serde_json::from_str::<WhiteBalance>(r#"{"r":1.0,"g":1.0,"b":1.0}"#).is_ok());
+    assert!(serde_json::from_str::<WhiteBalance>(r#"{"r":-1.0,"g":1.0,"b":1.0}"#).is_err());
+    // JSON has no NaN literal; a non-finite gain arrives as `null`, which
+    // the `f32` deserializer itself refuses — either way it never lands.
+    assert!(serde_json::from_str::<WhiteBalance>(r#"{"r":null,"g":1.0,"b":1.0}"#).is_err());
+
+    assert!(serde_json::from_str::<ColorCorrectionMatrix>("[[1,0,0],[0,1,0],[0,0,1]]").is_ok());
+    assert!(
+      serde_json::from_str::<ColorCorrectionMatrix>("[[1e30,0,0],[0,1,0],[0,0,1]]").is_err(),
+      "a coefficient past MAX_COEFFICIENT_ABS must be rejected"
+    );
+  }
+
   use super::*;
 
   #[test]

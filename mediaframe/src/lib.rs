@@ -73,7 +73,7 @@ pub mod pixel_format;
 /// `#[quickcheck(arbitrary = "…")]` attributes on each descriptor's
 /// `quickcheck-richderive::Arbitrary` derive. The derive emits the actual
 /// `impl quickcheck::Arbitrary for T` blocks; this module owns the bodies.
-/// Same surface as [`arbitrary_impls`] (39 descriptor-vocabulary types) but
+/// Same surface as [`arbitrary_impls`] (44 descriptor-vocabulary types) but
 /// the two are independent — quickcheck does **not** bridge through arbitrary.
 #[cfg(feature = "quickcheck")]
 pub mod quickcheck_helpers;

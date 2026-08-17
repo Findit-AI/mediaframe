@@ -281,6 +281,29 @@ mod tests {
       let json = serde_json::to_string(&ld).unwrap();
       let back: crate::audio::Loudness = serde_json::from_str(&json).unwrap();
       assert_eq!(back, ld, "Loudness lost identity via serde: {json}");
+
+      // The RAW-development structs deserialize through `try_new`, so a
+      // generated value that the constructor would refuse fails here.
+      #[cfg(feature = "bayer")]
+      {
+        let wb = crate::frame::WhiteBalance::arbitrary(g);
+        let json = serde_json::to_string(&wb).unwrap();
+        let back: crate::frame::WhiteBalance = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, wb, "WhiteBalance lost identity via serde: {json}");
+
+        let ccm = crate::frame::ColorCorrectionMatrix::arbitrary(g);
+        let json = serde_json::to_string(&ccm).unwrap();
+        let back: crate::frame::ColorCorrectionMatrix = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+          back, ccm,
+          "ColorCorrectionMatrix lost identity via serde: {json}"
+        );
+
+        let bp = crate::frame::BayerPattern::arbitrary(g);
+        let json = serde_json::to_string(&bp).unwrap();
+        let back: crate::frame::BayerPattern = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, bp, "BayerPattern lost identity via serde: {json}");
+      }
     });
   }
 }

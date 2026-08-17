@@ -219,3 +219,46 @@ impl<'a> ::arbitrary::Arbitrary<'a> for crate::frame::FrameRate {
     ))
   }
 }
+
+// ─── bayer / RAW development ─────────────────────────────────────────────────
+//
+// Closed vocabularies: pick uniformly from the named variants. The two
+// float structs generate through `try_new`, so every value is valid by
+// construction — an `f32` drawn raw is NaN or ±inf often enough that a
+// field-wise generator would spend most of its draws on values the
+// constructor refuses.
+
+#[cfg(feature = "bayer")]
+arb_via_named_variants!(crate::frame::BayerPattern, [Rggb, Bggr, Grbg, Gbrg]);
+#[cfg(feature = "bayer")]
+arb_via_named_variants!(crate::frame::BayerDemosaic, [Bilinear]);
+#[cfg(feature = "bayer")]
+arb_via_named_variants!(crate::frame::WbChannel, [R, G, B]);
+
+#[cfg(feature = "bayer")]
+impl<'a> ::arbitrary::Arbitrary<'a> for crate::frame::WhiteBalance {
+  fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
+    // Gains are finite and non-negative by the type's invariant; `0.0` is
+    // legal (zeroes the channel) so the range is closed at the bottom.
+    let gain = |u: &mut ::arbitrary::Unstructured<'a>| -> ::arbitrary::Result<f32> {
+      Ok(u.int_in_range(0u32..=8_000)? as f32 / 1_000.0)
+    };
+    let (r, g, b) = (gain(u)?, gain(u)?, gain(u)?);
+    crate::frame::WhiteBalance::try_new(r, g, b).map_err(|_| ::arbitrary::Error::IncorrectFormat)
+  }
+}
+
+#[cfg(feature = "bayer")]
+impl<'a> ::arbitrary::Arbitrary<'a> for crate::frame::ColorCorrectionMatrix {
+  fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
+    // Real CCMs are O(1-5) and regularly negative (they subtract
+    // crosstalk); stay well inside `MAX_COEFFICIENT_ABS`.
+    let mut m = [[0.0f32; 3]; 3];
+    for row in &mut m {
+      for cell in row {
+        *cell = u.int_in_range(-8_000i32..=8_000)? as f32 / 1_000.0;
+      }
+    }
+    crate::frame::ColorCorrectionMatrix::try_new(m).map_err(|_| ::arbitrary::Error::IncorrectFormat)
+  }
+}

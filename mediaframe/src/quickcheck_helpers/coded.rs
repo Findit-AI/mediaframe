@@ -252,3 +252,38 @@ pub(crate) fn sample_aspect_ratio(g: &mut Gen) -> crate::frame::SampleAspectRati
 pub(crate) fn frame_rate(g: &mut Gen) -> crate::frame::FrameRate {
   crate::frame::FrameRate::new(rational(g), bool::arbitrary(g))
 }
+
+// ─── bayer / RAW development ─────────────────────────────────────────────────
+//
+// Mirrors the `arbitrary` cluster: closed enums pick uniformly from the
+// named variants, and the two float structs generate through `try_new` so
+// every value is valid by construction.
+
+#[cfg(feature = "bayer")]
+qc_via_named_variants! {
+  bayer_pattern  => crate::frame::BayerPattern,  [Rggb, Bggr, Grbg, Gbrg];
+  bayer_demosaic => crate::frame::BayerDemosaic, [Bilinear];
+  wb_channel     => crate::frame::WbChannel,     [R, G, B];
+}
+
+/// Gains are finite and non-negative by the type's invariant; `0.0` is
+/// legal (zeroes the channel) so the range is closed at the bottom.
+#[cfg(feature = "bayer")]
+pub(crate) fn white_balance(g: &mut Gen) -> crate::frame::WhiteBalance {
+  let gain = |g: &mut Gen| (u32::arbitrary(g) % 8_001) as f32 / 1_000.0;
+  let (r, gr, b) = (gain(g), gain(g), gain(g));
+  crate::frame::WhiteBalance::try_new(r, gr, b).expect("gains are finite and non-negative")
+}
+
+/// Real CCMs are O(1-5) and regularly negative (they subtract crosstalk);
+/// stay well inside `MAX_COEFFICIENT_ABS`.
+#[cfg(feature = "bayer")]
+pub(crate) fn color_correction_matrix(g: &mut Gen) -> crate::frame::ColorCorrectionMatrix {
+  let mut m = [[0.0f32; 3]; 3];
+  for row in &mut m {
+    for cell in row {
+      *cell = (i32::arbitrary(g).rem_euclid(16_001) - 8_000) as f32 / 1_000.0;
+    }
+  }
+  crate::frame::ColorCorrectionMatrix::try_new(m).expect("coefficients are finite and bounded")
+}

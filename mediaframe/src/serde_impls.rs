@@ -27,8 +27,9 @@
 //! The plain data structs (`color::Info`, `frame::Dimensions`,
 //! `audio::Tags`, …) derive serde at their definition site; the
 //! validated structs (`capture::GeoLocation`, `audio::Fingerprint`,
-//! `audio::CoverArt`) route deserialize through their checking
-//! constructors there too. `lang::Language` carries a bespoke BCP-47
+//! `audio::CoverArt`, `frame::WhiteBalance`,
+//! `frame::ColorCorrectionMatrix`) route deserialize through their
+//! checking constructors there too. `lang::Language` carries a bespoke BCP-47
 //! string impl in its module.
 
 /// Implements `Serialize` / `Deserialize` for an *open* enum via its
@@ -141,6 +142,18 @@ serde_via_str!(crate::pixel_format::PixelFormat);
 serde_via_str!(crate::frame::Rotation);
 serde_via_str!(crate::frame::FieldOrder);
 serde_via_str!(crate::frame::StereoMode);
+
+// ── The RAW / bayer vocabularies (behind the `bayer` feature) ──
+// Closed: they name sensor layouts and demosaic algorithms, not an open
+// space a backend extends, so an unrecognised slug is a serde error.
+// `WhiteBalance` / `ColorCorrectionMatrix` are float structs and carry
+// their own validating impls at their definition site.
+#[cfg(feature = "bayer")]
+serde_via_str!(crate::frame::BayerPattern);
+#[cfg(feature = "bayer")]
+serde_via_str!(crate::frame::BayerDemosaic);
+#[cfg(feature = "bayer")]
+serde_via_str!(crate::frame::WbChannel);
 
 // ── Name vocabularies that need the allocator for their own payloads ──
 #[cfg(any(feature = "std", feature = "alloc"))]
