@@ -456,6 +456,57 @@ impl Dimensions {
     }
     Some(Self::new(scaled as u32, self.height))
   }
+
+  /// Whether `rect` lies entirely inside the raster these dimensions
+  /// describe.
+  ///
+  /// The predicate is the whole definition —
+  /// `rect.x + rect.width <= self.width`, and the same on the vertical
+  /// axis — evaluated with checked addition, so an origin plus extent
+  /// that overflows `u32` is simply not contained rather than wrapping
+  /// into a false positive.
+  ///
+  /// Three boundary cases fall out of that one formula rather than
+  /// being special-cased:
+  ///
+  /// - **Flush is inside.** A rect ending exactly on the edge
+  ///   (`x + width == self.width`) is contained: the raster's columns
+  ///   are `0..width`, and such a rect touches column `width - 1` last.
+  /// - **One pixel over is outside.**
+  /// - **An empty rect is contained wherever its origin is.** A zero
+  ///   width and/or height reduces the test to `x <= self.width &&
+  ///   y <= self.height`, so [`Rect::default`] is inside every
+  ///   `Dimensions` — including [`Dimensions::default`]. An empty
+  ///   rectangle covers no pixel, so it has no pixel that could fall
+  ///   outside.
+  ///
+  /// Nothing in this crate enforces the relation: [`VideoFrame`]'s
+  /// visible-rect builders and setters assign whatever they are given,
+  /// deliberately, because a descriptor is usually assembled field by
+  /// field and the coded size may not be set yet. This is the check to
+  /// run once the pair is complete.
+  ///
+  /// ```
+  /// use mediaframe::frame::{Dimensions, Rect};
+  ///
+  /// let coded = Dimensions::new(1920, 1080);
+  /// // 480 + 1440 == 1920: flush with the right edge, so inside.
+  /// assert!(coded.contains(&Rect::new(480, 0, 1440, 1080)));
+  /// // 481 + 1440 == 1921: one column past it.
+  /// assert!(!coded.contains(&Rect::new(481, 0, 1440, 1080)));
+  /// // An empty rect covers no pixel, so it is inside.
+  /// assert!(coded.contains(&Rect::default()));
+  /// ```
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn contains(&self, rect: &Rect) -> bool {
+    match (
+      rect.x().checked_add(rect.width()),
+      rect.y().checked_add(rect.height()),
+    ) {
+      (Some(right), Some(bottom)) => right <= self.width && bottom <= self.height,
+      _ => false,
+    }
+  }
 }
 
 impl core::fmt::Display for Dimensions {
@@ -1872,6 +1923,10 @@ impl<P, B> VideoFrame<P, B> {
   }
 
   /// Returns the visible / clean-aperture rectangle, if any.
+  ///
+  /// Not checked against [`Self::dimensions`] on assignment — a
+  /// descriptor is usually filled in field by field. Check the pair
+  /// with [`Dimensions::contains`] once both are set.
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn visible_rect(&self) -> Option<Rect> {
     self.visible_rect
@@ -2267,6 +2322,8 @@ pub use pal8::*;
 // construction and accessors that `tests_primitives` covers.
 #[cfg(test)]
 mod aspect_tests;
+#[cfg(test)]
+mod contains_tests;
 
 #[cfg(test)]
 mod tests_primitives {
