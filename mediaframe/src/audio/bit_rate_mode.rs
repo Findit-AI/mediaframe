@@ -101,7 +101,7 @@ impl core::str::FromStr for BitRateMode {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any input
+  /// Returns [`ParseBitRateModeError`] for any input
   /// outside this closed vocabulary.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];

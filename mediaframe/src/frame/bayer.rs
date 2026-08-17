@@ -604,7 +604,7 @@ impl core::str::FromStr for BayerPattern {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any input
+  /// Returns [`ParseBayerPatternError`] for any input
   /// outside this closed vocabulary.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
@@ -682,7 +682,7 @@ impl core::str::FromStr for BayerDemosaic {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any input
+  /// Returns [`ParseBayerDemosaicError`] for any input
   /// outside this closed vocabulary.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
@@ -1082,7 +1082,7 @@ impl core::str::FromStr for WbChannel {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any input
+  /// Returns [`ParseWbChannelError`] for any input
   /// outside this closed vocabulary.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];

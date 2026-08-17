@@ -1,4 +1,28 @@
 #![doc = include_str!("../README.md")]
+//!
+//! # Feature tiers
+//!
+//! The crate builds at three tiers, and the tier decides how *open*
+//! its vocabularies are.
+//!
+//! | Tier | Features | Vocabularies |
+//! |---|---|---|
+//! | no-alloc | (none) | **closed** — an unrecognised slug is rejected |
+//! | alloc | `alloc` | open — an unrecognised slug rides `Other(SmolStr)` |
+//! | std | `std` (implies `alloc`) | as `alloc`, plus `std::error::Error` |
+//!
+//! `Other(SmolStr)` needs a heap, so it exists only at the `alloc` /
+//! `std` tier. At the no-alloc tier the same enums are closed and their
+//! [`FromStr`](core::str::FromStr) returns the vocabulary's own error
+//! instead: **an error beats a wrong value**, and collapsing an unknown
+//! name onto a named variant would be a wrong value. The *wire shape* is
+//! the same at every tier (a slug either way) — only the openness
+//! differs.
+//!
+//! Every gate on an alloc-tier item is spelled
+//! `any(feature = "std", feature = "alloc")` rather than bare
+//! `feature = "alloc"`, so the item cannot evaporate for a dependant
+//! that turns on `std` alone.
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, allow(unused_attributes))]
@@ -40,6 +64,7 @@ mod arbitrary_impls;
 /// enums in [`codec`] are the crate's only exemptions. The line is
 /// variant count, not principle.
 #[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod audio;
 #[cfg(feature = "buffa")]
 mod buffa;
@@ -54,12 +79,14 @@ pub mod capture;
 /// subtitle tracks. Requires the `alloc` feature (`std` includes it) for
 /// the `Other(SmolStr)` escape arms.
 #[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod codec;
 pub mod color;
 /// Top-level multimedia container-format vocabulary. Requires the
 /// `alloc` feature (`std` includes it) for the `Other(SmolStr)`
 /// escape arm.
 #[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod container;
 /// FFmpeg `AV_DISPOSITION_*` bitflags shared across all track types
 /// (video / audio / subtitle).
@@ -83,6 +110,7 @@ pub mod pixel_format;
 /// Same surface as [`arbitrary_impls`] (44 descriptor-vocabulary types) but
 /// the two are independent — quickcheck does **not** bridge through arbitrary.
 #[cfg(feature = "quickcheck")]
+#[cfg_attr(docsrs, doc(cfg(feature = "quickcheck")))]
 pub mod quickcheck_helpers;
 /// Centralised `serde` impls for the descriptor enums (the structs derive
 /// serde at their definition sites). Open codec/format enums serialize as

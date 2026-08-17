@@ -216,11 +216,14 @@ mediaframe = { version = "0.2", default-features = false }
 mediaframe = { version = "0.2", default-features = false, features = ["alloc"] }
 ```
 
-The `color`, `cfa`, and `pixel_format` modules work without `alloc`
-(pure enums / `Copy` types). The `codec` module is gated on
-`any(feature = "std", feature = "alloc")` because of its
-`Other(SmolStr)` arm. Per-family `frame` / `source` features work
-under `no_std + alloc`.
+The `color`, `frame`, and `pixel_format` modules work without `alloc`
+— but at that tier their vocabularies are **closed**: the
+`Other(SmolStr)` escape needs a heap, so it is gated on
+`any(feature = "std", feature = "alloc")` and an unrecognised slug is
+*rejected* rather than carried. An error beats a wrong value. The
+`codec`, `container`, `audio`, `subtitle`, `capture` and `lang`
+modules are gated whole on the same pair. Per-family `frame` /
+`source` features work under `no_std` at every tier.
 
 ## xtask
 

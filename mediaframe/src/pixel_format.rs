@@ -46,6 +46,11 @@ use derive_more::{Display, IsVariant};
 use smol_str::SmolStr;
 
 /// Pixel format identifier covering FFmpeg + Bayer + cinema-RAW.
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -1831,7 +1836,7 @@ impl core::str::FromStr for PixelFormat {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// Returns [`ParsePixelFormatError`] only at the
   /// no-alloc tier, where the vocabulary is closed. With `alloc` this
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
@@ -2441,7 +2446,7 @@ mod tests {
   // `format!` lives in `alloc` under no_std + alloc; bring it in via the
   // crate-root `extern crate alloc as std;` alias. Under `feature = "std"`
   // this resolves to the real `std::format`.
-  #[cfg(any(feature = "alloc", feature = "std"))]
+  #[cfg(any(feature = "std", feature = "alloc"))]
   use std::format;
 
   #[test]
@@ -2507,7 +2512,7 @@ mod tests {
   // The `Display` impl itself works in bare-core mode via
   // `write!`-style sinks — only this test's assertion strategy needs
   // alloc.
-  #[cfg(any(feature = "alloc", feature = "std"))]
+  #[cfg(any(feature = "std", feature = "alloc"))]
   #[test]
   fn display_uses_ffmpeg_lowercase_names() {
     assert_eq!(format!("{}", PixelFormat::Yuv420p), "yuv420p");
@@ -2520,7 +2525,7 @@ mod tests {
   // Sub-16-bit Bayer are mediaframe extensions (no FFmpeg pixel format);
   // their Display slugs follow the same lowercase convention, but they are
   // not FFmpeg names, so they live here rather than in the FFmpeg-name test.
-  #[cfg(any(feature = "alloc", feature = "std"))]
+  #[cfg(any(feature = "std", feature = "alloc"))]
   #[test]
   fn display_uses_lowercase_names_for_bayer_extensions() {
     assert_eq!(format!("{}", PixelFormat::BayerBggr12Le), "bayer_bggr12le");
@@ -2707,7 +2712,7 @@ mod tests {
   /// That is the whole point of the escape: the old `Unknown(u32)` handed
   /// a downstream RAW/sensor backend a bare number and `as_str() ==
   /// "unknown"`, while a downstream codec got a first-class value.
-  #[cfg(any(feature = "alloc", feature = "std"))]
+  #[cfg(any(feature = "std", feature = "alloc"))]
   #[test]
   fn an_unnamed_pixel_format_keeps_its_name() {
     let vendor: PixelFormat = "yuv420q".parse().unwrap();
@@ -2721,7 +2726,7 @@ mod tests {
 
   /// At the no-alloc tier there is nowhere to put a name, so the same
   /// vocabulary is closed and the parse fails instead.
-  #[cfg(not(any(feature = "alloc", feature = "std")))]
+  #[cfg(not(any(feature = "std", feature = "alloc")))]
   #[test]
   fn an_unnamed_pixel_format_is_rejected_without_an_allocator() {
     // The error's *type* is what names the vocabulary now — one per

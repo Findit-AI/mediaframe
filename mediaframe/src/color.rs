@@ -50,6 +50,11 @@ pub const DOMAIN_EXT_BASE: u32 = 0x8000_0000;
 /// [`Self::Other`] carries any name this build does not enumerate, so
 /// the *text* round-trip is lossless; the numeric helpers speak only
 /// FFmpeg's code space and return [`None`] outside it.
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -257,7 +262,7 @@ impl core::str::FromStr for Matrix {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// Returns [`ParseMatrixError`] only at the
   /// no-alloc tier, where the vocabulary is closed. With `alloc` this
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
@@ -306,6 +311,11 @@ impl core::str::FromStr for Matrix {
 /// (FFmpeg `AVCOL_PRI_UNSPECIFIED`, code `2`); [`Self::Other`] carries
 /// any name this build does not enumerate, so the *text* round-trip is
 /// lossless.
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -596,7 +606,7 @@ impl core::str::FromStr for Primaries {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// Returns [`ParsePrimariesError`] only at the
   /// no-alloc tier, where the vocabulary is closed. With `alloc` this
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
@@ -639,6 +649,11 @@ impl core::str::FromStr for Primaries {
 /// `AVCOL_TRC_UNSPECIFIED`, code `2`); [`Self::Other`] carries any
 /// name this build does not enumerate, so the *text* round-trip is
 /// lossless.
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -823,7 +838,7 @@ impl core::str::FromStr for Transfer {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// Returns [`ParseTransferError`] only at the
   /// no-alloc tier, where the vocabulary is closed. With `alloc` this
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
@@ -866,6 +881,11 @@ impl core::str::FromStr for Transfer {
 /// [`Self::Unspecified`] (FFmpeg `AVCOL_RANGE_UNSPECIFIED`, code
 /// `0`); [`Self::Other`] carries any name this build does not
 /// enumerate, so the *text* round-trip is lossless.
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -979,7 +999,7 @@ impl core::str::FromStr for DynamicRange {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// Returns [`ParseDynamicRangeError`] only at the
   /// no-alloc tier, where the vocabulary is closed. With `alloc` this
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
@@ -1010,6 +1030,11 @@ impl core::str::FromStr for DynamicRange {
 /// `AVCHROMA_LOC_UNSPECIFIED`, code `0`); [`Self::Other`] carries any
 /// name this build does not enumerate, so the *text* round-trip is
 /// lossless.
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -1142,7 +1167,7 @@ impl core::str::FromStr for ChromaLocation {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// Returns [`ParseChromaLocationError`] only at the
   /// no-alloc tier, where the vocabulary is closed. With `alloc` this
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
@@ -1364,6 +1389,11 @@ impl Info {
 /// is ASCII-folded to the crate's canon; it survives a buffa
 /// round-trip — which is correct (the id *is* that gamut), not data
 /// loss. The crate-wide extension idiom (Codex adversarial-review F8).
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, IsVariant, Display)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -1496,7 +1526,7 @@ impl core::str::FromStr for DcpTargetGamut {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// Returns [`ParseDcpTargetGamutError`] only at the
   /// no-alloc tier, where the vocabulary is closed. With `alloc` this
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].

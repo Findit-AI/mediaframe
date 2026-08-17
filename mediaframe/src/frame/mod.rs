@@ -530,6 +530,11 @@ impl Rect {
 /// (matching WebCodecs' `rotation`); callers normalising FFmpeg's
 /// counter-clockwise convention negate accordingly. [`Self::D0`] is
 /// the default (no rotation / square presentation).
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -640,7 +645,7 @@ impl core::str::FromStr for Rotation {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// Returns [`ParseRotationError`] only at the
   /// no-alloc tier, where the vocabulary is closed. With `alloc` this
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
@@ -1257,6 +1262,11 @@ impl FrameRate {
 /// [`Default`] is the named [`Self::Unknown`] — the same
 /// FFmpeg-names-its-own-absence precedent as
 /// [`PixelFormat::None`](crate::pixel_format::PixelFormat::None).
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -1392,7 +1402,7 @@ impl core::str::FromStr for FieldOrder {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// Returns [`ParseFieldOrderError`] only at the
   /// no-alloc tier, where the vocabulary is closed. With `alloc` this
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
@@ -1434,6 +1444,11 @@ impl core::str::FromStr for FieldOrder {
 /// is a real mode rather than an absence (the colour-enum named-default
 /// precedent, e.g. `DcpTargetGamut::DciP3`), distinct from
 /// [`FieldOrder`] whose `0` *is* FFmpeg's UNKNOWN sentinel.
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
@@ -1576,7 +1591,7 @@ impl core::str::FromStr for StereoMode {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) only at the
+  /// Returns [`ParseStereoModeError`] only at the
   /// no-alloc tier, where the vocabulary is closed. With `alloc` this
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
