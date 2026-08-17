@@ -64,10 +64,10 @@ pub mod frame;
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod lang;
-/// The error the closed vocabulary and geometry types' `FromStr` impls
-/// return. The open enums (those with an `Other(SmolStr)` escape arm)
-/// parse infallibly and never reach it.
-pub mod parse;
+// The ASCII case-folding gate shared by every `FromStr` in the crate.
+// Private: the errors those parses return live with their vocabularies,
+// one per type.
+mod parse;
 pub mod pixel_format;
 /// `fn(&mut quickcheck::Gen) -> T` helpers consumed by the per-type
 /// `#[quickcheck(arbitrary = "…")]` attributes on each descriptor's

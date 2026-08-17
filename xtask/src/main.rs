@@ -1796,18 +1796,34 @@ fn build_codec_enum(
         }
       }
 
+      /// The open escape for a codec name FFmpeg n8.1 does not carry,
+      /// ASCII-folded to the crate's lowercase canon.
+      ///
+      /// The **one** construction path for [`Self::Other`]: folding here is
+      /// what keeps the whole value space lowercase-canonical, so the
+      /// derived `Eq` / `Hash` compare names rather than spellings.
+      /// Constructing the variant directly bypasses the fold and is not the
+      /// supported spelling.
+      pub fn other(slug: impl AsRef<str>) -> Self {
+        Self::Other(crate::parse::fold_owned(slug.as_ref()))
+      }
+
       #extra_impl
     }
 
     impl FromStr for #enum_ident {
       type Err = core::convert::Infallible;
 
-      /// Recognise an FFmpeg codec short name; unknown values land in
-      /// [`Self::Other`] (infallible, lossless).
+      /// Recognise an FFmpeg codec short name, case-insensitively; unknown
+      /// values land in [`Self::Other`] (infallible, lossless).
       fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
+        let mut buf = [0u8; crate::parse::FOLD_CAP];
+        // An input too long to fold cannot name a codec either, so the
+        // unfolded original falls through to the escape.
+        let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+        Ok(match folded {
           #(#from_str_arms)*
-          other => Self::Other(SmolStr::new(other)),
+          other => Self::other(other),
         })
       }
     }
@@ -1895,6 +1911,45 @@ fn build_codec_tests(
         let v: VideoCodec = "definitely_not_a_real_codec_xyz".parse().unwrap();
         assert!(v.is_other());
         assert_eq!(v.as_str(), "definitely_not_a_real_codec_xyz");
+      }
+
+      /// Every codec name is lowercase-canonical and no two collide once
+      /// folded — the precondition that makes the case-insensitive lookup
+      /// a function rather than a coin flip.
+      #[test]
+      fn codec_names_are_lowercase_canonical_and_fold_without_collision() {
+        for (media, name) in VENDORED_PAIRS {
+          assert!(
+            !name.bytes().any(|b| b.is_ascii_uppercase()),
+            "{media} codec `{name}` is not lowercase-canonical"
+          );
+          // The vendored list is sorted and deduplicated per media type,
+          // and every entry is already lowercase, so distinctness there is
+          // distinctness after folding.
+          let same: usize = VENDORED_PAIRS
+            .iter()
+            .filter(|(m, n)| m == media && n.eq_ignore_ascii_case(name))
+            .count();
+          assert_eq!(same, 1, "{media} has two codecs spelled `{name}`");
+        }
+      }
+
+      /// The lookup folds, and the escape folds with it: an uppercase
+      /// spelling of a known codec is that codec, and an uppercase
+      /// spelling of an unknown one is stored lowercase, so one name is
+      /// one value under the derived `Eq` / `Hash`.
+      #[test]
+      fn codec_lookup_and_escape_both_fold() {
+        assert_eq!("H264".parse(), Ok(VideoCodec::H264));
+        assert_eq!("HeVc".parse(), Ok(VideoCodec::Hevc));
+        assert_eq!("AAC".parse(), Ok(AudioCodec::Aac));
+        assert_eq!("SRT".parse(), Ok(SubtitleCodec::Srt));
+
+        let v: VideoCodec = "VENDOR_Codec".parse().unwrap();
+        assert!(v.is_other());
+        assert_eq!(v.as_str(), "vendor_codec");
+        assert_eq!("vendor_codec".parse::<VideoCodec>().unwrap(), v);
+        assert_eq!(VideoCodec::other("VENDOR_Codec"), v);
       }
 
       #[test]

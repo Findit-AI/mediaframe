@@ -129,6 +129,16 @@ impl ChannelLayout {
       Self::Other(s) => s.as_str(),
     }
   }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+  }
 }
 
 impl FromStr for ChannelLayout {
@@ -136,7 +146,11 @@ impl FromStr for ChannelLayout {
   /// Recognise a canonical layout slug; unknown values land in
   /// [`Self::Other`] (infallible, lossless).
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "mono" => Self::Mono,
       "stereo" => Self::Stereo,
       "2.1" => Self::N2Point1,
@@ -157,7 +171,7 @@ impl FromStr for ChannelLayout {
       "ambisonic1" => Self::Ambisonic1,
       "ambisonic2" => Self::Ambisonic2,
       "ambisonic3" => Self::Ambisonic3,
-      other => Self::Other(SmolStr::new(other)),
+      other => Self::other(other),
     })
   }
 }
@@ -221,5 +235,35 @@ mod tests {
     assert!(ChannelLayout::Stereo.is_stereo());
     assert!(ChannelLayout::N5Point1.is_n_5_point_1());
     assert!(ChannelLayout::Other(SmolStr::new("x")).is_other());
+  }
+
+  /// Lowercase-canonical, collision-free once folded, and read
+  /// case-insensitively — with the escape folding too, so one name is one
+  /// value under the derived `Eq` / `Hash`.
+  #[test]
+  fn channellayout_slugs_are_lowercase_canonical_and_fold() {
+    const SLUGS: &[&str] = &["mono", "stereo", "5.1", "7.1", "quad"];
+    for (i, slug) in SLUGS.iter().enumerate() {
+      assert!(
+        !slug.bytes().any(|b| b.is_ascii_uppercase()),
+        "slug {slug:?} is not lowercase-canonical"
+      );
+      for prior in &SLUGS[..i] {
+        assert!(
+          !prior.eq_ignore_ascii_case(slug),
+          "two variants fold onto {slug:?}"
+        );
+      }
+      let v: ChannelLayout = slug.parse().unwrap();
+      assert!(!v.is_other(), "`{slug}` should be a named variant");
+      assert_eq!(v.as_str(), *slug, "`{slug}` is not its own canonical form");
+    }
+    assert_eq!("mono", "MONO".parse::<ChannelLayout>().unwrap().as_str());
+
+    // The escape folds on the way in.
+    let escaped: ChannelLayout = "MONO_X".parse().unwrap();
+    assert!(escaped.is_other());
+    assert_eq!(escaped.as_str(), "mono_x");
+    assert_eq!(ChannelLayout::other("MONO_X"), escaped);
   }
 }

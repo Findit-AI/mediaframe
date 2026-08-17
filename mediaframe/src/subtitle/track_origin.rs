@@ -93,8 +93,20 @@ impl TrackOrigin {
   }
 }
 
+/// The error [`TrackOrigin`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a track-origin name")]
+#[non_exhaustive]
+pub struct ParseTrackOriginError;
+
 impl core::str::FromStr for TrackOrigin {
-  type Err = crate::parse::ParseError;
+  type Err = ParseTrackOriginError;
 
   /// Parses the canonical slug [`Self::as_str`] renders — the exact
   /// inverse of [`Display`](core::fmt::Display).
@@ -104,11 +116,15 @@ impl core::str::FromStr for TrackOrigin {
   /// Returns [`ParseError`](crate::parse::ParseError) for any input
   /// outside this closed vocabulary.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "embedded" => Self::Embedded,
       "sidecar" => Self::Sidecar,
       "external" => Self::External,
-      _ => return Err(crate::parse::ParseError::unrecognised("TrackOrigin")),
+      _ => return Err(ParseTrackOriginError),
     })
   }
 }
@@ -178,9 +194,10 @@ mod tests {
       assert_eq!(origin.as_str().parse(), Ok(*origin));
     }
 
-    let err = "broadcast".parse::<TrackOrigin>().unwrap_err();
-    assert_eq!(err.type_name(), "TrackOrigin");
-    assert!("Embedded".parse::<TrackOrigin>().is_err());
+    let err: ParseTrackOriginError = "broadcast".parse::<TrackOrigin>().unwrap_err();
+    let _ = err;
+    // Case folds.
+    assert_eq!("Embedded".parse(), Ok(TrackOrigin::Embedded));
     assert!("".parse::<TrackOrigin>().is_err());
   }
 }

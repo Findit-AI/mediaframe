@@ -306,4 +306,72 @@ mod tests {
       }
     });
   }
+  /// Parsing is **idempotent through the text form**: whatever a value
+  /// renders is a spelling that parses back to that same value. This is
+  /// the property the case-folding gate buys — without it a value could
+  /// render a spelling its own parser does not accept, which is exactly
+  /// what `BayerDemosaic`'s capitalised slug did.
+  ///
+  /// Driven over arbitrary strings rather than a slug list, so the escape
+  /// arm is covered as heavily as the named ones.
+  #[test]
+  fn parse_is_idempotent_through_the_text_form() {
+    macro_rules! idempotent {
+      ($ty:path, $s:expr) => {{
+        let once: $ty = $s.parse().unwrap();
+        let twice: $ty = once.as_str().parse().unwrap();
+        assert_eq!(
+          once,
+          twice,
+          "{} renders {:?}, which does not parse back to it",
+          stringify!($ty),
+          once.as_str()
+        );
+      }};
+    }
+    drive(1234, 2048, |g| {
+      let s = super::arb_string(g);
+      idempotent!(crate::codec::VideoCodec, s);
+      idempotent!(crate::codec::AudioCodec, s);
+      idempotent!(crate::codec::SubtitleCodec, s);
+      idempotent!(crate::container::Format, s);
+      idempotent!(crate::subtitle::Format, s);
+      idempotent!(crate::audio::ChannelLayout, s);
+      idempotent!(crate::audio::SampleFormat, s);
+      idempotent!(crate::audio::ContainerFormat, s);
+      idempotent!(crate::color::Matrix, s);
+      idempotent!(crate::color::Primaries, s);
+      idempotent!(crate::color::Transfer, s);
+      idempotent!(crate::color::DynamicRange, s);
+      idempotent!(crate::color::ChromaLocation, s);
+      idempotent!(crate::color::DcpTargetGamut, s);
+      idempotent!(crate::pixel_format::PixelFormat, s);
+      idempotent!(crate::frame::Rotation, s);
+      idempotent!(crate::frame::FieldOrder, s);
+      idempotent!(crate::frame::StereoMode, s);
+    });
+  }
+
+  /// …and folding is what makes one name one value: an arbitrary string
+  /// and its uppercase spelling parse to the *same* value, so the derived
+  /// `Eq` / `Hash` never split a name across two entries.
+  #[test]
+  fn one_name_is_one_value_whatever_its_case() {
+    macro_rules! folds {
+      ($ty:path, $s:expr) => {{
+        let plain: $ty = $s.parse().unwrap();
+        let shouted: $ty = $s.to_ascii_uppercase().parse().unwrap();
+        assert_eq!(plain, shouted, "{} split a name by case", stringify!($ty));
+      }};
+    }
+    drive(4321, 2048, |g| {
+      let s = super::arb_string(g);
+      folds!(crate::codec::VideoCodec, s);
+      folds!(crate::container::Format, s);
+      folds!(crate::audio::SampleFormat, s);
+      folds!(crate::color::Matrix, s);
+      folds!(crate::pixel_format::PixelFormat, s);
+      folds!(crate::frame::StereoMode, s);
+    });
+  }
 }

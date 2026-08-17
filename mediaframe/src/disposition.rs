@@ -31,6 +31,17 @@ bitflags! {
     ///
     /// **Default convention**: `Default::default()` returns the
     /// empty flag set (no disposition hints).
+    ///
+    /// # Text form
+    ///
+    /// This type deliberately has **no** `Display` / `FromStr`, and its
+    /// serde shape is the `u32` bits. A vocabulary of *names* takes a
+    /// text form; a bit *set* takes a number. A flag-set grammar
+    /// (`"default|forced"`) would also have two shapes rather than one,
+    /// because `from_bits_retain` keeps bits this build has no name for
+    /// and those can only be printed as a bare literal. Human-readable
+    /// names live in `Debug` and in whatever consumer surface wants
+    /// them.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     #[cfg_attr(
       feature = "quickcheck",

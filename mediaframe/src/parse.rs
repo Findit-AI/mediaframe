@@ -1,76 +1,56 @@
-//! The error returned by the [`FromStr`](core::str::FromStr) impls of
-//! mediaframe's **closed** vocabulary and geometry types.
+//! The ASCII case-folding gate every name lookup and every open escape
+//! passes through.
 //!
-//! The *open* enums — the ones carrying an `Other(SmolStr)` escape arm
-//! ([`crate::codec::VideoCodec`], [`crate::container::Format`], …) — parse
-//! infallibly and use `Infallible` as their error; they never reach this
-//! type. Everything else has a finite set of legal spellings, so an
-//! unrecognised one has to be rejected.
+//! Slugs in this crate are **canonically lowercase**: `as_str`, `Display`
+//! and serde emit nothing else, and every `FromStr` folds its input before
+//! looking it up, so `"BT709"`, `"Bt709"` and `"bt709"` are one value. The
+//! escape arms fold too ([`fold_owned`]), which is what keeps the whole
+//! value space canonical and the derived `Eq` / `Hash` comparing *names*
+//! rather than spellings.
 //!
-//! # Why one shared type rather than one error per vocabulary
+//! Folding is deliberately **ASCII-only**. These are FFmpeg / H.273 / file
+//! extension identifiers; Unicode case folding is locale-sensitive
+//! (Turkish dotless i maps `I` to `ı`, not `i`) in ways a wire vocabulary
+//! must not be, and would make the canonical form depend on who is
+//! reading.
 //!
-//! Every one of these parses fails for the same three reasons, none of
-//! which the caller can recover from differently, so a per-type taxonomy
-//! would be ~18 structurally identical types with no added caller
-//! decision. The rejected input is deliberately **not** retained: these
-//! types are available at the crate's no-alloc tier, where there is
-//! nowhere to put an owned copy, and the input is attacker-controlled on
-//! the deserialization path.
+//! The errors these parses return live with the vocabularies themselves,
+//! one per type — a `Rational` that is malformed and a `Matrix` that names
+//! nothing are different failures, and the type is what says which.
 
-/// Error returned when a string is not a valid spelling of a mediaframe
-/// vocabulary or geometry value.
+/// Capacity of the stack buffer [`fold`] folds into.
 ///
-/// Carries the name of the type that rejected the input — enough to tell
-/// two failures apart in a log line — but not the input itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
-#[error("invalid {ty}: {kind}")]
-pub struct ParseError {
-  ty: &'static str,
-  kind: Kind,
+/// The longest canonical slug in the crate is well under this; the buffer
+/// exists because the coded vocabularies are available at the crate's
+/// no-alloc tier, where there is no heap to fold into. An input that does
+/// not fit cannot name a variant either, so the caller treats the
+/// overflow as an ordinary miss.
+pub(crate) const FOLD_CAP: usize = 64;
+
+/// ASCII-fold `s` into `buf`, returning the lowercase view, or [`None`]
+/// when `s` is longer than any slug can be.
+///
+/// Allocation-free, so the lookup gate is the same at every capability
+/// tier.
+pub(crate) fn fold<'b>(s: &str, buf: &'b mut [u8; FOLD_CAP]) -> Option<&'b str> {
+  let bytes = s.as_bytes();
+  let n = bytes.len();
+  if n > FOLD_CAP {
+    return None;
+  }
+  buf[..n].copy_from_slice(bytes);
+  buf[..n].make_ascii_lowercase();
+  // ASCII-lowercasing maps ASCII bytes to ASCII bytes and leaves every
+  // other byte untouched, so UTF-8 validity is preserved; `ok()` keeps
+  // this total without reaching for `unsafe`.
+  core::str::from_utf8(&buf[..n]).ok()
 }
 
-impl ParseError {
-  /// The name of the type that rejected the input (`"PixelFormat"`, …).
-  #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn type_name(&self) -> &'static str {
-    self.ty
-  }
-
-  /// The input is not one of this vocabulary's canonical slugs.
-  pub(crate) const fn unrecognised(ty: &'static str) -> Self {
-    Self {
-      ty,
-      kind: Kind::Unrecognised,
-    }
-  }
-
-  /// The input does not have this type's textual shape at all (missing
-  /// separator, non-numeric component, trailing text).
-  pub(crate) const fn malformed(ty: &'static str) -> Self {
-    Self {
-      ty,
-      kind: Kind::Malformed,
-    }
-  }
-
-  /// The input parsed structurally but violates the type's invariant.
-  pub(crate) const fn out_of_range(ty: &'static str) -> Self {
-    Self {
-      ty,
-      kind: Kind::OutOfRange,
-    }
-  }
-}
-
-/// ASCII-fold a slug to the crate's lowercase canon.
+/// ASCII-fold a slug that is about to be stored in an `Other(SmolStr)`
+/// escape.
 ///
-/// The one gate every `Other(SmolStr)` escape is built through, so the whole
-/// value space stays lowercase-canonical and the derived `Eq` / `Hash` on
-/// those enums compare *names*, not spellings. Deliberately ASCII-only:
-/// these are FFmpeg/H.273 identifiers, and Unicode case folding is
-/// locale-sensitive in ways a wire vocabulary must not be.
-///
-/// Allocates only when the input is not already folded.
+/// The one gate every escape is built through. Allocates only when the
+/// input is not already folded.
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub(crate) fn fold_owned(s: &str) -> smol_str::SmolStr {
   if s.bytes().any(|b| b.is_ascii_uppercase()) {
@@ -80,59 +60,30 @@ pub(crate) fn fold_owned(s: &str) -> smol_str::SmolStr {
   }
 }
 
-/// Kept private: the three reasons are a diagnostic detail, not a
-/// classification callers branch on. Promoting it later is additive.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum Kind {
-  Unrecognised,
-  Malformed,
-  OutOfRange,
-}
-
-impl core::fmt::Display for Kind {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    f.write_str(match self {
-      Self::Unrecognised => "unrecognised value",
-      Self::Malformed => "malformed",
-      Self::OutOfRange => "value out of range",
-    })
-  }
-}
-
 #[cfg(test)]
 mod tests {
-  use super::ParseError;
+  use super::{FOLD_CAP, fold};
 
   #[test]
-  fn type_name_survives_and_kinds_stay_distinct() {
-    let unrecognised = ParseError::unrecognised("PixelFormat");
-    let malformed = ParseError::malformed("Rational");
-    let out_of_range = ParseError::out_of_range("Rational");
-
-    assert_eq!(unrecognised.type_name(), "PixelFormat");
-    assert_eq!(malformed.type_name(), "Rational");
-    assert_ne!(
-      malformed, out_of_range,
-      "a malformed input and a rejected invariant must not compare equal"
+  fn fold_lowercases_ascii_and_leaves_the_rest_alone() {
+    let mut buf = [0u8; FOLD_CAP];
+    assert_eq!(fold("BT709", &mut buf), Some("bt709"));
+    let mut buf = [0u8; FOLD_CAP];
+    assert_eq!(
+      fold("Chroma-Derived-NC", &mut buf),
+      Some("chroma-derived-nc")
     );
+    let mut buf = [0u8; FOLD_CAP];
+    assert_eq!(fold("yuv420p", &mut buf), Some("yuv420p"));
+    // Non-ASCII passes through untouched — no locale-dependent mapping.
+    let mut buf = [0u8; FOLD_CAP];
+    assert_eq!(fold("İ", &mut buf), Some("İ"));
   }
 
-  #[cfg(any(feature = "std", feature = "alloc"))]
   #[test]
-  fn display_names_the_rejecting_type_and_never_the_input() {
-    use std::string::ToString;
-
-    assert_eq!(
-      ParseError::unrecognised("PixelFormat").to_string(),
-      "invalid PixelFormat: unrecognised value"
-    );
-    assert_eq!(
-      ParseError::malformed("Dimensions").to_string(),
-      "invalid Dimensions: malformed"
-    );
-    assert_eq!(
-      ParseError::out_of_range("Rational").to_string(),
-      "invalid Rational: value out of range"
-    );
+  fn an_input_longer_than_any_slug_is_a_miss_not_a_panic() {
+    let mut buf = [0u8; FOLD_CAP];
+    let long = core::str::from_utf8(&[b'x'; FOLD_CAP + 1]).unwrap();
+    assert_eq!(fold(long, &mut buf), None);
   }
 }

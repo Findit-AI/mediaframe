@@ -1810,8 +1810,20 @@ impl PixelFormat {
   }
 }
 
+/// The error [`PixelFormat`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a pixel-format name")]
+#[non_exhaustive]
+pub struct ParsePixelFormatError;
+
 impl core::str::FromStr for PixelFormat {
-  type Err = crate::parse::ParseError;
+  type Err = ParsePixelFormatError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -1824,7 +1836,11 @@ impl core::str::FromStr for PixelFormat {
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "none" => Self::None,
       "yuv420p" => Self::Yuv420p,
       "yuv422p" => Self::Yuv422p,
@@ -2113,7 +2129,7 @@ impl core::str::FromStr for PixelFormat {
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
-      _ => return Err(crate::parse::ParseError::unrecognised("PixelFormat")),
+      _ => return Err(ParsePixelFormatError),
     })
   }
 }
@@ -2654,6 +2670,22 @@ mod tests {
         Ok(value.clone()),
         "slug {slug:?} does not parse back to {value:?}"
       );
+      assert!(
+        !slug.bytes().any(|b| b.is_ascii_uppercase()),
+        "pixel-format slug {slug:?} is not lowercase-canonical"
+      );
+      {
+        let mut upper = [0u8; 64];
+        let n = slug.len();
+        upper[..n].copy_from_slice(slug.as_bytes());
+        upper[..n].make_ascii_uppercase();
+        let upper = core::str::from_utf8(&upper[..n]).unwrap();
+        assert_eq!(
+          upper.parse::<PixelFormat>(),
+          Ok(value.clone()),
+          "PixelFormat does not fold {upper:?} onto {slug:?}"
+        );
+      }
       for prior in codes.iter().take(named) {
         let prior = PixelFormat::from_u32(*prior).expect("recorded code names a format");
         assert_ne!(
@@ -2692,7 +2724,10 @@ mod tests {
   #[cfg(not(any(feature = "alloc", feature = "std")))]
   #[test]
   fn an_unnamed_pixel_format_is_rejected_without_an_allocator() {
-    let err = "yuv420q".parse::<PixelFormat>().unwrap_err();
-    assert_eq!(err.type_name(), "PixelFormat");
+    // The error's *type* is what names the vocabulary now — one per
+    // vocabulary, so two failures are told apart by the compiler rather
+    // than by a string field.
+    let err: ParsePixelFormatError = "yuv420q".parse::<PixelFormat>().unwrap_err();
+    let _ = err;
   }
 }

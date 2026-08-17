@@ -236,8 +236,20 @@ impl Matrix {
   }
 }
 
+/// The error [`Matrix`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a colour-matrix name")]
+#[non_exhaustive]
+pub struct ParseMatrixError;
+
 impl core::str::FromStr for Matrix {
-  type Err = crate::parse::ParseError;
+  type Err = ParseMatrixError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -250,7 +262,11 @@ impl core::str::FromStr for Matrix {
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "rgb" => Self::Rgb,
       "bt601" => Self::Bt601,
       "bt709" => Self::Bt709,
@@ -272,7 +288,7 @@ impl core::str::FromStr for Matrix {
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
-      _ => return Err(crate::parse::ParseError::unrecognised("Matrix")),
+      _ => return Err(ParseMatrixError),
     })
   }
 }
@@ -559,8 +575,20 @@ impl Primaries {
   }
 }
 
+/// The error [`Primaries`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a colour-primaries name")]
+#[non_exhaustive]
+pub struct ParsePrimariesError;
+
 impl core::str::FromStr for Primaries {
-  type Err = crate::parse::ParseError;
+  type Err = ParsePrimariesError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -573,7 +601,11 @@ impl core::str::FromStr for Primaries {
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "bt709" => Self::Bt709,
       "unspecified" => Self::Unspecified,
       "bt470m" => Self::Bt470M,
@@ -589,7 +621,7 @@ impl core::str::FromStr for Primaries {
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
-      _ => return Err(crate::parse::ParseError::unrecognised("Primaries")),
+      _ => return Err(ParsePrimariesError),
     })
   }
 }
@@ -770,8 +802,20 @@ impl Transfer {
   }
 }
 
+/// The error [`Transfer`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a transfer-characteristics name")]
+#[non_exhaustive]
+pub struct ParseTransferError;
+
 impl core::str::FromStr for Transfer {
-  type Err = crate::parse::ParseError;
+  type Err = ParseTransferError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -784,7 +828,11 @@ impl core::str::FromStr for Transfer {
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "bt709" => Self::Bt709,
       "unspecified" => Self::Unspecified,
       "gamma22" => Self::Gamma22,
@@ -805,7 +853,7 @@ impl core::str::FromStr for Transfer {
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
-      _ => return Err(crate::parse::ParseError::unrecognised("Transfer")),
+      _ => return Err(ParseTransferError),
     })
   }
 }
@@ -910,8 +958,20 @@ impl DynamicRange {
   }
 }
 
+/// The error [`DynamicRange`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a sample-range name")]
+#[non_exhaustive]
+pub struct ParseDynamicRangeError;
+
 impl core::str::FromStr for DynamicRange {
-  type Err = crate::parse::ParseError;
+  type Err = ParseDynamicRangeError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -924,14 +984,18 @@ impl core::str::FromStr for DynamicRange {
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "unspecified" => Self::Unspecified,
       "tv" => Self::Limited,
       "pc" => Self::Full,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
-      _ => return Err(crate::parse::ParseError::unrecognised("DynamicRange")),
+      _ => return Err(ParseDynamicRangeError),
     })
   }
 }
@@ -1057,8 +1121,20 @@ impl ChromaLocation {
   }
 }
 
+/// The error [`ChromaLocation`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a chroma-location name")]
+#[non_exhaustive]
+pub struct ParseChromaLocationError;
+
 impl core::str::FromStr for ChromaLocation {
-  type Err = crate::parse::ParseError;
+  type Err = ParseChromaLocationError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -1071,7 +1147,11 @@ impl core::str::FromStr for ChromaLocation {
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "unspecified" => Self::Unspecified,
       "left" => Self::Left,
       "center" => Self::Center,
@@ -1082,7 +1162,7 @@ impl core::str::FromStr for ChromaLocation {
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
-      _ => return Err(crate::parse::ParseError::unrecognised("ChromaLocation")),
+      _ => return Err(ParseChromaLocationError),
     })
   }
 }
@@ -1395,8 +1475,20 @@ impl DcpTargetGamut {
   }
 }
 
+/// The error [`DcpTargetGamut`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a DCP target-gamut name")]
+#[non_exhaustive]
+pub struct ParseDcpTargetGamutError;
+
 impl core::str::FromStr for DcpTargetGamut {
-  type Err = crate::parse::ParseError;
+  type Err = ParseDcpTargetGamutError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -1409,14 +1501,18 @@ impl core::str::FromStr for DcpTargetGamut {
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "dci-p3" => Self::DciP3,
       "rec709" => Self::Rec709,
       "rec2020" => Self::Rec2020,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
-      _ => return Err(crate::parse::ParseError::unrecognised("DcpTargetGamut")),
+      _ => return Err(ParseDcpTargetGamutError),
     })
   }
 }
@@ -2603,6 +2699,24 @@ mod tests {
             "{} slug {slug:?} does not parse back to {value:?}",
             stringify!($ty)
           );
+          assert!(
+            !slug.bytes().any(|b| b.is_ascii_uppercase()),
+            "{} slug {slug:?} is not lowercase-canonical",
+            stringify!($ty)
+          );
+          {
+            let mut upper = [0u8; 64];
+            let n = slug.len();
+            upper[..n].copy_from_slice(slug.as_bytes());
+            upper[..n].make_ascii_uppercase();
+            let upper = core::str::from_utf8(&upper[..n]).unwrap();
+            assert_eq!(
+              upper.parse::<$ty>(),
+              Ok(value.clone()),
+              "{} does not fold {upper:?} onto {slug:?}",
+              stringify!($ty)
+            );
+          }
           for prior in codes.iter().take(named) {
             let prior = <$ty>::from_u32(*prior).expect("recorded code names a variant");
             assert_ne!(

@@ -376,27 +376,30 @@ impl core::fmt::Display for Dimensions {
   }
 }
 
+/// The error [`Dimensions`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed; the rejected input is deliberately not retained.
+/// `#[non_exhaustive]` keeps it constructible only here, so it can grow
+/// structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a WIDTHxHEIGHT dimension pair")]
+#[non_exhaustive]
+pub struct ParseDimensionsError;
+
 impl core::str::FromStr for Dimensions {
-  type Err = crate::parse::ParseError;
+  type Err = ParseDimensionsError;
 
   /// Parses the `WIDTHxHEIGHT` form [`Display`](core::fmt::Display)
   /// renders (`"1920x1080"`).
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) unless the input
-  /// is exactly two `u32` values separated by a single `x`.
+  /// Returns [`ParseDimensionsError`] unless the input is exactly two
+  /// `u32` values separated by a single `x`.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    const TY: &str = "Dimensions";
-    let (w, h) = s
-      .split_once('x')
-      .ok_or(crate::parse::ParseError::malformed(TY))?;
-    let width = w
-      .parse()
-      .map_err(|_| crate::parse::ParseError::malformed(TY))?;
-    let height = h
-      .parse()
-      .map_err(|_| crate::parse::ParseError::malformed(TY))?;
+    let (w, h) = s.split_once('x').ok_or(ParseDimensionsError)?;
+    let width = w.parse().map_err(|_| ParseDimensionsError)?;
+    let height = h.parse().map_err(|_| ParseDimensionsError)?;
     Ok(Self::new(width, height))
   }
 }
@@ -616,8 +619,20 @@ impl Rotation {
   }
 }
 
+/// The error [`Rotation`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a rotation")]
+#[non_exhaustive]
+pub struct ParseRotationError;
+
 impl core::str::FromStr for Rotation {
-  type Err = crate::parse::ParseError;
+  type Err = ParseRotationError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -630,7 +645,11 @@ impl core::str::FromStr for Rotation {
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "0" => Self::D0,
       "90" => Self::D90,
       "180" => Self::D180,
@@ -638,7 +657,7 @@ impl core::str::FromStr for Rotation {
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
-      _ => return Err(crate::parse::ParseError::unrecognised("Rotation")),
+      _ => return Err(ParseRotationError),
     })
   }
 }
@@ -779,7 +798,7 @@ impl core::fmt::Display for SampleAspectRatio {
 }
 
 impl core::str::FromStr for SampleAspectRatio {
-  type Err = crate::parse::ParseError;
+  type Err = ParseSampleAspectRatioError;
 
   /// Parses the `NUM:DEN` form [`Display`](core::fmt::Display) renders
   /// (`"40:33"`). The separator is a colon, not the `/` [`Rational`]
@@ -788,11 +807,13 @@ impl core::str::FromStr for SampleAspectRatio {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) when the input is
-  /// not two `i64` values separated by a single `:`, or when the pair
-  /// violates [`Rational::try_new`]'s invariant (`num >= 0`, `den > 0`).
+  /// Returns [`ParseSampleAspectRatioError`] when the input is not two
+  /// `i64` values separated by a single `:`, or when the pair violates
+  /// [`Rational::try_new`]'s invariant (`num >= 0`, `den > 0`).
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    parse_ratio(s, ':', "SampleAspectRatio").map(Self)
+    parse_ratio(s, ':')
+      .map(Self)
+      .map_err(|kind| ParseSampleAspectRatioError { kind })
   }
 }
 
@@ -1032,33 +1053,88 @@ impl core::fmt::Display for Rational {
 /// Splits `NUM<sep>DEN` and runs the pair through [`Rational::try_new`], so
 /// parsing cannot become a second construction path that mints a ratio the
 /// constructor would reject.
-fn parse_ratio(s: &str, sep: char, ty: &'static str) -> Result<Rational, crate::parse::ParseError> {
-  let (n, d) = s
-    .split_once(sep)
-    .ok_or(crate::parse::ParseError::malformed(ty))?;
-  let num: i64 = n
-    .parse()
-    .map_err(|_| crate::parse::ParseError::malformed(ty))?;
-  let den: i64 = d
-    .parse()
-    .map_err(|_| crate::parse::ParseError::malformed(ty))?;
-  let den = core::num::NonZeroI64::new(den).ok_or(crate::parse::ParseError::out_of_range(ty))?;
-  Rational::try_new(num, den).ok_or(crate::parse::ParseError::out_of_range(ty))
+/// Why a ratio spelling was rejected.
+///
+/// Public because the two cases are genuinely different: a caller
+/// forwarding user input wants to say "that is not a ratio" for the first
+/// and "that ratio is not representable" for the second.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum RatioParseKind {
+  /// The input does not have the shape at all — no separator, a
+  /// non-numeric component, or trailing text.
+  Malformed,
+  /// The input parsed, but the pair violates [`Rational::try_new`]'s
+  /// invariant (`num >= 0`, `den > 0`).
+  OutOfRange,
+}
+
+impl core::fmt::Display for RatioParseKind {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    f.write_str(match self {
+      Self::Malformed => "malformed",
+      Self::OutOfRange => "value out of range",
+    })
+  }
+}
+
+/// The error [`Rational`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Carries [`RatioParseKind`] — unlike the name vocabularies, a ratio can
+/// fail for two reasons a caller reports differently. The rejected input
+/// itself is not retained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a NUM/DEN rational: {kind}")]
+pub struct ParseRationalError {
+  kind: RatioParseKind,
+}
+
+impl ParseRationalError {
+  /// Why the input was rejected.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn kind(&self) -> RatioParseKind {
+    self.kind
+  }
+}
+
+/// The error [`SampleAspectRatio`]'s [`FromStr`](core::str::FromStr)
+/// returns. Same two cases as [`ParseRationalError`], over the `NUM:DEN`
+/// spelling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a NUM:DEN sample aspect ratio: {kind}")]
+pub struct ParseSampleAspectRatioError {
+  kind: RatioParseKind,
+}
+
+impl ParseSampleAspectRatioError {
+  /// Why the input was rejected.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn kind(&self) -> RatioParseKind {
+    self.kind
+  }
+}
+
+fn parse_ratio(s: &str, sep: char) -> Result<Rational, RatioParseKind> {
+  let (n, d) = s.split_once(sep).ok_or(RatioParseKind::Malformed)?;
+  let num: i64 = n.parse().map_err(|_| RatioParseKind::Malformed)?;
+  let den: i64 = d.parse().map_err(|_| RatioParseKind::Malformed)?;
+  let den = core::num::NonZeroI64::new(den).ok_or(RatioParseKind::OutOfRange)?;
+  Rational::try_new(num, den).ok_or(RatioParseKind::OutOfRange)
 }
 
 impl core::str::FromStr for Rational {
-  type Err = crate::parse::ParseError;
+  type Err = ParseRationalError;
 
   /// Parses the `NUM/DEN` form [`Display`](core::fmt::Display) renders
   /// (`"30000/1001"`).
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) when the input is
-  /// not two `i64` values separated by a single `/`, or when the pair
-  /// violates [`Rational::try_new`]'s invariant (`num >= 0`, `den > 0`).
+  /// Returns [`ParseRationalError`] when the input is not two `i64`
+  /// values separated by a single `/`, or when the pair violates
+  /// [`Rational::try_new`]'s invariant (`num >= 0`, `den > 0`).
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    parse_ratio(s, '/', "Rational")
+    parse_ratio(s, '/').map_err(|kind| ParseRationalError { kind })
   }
 }
 
@@ -1295,8 +1371,20 @@ impl FieldOrder {
   }
 }
 
+/// The error [`FieldOrder`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a field-order name")]
+#[non_exhaustive]
+pub struct ParseFieldOrderError;
+
 impl core::str::FromStr for FieldOrder {
-  type Err = crate::parse::ParseError;
+  type Err = ParseFieldOrderError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -1309,7 +1397,11 @@ impl core::str::FromStr for FieldOrder {
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "unknown" => Self::Unknown,
       "progressive" => Self::Progressive,
       "tt" => Self::Tt,
@@ -1319,7 +1411,7 @@ impl core::str::FromStr for FieldOrder {
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
-      _ => return Err(crate::parse::ParseError::unrecognised("FieldOrder")),
+      _ => return Err(ParseFieldOrderError),
     })
   }
 }
@@ -1463,8 +1555,20 @@ impl StereoMode {
   }
 }
 
+/// The error [`StereoMode`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a stereo-mode name")]
+#[non_exhaustive]
+pub struct ParseStereoModeError;
+
 impl core::str::FromStr for StereoMode {
-  type Err = crate::parse::ParseError;
+  type Err = ParseStereoModeError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -1477,7 +1581,11 @@ impl core::str::FromStr for StereoMode {
   /// parse is **total**: a slug this type does not name rides
   /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "mono" => Self::Mono,
       "side-by-side" => Self::SideBySide,
       "top-bottom" => Self::TopBottom,
@@ -1489,7 +1597,7 @@ impl core::str::FromStr for StereoMode {
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
-      _ => return Err(crate::parse::ParseError::unrecognised("StereoMode")),
+      _ => return Err(ParseStereoModeError),
     })
   }
 }
@@ -2582,6 +2690,24 @@ mod tests_primitives {
             "{} slug {slug:?} does not parse back to {value:?}",
             stringify!($ty)
           );
+          assert!(
+            !slug.bytes().any(|b| b.is_ascii_uppercase()),
+            "{} slug {slug:?} is not lowercase-canonical",
+            stringify!($ty)
+          );
+          {
+            let mut upper = [0u8; 64];
+            let n = slug.len();
+            upper[..n].copy_from_slice(slug.as_bytes());
+            upper[..n].make_ascii_uppercase();
+            let upper = core::str::from_utf8(&upper[..n]).unwrap();
+            assert_eq!(
+              upper.parse::<$ty>(),
+              Ok(value.clone()),
+              "{} does not fold {upper:?} onto {slug:?}",
+              stringify!($ty)
+            );
+          }
           for prior in codes.iter().take(named) {
             let prior = <$ty>::from_u32(*prior).expect("recorded code names a variant");
             assert_ne!(
@@ -2683,9 +2809,19 @@ mod tests_primitives {
     assert!("5/0".parse::<Rational>().is_err());
     assert!("-1:1".parse::<SampleAspectRatio>().is_err());
 
+    // A ratio fails for two reasons a caller reports differently, so
+    // unlike the name vocabularies its error carries which.
     assert_eq!(
-      "-5/4".parse::<Rational>().unwrap_err().type_name(),
-      "Rational"
+      "-5/4".parse::<Rational>().unwrap_err().kind(),
+      RatioParseKind::OutOfRange
+    );
+    assert_eq!(
+      "not-a-ratio".parse::<Rational>().unwrap_err().kind(),
+      RatioParseKind::Malformed
+    );
+    assert_eq!(
+      "-1:1".parse::<SampleAspectRatio>().unwrap_err().kind(),
+      RatioParseKind::OutOfRange
     );
   }
 

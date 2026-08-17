@@ -81,8 +81,20 @@ impl BitRateMode {
   }
 }
 
+/// The error [`BitRateMode`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a bit-rate-mode name")]
+#[non_exhaustive]
+pub struct ParseBitRateModeError;
+
 impl core::str::FromStr for BitRateMode {
-  type Err = crate::parse::ParseError;
+  type Err = ParseBitRateModeError;
 
   /// Parses the canonical slug [`Self::as_str`] renders — the exact
   /// inverse of [`Display`](core::fmt::Display).
@@ -92,11 +104,15 @@ impl core::str::FromStr for BitRateMode {
   /// Returns [`ParseError`](crate::parse::ParseError) for any input
   /// outside this closed vocabulary.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "cbr" => Self::Cbr,
       "vbr" => Self::Vbr,
       "abr" => Self::Abr,
-      _ => return Err(crate::parse::ParseError::unrecognised("BitRateMode")),
+      _ => return Err(ParseBitRateModeError),
     })
   }
 }
@@ -153,9 +169,11 @@ mod tests {
       assert_eq!(mode.as_str().parse(), Ok(mode));
     }
 
-    let err = "constant".parse::<BitRateMode>().unwrap_err();
-    assert_eq!(err.type_name(), "BitRateMode");
-    assert!("CBR".parse::<BitRateMode>().is_err());
+    let err: ParseBitRateModeError = "constant".parse::<BitRateMode>().unwrap_err();
+    let _ = err;
+    // Case folds — the vocabulary is one name per value, not one spelling.
+    assert_eq!("CBR".parse(), Ok(BitRateMode::Cbr));
+    assert_eq!("Vbr".parse(), Ok(BitRateMode::Vbr));
     assert!("".parse::<BitRateMode>().is_err());
   }
 }

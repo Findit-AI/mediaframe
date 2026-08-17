@@ -161,7 +161,11 @@ impl FromStr for SampleFormat {
   /// Recognise a canonical FFmpeg sample-format slug; unknown
   /// values land in [`Self::Other`] (infallible, lossless).
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "u8" => Self::U8,
       "s16" => Self::S16,
       "s32" => Self::S32,
@@ -321,6 +325,16 @@ impl ContainerFormat {
       Self::Other(_) => "",
     }
   }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+  }
 }
 
 impl FromStr for ContainerFormat {
@@ -328,7 +342,11 @@ impl FromStr for ContainerFormat {
   /// Recognise a canonical extension-style slug; unknown values
   /// land in [`Self::Other`] (infallible, lossless).
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "mp3" => Self::Mp3,
       "aac" => Self::Aac,
       "flac" => Self::Flac,
@@ -343,7 +361,7 @@ impl FromStr for ContainerFormat {
       "mka" => Self::Mka,
       "m4a" => Self::M4a,
       "caf" => Self::Caf,
-      other => Self::Other(SmolStr::new(other)),
+      other => Self::other(other),
     })
   }
 }
@@ -488,5 +506,48 @@ mod tests {
       ContainerFormat::Other(SmolStr::new("weird")).as_extension(),
       ""
     );
+  }
+  /// Both audio vocabularies are lowercase-canonical, collision-free once
+  /// folded, and read case-insensitively — escape included.
+  #[test]
+  fn audio_slugs_are_lowercase_canonical_and_fold() {
+    const SAMPLE: &[&str] = &[
+      "u8", "s16", "s32", "flt", "dbl", "u8p", "s16p", "s32p", "fltp", "dblp", "s64", "s64p",
+    ];
+    const CONTAINER: &[&str] = &[
+      "mp3", "aac", "flac", "ogg", "opus", "wav", "aiff", "alac", "wma", "ape", "wv", "mka", "m4a",
+      "caf",
+    ];
+
+    for (i, slug) in SAMPLE.iter().enumerate() {
+      assert!(!slug.bytes().any(|b| b.is_ascii_uppercase()));
+      for prior in &SAMPLE[..i] {
+        assert!(
+          !prior.eq_ignore_ascii_case(slug),
+          "two formats fold onto {slug:?}"
+        );
+      }
+      let v: SampleFormat = slug.parse().unwrap();
+      assert!(!v.is_other());
+      assert_eq!(v.as_str(), *slug);
+    }
+    for (i, slug) in CONTAINER.iter().enumerate() {
+      assert!(!slug.bytes().any(|b| b.is_ascii_uppercase()));
+      for prior in &CONTAINER[..i] {
+        assert!(
+          !prior.eq_ignore_ascii_case(slug),
+          "two containers fold onto {slug:?}"
+        );
+      }
+      let v: ContainerFormat = slug.parse().unwrap();
+      assert!(!v.is_other());
+      assert_eq!(v.as_str(), *slug);
+    }
+
+    assert_eq!("S16".parse(), Ok(SampleFormat::S16));
+    assert_eq!("FLTP".parse(), Ok(SampleFormat::Fltp));
+    assert_eq!("FLAC".parse(), Ok(ContainerFormat::Flac));
+    assert_eq!(SampleFormat::other("VENDOR_S24").as_str(), "vendor_s24");
+    assert_eq!(ContainerFormat::other("SND").as_str(), "snd");
   }
 }

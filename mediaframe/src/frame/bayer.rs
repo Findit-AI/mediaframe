@@ -584,8 +584,20 @@ impl BayerPattern {
   }
 }
 
+/// The error [`BayerPattern`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a Bayer CFA pattern")]
+#[non_exhaustive]
+pub struct ParseBayerPatternError;
+
 impl core::str::FromStr for BayerPattern {
-  type Err = crate::parse::ParseError;
+  type Err = ParseBayerPatternError;
 
   /// Parses the canonical slug [`Self::as_str`] renders — the exact
   /// inverse of [`Display`](core::fmt::Display).
@@ -595,12 +607,16 @@ impl core::str::FromStr for BayerPattern {
   /// Returns [`ParseError`](crate::parse::ParseError) for any input
   /// outside this closed vocabulary.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "bggr" => Self::Bggr,
       "rggb" => Self::Rggb,
       "grbg" => Self::Grbg,
       "gbrg" => Self::Gbrg,
-      _ => return Err(crate::parse::ParseError::unrecognised("BayerPattern")),
+      _ => return Err(ParseBayerPatternError),
     })
   }
 }
@@ -641,13 +657,25 @@ impl BayerDemosaic {
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn as_str(&self) -> &'static str {
     match self {
-      Self::Bilinear => "Bilinear",
+      Self::Bilinear => "bilinear",
     }
   }
 }
 
+/// The error [`BayerDemosaic`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a demosaic-algorithm name")]
+#[non_exhaustive]
+pub struct ParseBayerDemosaicError;
+
 impl core::str::FromStr for BayerDemosaic {
-  type Err = crate::parse::ParseError;
+  type Err = ParseBayerDemosaicError;
 
   /// Parses the canonical slug [`Self::as_str`] renders — the exact
   /// inverse of [`Display`](core::fmt::Display).
@@ -657,9 +685,13 @@ impl core::str::FromStr for BayerDemosaic {
   /// Returns [`ParseError`](crate::parse::ParseError) for any input
   /// outside this closed vocabulary.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
-      "Bilinear" => Self::Bilinear,
-      _ => return Err(crate::parse::ParseError::unrecognised("BayerDemosaic")),
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
+      "bilinear" => Self::Bilinear,
+      _ => return Err(ParseBayerDemosaicError),
     })
   }
 }
@@ -1023,15 +1055,27 @@ impl WbChannel {
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn as_str(&self) -> &'static str {
     match self {
-      WbChannel::R => "R",
-      WbChannel::G => "G",
-      WbChannel::B => "B",
+      WbChannel::R => "r",
+      WbChannel::G => "g",
+      WbChannel::B => "b",
     }
   }
 }
 
+/// The error [`WbChannel`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a white-balance channel")]
+#[non_exhaustive]
+pub struct ParseWbChannelError;
+
 impl core::str::FromStr for WbChannel {
-  type Err = crate::parse::ParseError;
+  type Err = ParseWbChannelError;
 
   /// Parses the canonical slug [`Self::as_str`] renders — the exact
   /// inverse of [`Display`](core::fmt::Display).
@@ -1041,11 +1085,15 @@ impl core::str::FromStr for WbChannel {
   /// Returns [`ParseError`](crate::parse::ParseError) for any input
   /// outside this closed vocabulary.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
-      "R" => Self::R,
-      "G" => Self::G,
-      "B" => Self::B,
-      _ => return Err(crate::parse::ParseError::unrecognised("WbChannel")),
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
+      "r" => Self::R,
+      "g" => Self::G,
+      "b" => Self::B,
+      _ => return Err(ParseWbChannelError),
     })
   }
 }
@@ -1887,17 +1935,84 @@ mod tests {
 
   #[test]
   fn bayer_vocabularies_reject_anything_else() {
-    assert_eq!(
-      "rgbg".parse::<BayerPattern>().unwrap_err().type_name(),
-      "BayerPattern"
-    );
-    assert!("BGGR".parse::<BayerPattern>().is_err());
+    let err: ParseBayerPatternError = "rgbg".parse::<BayerPattern>().unwrap_err();
+    let _ = err;
+    // Case folds.
+    assert_eq!("BGGR".parse(), Ok(BayerPattern::Bggr));
+    assert_eq!("Bilinear".parse(), Ok(BayerDemosaic::Bilinear));
+    assert_eq!("R".parse(), Ok(WbChannel::R));
     assert!("".parse::<WbChannel>().is_err());
 
-    // `BayerDemosaic`'s slug is capitalised, unlike every other slug in
-    // the crate; `FromStr` mirrors `Display` exactly rather than papering
-    // over the inconsistency, so the lowercase spelling is not accepted.
-    assert_eq!(BayerDemosaic::Bilinear.as_str(), "Bilinear");
-    assert!("bilinear".parse::<BayerDemosaic>().is_err());
+    // `BayerDemosaic`'s slug was the crate's one capitalised spelling.
+    // It is lowercase now, like every other slug, and the parse gate
+    // folds so the old spelling still reads.
+    assert_eq!(BayerDemosaic::Bilinear.as_str(), "bilinear");
+    assert_eq!("bilinear".parse(), Ok(BayerDemosaic::Bilinear));
+  }
+
+  /// The three RAW vocabularies are lowercase-canonical, collision-free
+  /// once folded, and read case-insensitively — the same law the coded
+  /// vocabularies are swept for. The variant lists are exhaustive **by
+  /// construction**: a wildcard-free `match` stops compiling when a
+  /// variant is added.
+  #[test]
+  fn raw_vocabularies_are_lowercase_canonical_and_fold() {
+    fn exhaustive_pattern(p: BayerPattern) -> &'static str {
+      match p {
+        BayerPattern::Rggb => "rggb",
+        BayerPattern::Bggr => "bggr",
+        BayerPattern::Grbg => "grbg",
+        BayerPattern::Gbrg => "gbrg",
+      }
+    }
+    fn exhaustive_demosaic(d: BayerDemosaic) -> &'static str {
+      match d {
+        BayerDemosaic::Bilinear => "bilinear",
+      }
+    }
+    fn exhaustive_channel(c: WbChannel) -> &'static str {
+      match c {
+        WbChannel::R => "r",
+        WbChannel::G => "g",
+        WbChannel::B => "b",
+      }
+    }
+
+    let patterns = [
+      BayerPattern::Rggb,
+      BayerPattern::Bggr,
+      BayerPattern::Grbg,
+      BayerPattern::Gbrg,
+    ];
+    for (i, p) in patterns.iter().enumerate() {
+      assert_eq!(p.as_str(), exhaustive_pattern(*p));
+      assert!(!p.as_str().bytes().any(|b| b.is_ascii_uppercase()));
+      for q in &patterns[..i] {
+        assert!(
+          !q.as_str().eq_ignore_ascii_case(p.as_str()),
+          "two Bayer patterns fold onto {:?}",
+          p.as_str()
+        );
+      }
+    }
+    assert_eq!(
+      BayerDemosaic::Bilinear.as_str(),
+      exhaustive_demosaic(BayerDemosaic::Bilinear)
+    );
+
+    let channels = [WbChannel::R, WbChannel::G, WbChannel::B];
+    for (i, c) in channels.iter().enumerate() {
+      assert_eq!(c.as_str(), exhaustive_channel(*c));
+      assert!(!c.as_str().bytes().any(|b| b.is_ascii_uppercase()));
+      for d in &channels[..i] {
+        assert!(!d.as_str().eq_ignore_ascii_case(c.as_str()));
+      }
+    }
+
+    // Case-insensitive both ways, and `Display` is the exact inverse.
+    assert_eq!("RGGB".parse(), Ok(BayerPattern::Rggb));
+    assert_eq!("GbRg".parse(), Ok(BayerPattern::Gbrg));
+    assert_eq!("BILINEAR".parse(), Ok(BayerDemosaic::Bilinear));
+    assert_eq!("B".parse(), Ok(WbChannel::B));
   }
 }

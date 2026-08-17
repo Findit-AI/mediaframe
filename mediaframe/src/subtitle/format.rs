@@ -214,6 +214,16 @@ impl Format {
       Self::Other(_) => None,
     }
   }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+  }
 }
 
 impl FromStr for Format {
@@ -222,7 +232,11 @@ impl FromStr for Format {
   /// Recognise an FFmpeg-style short name; unknown values land in
   /// [`Self::Other`] (infallible, lossless).
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    Ok(match folded {
       "srt" => Self::Srt,
       "webvtt" => Self::WebVtt,
       "ass" => Self::Ass,
@@ -239,7 +253,7 @@ impl FromStr for Format {
       "hdmv_pgs_subtitle" => Self::PgsSub,
       "dvb_subtitle" => Self::DvbSub,
       "xsub" => Self::XSub,
-      other => Self::Other(SmolStr::new(other)),
+      other => Self::other(other),
     })
   }
 }
@@ -367,5 +381,35 @@ mod tests {
     }
     // Other: unknown.
     assert_eq!(Format::Other(SmolStr::new("custom")).as_extension(), "");
+  }
+
+  /// Lowercase-canonical, collision-free once folded, and read
+  /// case-insensitively — with the escape folding too, so one name is one
+  /// value under the derived `Eq` / `Hash`.
+  #[test]
+  fn format_slugs_are_lowercase_canonical_and_fold() {
+    const SLUGS: &[&str] = &["srt", "webvtt", "ass", "ssa", "ttml", "mov_text"];
+    for (i, slug) in SLUGS.iter().enumerate() {
+      assert!(
+        !slug.bytes().any(|b| b.is_ascii_uppercase()),
+        "slug {slug:?} is not lowercase-canonical"
+      );
+      for prior in &SLUGS[..i] {
+        assert!(
+          !prior.eq_ignore_ascii_case(slug),
+          "two variants fold onto {slug:?}"
+        );
+      }
+      let v: Format = slug.parse().unwrap();
+      assert!(!v.is_other(), "`{slug}` should be a named variant");
+      assert_eq!(v.as_str(), *slug, "`{slug}` is not its own canonical form");
+    }
+    assert_eq!("srt", "SRT".parse::<Format>().unwrap().as_str());
+
+    // The escape folds on the way in.
+    let escaped: Format = "SRT_X".parse().unwrap();
+    assert!(escaped.is_other());
+    assert_eq!(escaped.as_str(), "srt_x");
+    assert_eq!(Format::other("SRT_X"), escaped);
   }
 }
