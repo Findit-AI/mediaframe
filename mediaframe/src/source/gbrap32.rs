@@ -20,7 +20,7 @@
 
 use crate::{
   PixelSink, SourceFormat,
-  color::Matrix,
+  color::KernelMatrix,
   frame::{Gbrap32Frame, Gbrap32LeFrame},
   source::sealed::Sealed,
 };
@@ -39,27 +39,27 @@ impl<const BE: bool> SourceFormat for Gbrap32<BE> {}
 /// [`Self::r`] / [`Self::a`]. Endianness is recorded on the parent
 /// [`Gbrap32Frame<'_, BE>`](crate::frame::Gbrap32Frame) / sinker, not on the
 /// Row itself.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Gbrap32Row<'a> {
   g: &'a [u32],
   b: &'a [u32],
   r: &'a [u32],
   a: &'a [u32],
   row: usize,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   full_range: bool,
 }
 
 impl<'a> Gbrap32Row<'a> {
   #[cfg_attr(not(tarpaulin), inline(always))]
   #[allow(clippy::too_many_arguments)]
-  pub(crate) fn new(
+  pub(crate) const fn new(
     g: &'a [u32],
     b: &'a [u32],
     r: &'a [u32],
     a: &'a [u32],
     row: usize,
-    matrix: Matrix,
+    matrix: KernelMatrix,
     full_range: bool,
   ) -> Self {
     Self {
@@ -100,8 +100,8 @@ impl<'a> Gbrap32Row<'a> {
   }
   /// YUV/RGB conversion matrix carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub fn matrix(&self) -> Matrix {
-    self.matrix.clone()
+  pub const fn matrix(&self) -> KernelMatrix {
+    self.matrix
   }
   /// Full-range vs limited-range flag carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
@@ -126,7 +126,7 @@ pub trait Gbrap32Sink<const BE: bool = false>:
 pub fn gbrap32_to_endian<S, const BE: bool>(
   src: &Gbrap32Frame<'_, BE>,
   full_range: bool,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   sink: &mut S,
 ) -> Result<(), S::Error>
 where
@@ -151,7 +151,7 @@ where
     let b = &b_plane[row * b_stride..row * b_stride + w];
     let r = &r_plane[row * r_stride..row * r_stride + w];
     let a = &a_plane[row * a_stride..row * a_stride + w];
-    sink.process(Gbrap32Row::new(g, b, r, a, row, matrix.clone(), full_range))?;
+    sink.process(Gbrap32Row::new(g, b, r, a, row, matrix, full_range))?;
   }
   Ok(())
 }
@@ -167,7 +167,7 @@ where
 pub fn gbrap32_to<S>(
   src: &Gbrap32LeFrame<'_>,
   full_range: bool,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   sink: &mut S,
 ) -> Result<(), S::Error>
 where
@@ -216,7 +216,7 @@ mod tests {
       last_a_len: 0,
       last_row_idx: 0,
     };
-    gbrap32_to(&frame, true, Matrix::Bt709, &mut sink).unwrap();
+    gbrap32_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
     assert_eq!(sink.rows_seen, 4);
     assert_eq!(sink.last_g_len, 4);
     assert_eq!(sink.last_a_len, 4);
@@ -230,7 +230,7 @@ mod tests {
   fn gbrap32_to_explicit_turbofish_one_generic_compiles() {
     #[allow(clippy::type_complexity)]
     fn _check<S: Gbrap32Sink>() {
-      let _: fn(&Gbrap32LeFrame<'_>, bool, Matrix, &mut S) -> Result<(), S::Error> =
+      let _: fn(&Gbrap32LeFrame<'_>, bool, KernelMatrix, &mut S) -> Result<(), S::Error> =
         gbrap32_to::<S>;
     }
   }

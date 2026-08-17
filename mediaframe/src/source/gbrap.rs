@@ -11,7 +11,9 @@
 //! (used by the walker function body) are `pub(crate)` only, so they do
 //! not appear in the public API surface.
 
-use crate::{PixelSink, SourceFormat, color::Matrix, frame::GbrapFrame, source::sealed::Sealed};
+use crate::{
+  PixelSink, SourceFormat, color::KernelMatrix, frame::GbrapFrame, source::sealed::Sealed,
+};
 
 /// Zero-sized marker for the planar GBRAP 8-bit source format
 /// (`AV_PIX_FMT_GBRAP`).
@@ -25,27 +27,27 @@ impl SourceFormat for Gbrap {}
 /// G / B / R / A order. Alpha is real (not padding) and is passed
 /// through to RGBA output. Use the [`Self::g`] / [`Self::b`] /
 /// [`Self::r`] / [`Self::a`] accessors.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct GbrapRow<'a> {
   y: &'a [u8],
   u: &'a [u8],
   v: &'a [u8],
   a: &'a [u8],
   row: usize,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   full_range: bool,
 }
 
 impl<'a> GbrapRow<'a> {
   #[cfg_attr(not(tarpaulin), inline(always))]
   #[allow(clippy::too_many_arguments)]
-  pub(crate) fn new(
+  pub(crate) const fn new(
     y: &'a [u8],
     u: &'a [u8],
     v: &'a [u8],
     a: &'a [u8],
     row: usize,
-    matrix: Matrix,
+    matrix: KernelMatrix,
     full_range: bool,
   ) -> Self {
     Self {
@@ -87,8 +89,8 @@ impl<'a> GbrapRow<'a> {
   }
   /// YUV/RGB conversion matrix carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub fn matrix(&self) -> Matrix {
-    self.matrix.clone()
+  pub const fn matrix(&self) -> KernelMatrix {
+    self.matrix
   }
   /// Full-range vs limited-range flag carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
@@ -104,7 +106,7 @@ pub trait GbrapSink: for<'a> PixelSink<Input<'a> = GbrapRow<'a>> {}
 pub fn gbrap_to<S: GbrapSink>(
   src: &GbrapFrame<'_>,
   full_range: bool,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   sink: &mut S,
 ) -> Result<(), S::Error> {
   sink.begin_frame(src.width(), src.height())?;
@@ -133,7 +135,7 @@ pub fn gbrap_to<S: GbrapSink>(
     let a_start = row * a_stride;
     let a = &a_plane[a_start..a_start + w];
 
-    sink.process(GbrapRow::new(y, u, v, a, row, matrix.clone(), full_range))?;
+    sink.process(GbrapRow::new(y, u, v, a, row, matrix, full_range))?;
   }
   Ok(())
 }

@@ -15,7 +15,9 @@
 //! by the walker function body and sinker) are `pub(crate)` only, so
 //! they do not appear in the public API surface.
 
-use crate::{PixelSink, SourceFormat, color::Matrix, frame::GbrpFrame, source::sealed::Sealed};
+use crate::{
+  PixelSink, SourceFormat, color::KernelMatrix, frame::GbrpFrame, source::sealed::Sealed,
+};
 
 /// Zero-sized marker for the planar GBR 8-bit source format
 /// (`AV_PIX_FMT_GBRP`).
@@ -28,25 +30,25 @@ impl SourceFormat for Gbrp {}
 /// One output row of a [`Gbrp`] source — three full-width planes in
 /// G / B / R order. Use the [`Self::g`] / [`Self::b`] / [`Self::r`]
 /// accessors.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct GbrpRow<'a> {
   y: &'a [u8],
   u: &'a [u8],
   v: &'a [u8],
   row: usize,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   full_range: bool,
 }
 
 impl<'a> GbrpRow<'a> {
   #[cfg_attr(not(tarpaulin), inline(always))]
   #[allow(clippy::too_many_arguments)]
-  pub(crate) fn new(
+  pub(crate) const fn new(
     y: &'a [u8],
     u: &'a [u8],
     v: &'a [u8],
     row: usize,
-    matrix: Matrix,
+    matrix: KernelMatrix,
     full_range: bool,
   ) -> Self {
     Self {
@@ -82,8 +84,8 @@ impl<'a> GbrpRow<'a> {
   }
   /// YUV/RGB conversion matrix carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub fn matrix(&self) -> Matrix {
-    self.matrix.clone()
+  pub const fn matrix(&self) -> KernelMatrix {
+    self.matrix
   }
   /// Full-range vs limited-range flag carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
@@ -99,7 +101,7 @@ pub trait GbrpSink: for<'a> PixelSink<Input<'a> = GbrpRow<'a>> {}
 pub fn gbrp_to<S: GbrpSink>(
   src: &GbrpFrame<'_>,
   full_range: bool,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   sink: &mut S,
 ) -> Result<(), S::Error> {
   sink.begin_frame(src.width(), src.height())?;
@@ -123,7 +125,7 @@ pub fn gbrp_to<S: GbrpSink>(
     let u = &u_plane[u_start..u_start + w];
     let v = &v_plane[v_start..v_start + w];
 
-    sink.process(GbrpRow::new(y, u, v, row, matrix.clone(), full_range))?;
+    sink.process(GbrpRow::new(y, u, v, row, matrix, full_range))?;
   }
   Ok(())
 }

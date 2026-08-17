@@ -55,7 +55,7 @@ walker! {
 #[cfg(all(test, feature = "std"))]
 mod tests {
   use super::*;
-  use crate::{PixelSink, color::Matrix, frame::Rgbaf32LeFrame};
+  use crate::{PixelSink, color::KernelMatrix, frame::Rgbaf32LeFrame};
   use core::convert::Infallible;
 
   struct CountingSink {
@@ -83,8 +83,12 @@ mod tests {
   fn rgbaf32_to_explicit_turbofish_one_generic_compiles() {
     #[allow(clippy::type_complexity)]
     fn _check<S: Rgbaf32Sink>() {
-      let _: fn(&crate::frame::Rgbaf32LeFrame<'_>, bool, Matrix, &mut S) -> Result<(), S::Error> =
-        rgbaf32_to::<S>;
+      let _: fn(
+        &crate::frame::Rgbaf32LeFrame<'_>,
+        bool,
+        KernelMatrix,
+        &mut S,
+      ) -> Result<(), S::Error> = rgbaf32_to::<S>;
     }
   }
 
@@ -94,7 +98,7 @@ mod tests {
     let buf = std::vec![0.0_f32; 16 * 4];
     let frame = Rgbaf32LeFrame::new(&buf, 4, 4, 16);
     let mut sink = CountingSink { rows_seen: 0 };
-    rgbaf32_to(&frame, true, Matrix::Bt709, &mut sink).unwrap();
+    rgbaf32_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
     assert_eq!(sink.rows_seen, 4);
   }
 }

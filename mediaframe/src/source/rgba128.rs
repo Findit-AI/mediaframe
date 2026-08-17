@@ -50,7 +50,7 @@ walker! {
 #[cfg(all(test, feature = "std"))]
 mod tests {
   use super::*;
-  use crate::{PixelSink, color::Matrix, frame::Rgba128Frame};
+  use crate::{PixelSink, color::KernelMatrix, frame::Rgba128Frame};
   use core::convert::Infallible;
 
   struct CountingSink {
@@ -83,7 +83,7 @@ mod tests {
       last_width: 0,
       last_row_idx: 0,
     };
-    rgba128_to(&frame, true, Matrix::Bt709, &mut sink).unwrap();
+    rgba128_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
     assert_eq!(sink.rows_seen, 4);
     assert_eq!(sink.last_width, 16); // width * 4 u32 elements per row
     assert_eq!(sink.last_row_idx, 3);
@@ -98,8 +98,12 @@ mod tests {
   fn rgba128_to_explicit_turbofish_one_generic_compiles() {
     #[allow(clippy::type_complexity)]
     fn _check<S: Rgba128Sink>() {
-      let _: fn(&crate::frame::Rgba128LeFrame<'_>, bool, Matrix, &mut S) -> Result<(), S::Error> =
-        rgba128_to::<S>;
+      let _: fn(
+        &crate::frame::Rgba128LeFrame<'_>,
+        bool,
+        KernelMatrix,
+        &mut S,
+      ) -> Result<(), S::Error> = rgba128_to::<S>;
     }
   }
 }

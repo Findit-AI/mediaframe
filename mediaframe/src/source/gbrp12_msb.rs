@@ -60,7 +60,7 @@ impl<'a> Gbrp12MsbRow<'a> {
 #[cfg(all(test, feature = "std"))]
 mod tests {
   use super::*;
-  use crate::color::Matrix;
+  use crate::color::KernelMatrix;
 
   // Compile-pass regression mirroring the `planar3_bits_be` arm guarantee
   // (cf. `gbrp10::tests`): the macro emits an LE-only `gbrp12_msb_to` wrapper
@@ -69,8 +69,12 @@ mod tests {
   fn gbrp12_msb_to_explicit_turbofish_one_generic_compiles() {
     #[allow(clippy::type_complexity)]
     fn _check<S: Gbrp12MsbSink>() {
-      let _: fn(&crate::frame::Gbrp12MsbLeFrame<'_>, bool, Matrix, &mut S) -> Result<(), S::Error> =
-        gbrp12_msb_to::<S>;
+      let _: fn(
+        &crate::frame::Gbrp12MsbLeFrame<'_>,
+        bool,
+        KernelMatrix,
+        &mut S,
+      ) -> Result<(), S::Error> = gbrp12_msb_to::<S>;
     }
   }
 }

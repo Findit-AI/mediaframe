@@ -65,7 +65,7 @@ walker! {
 #[cfg(all(test, feature = "std"))]
 mod tests {
   use super::*;
-  use crate::{PixelSink, color::Matrix, frame::V410BeFrame, frame::V410Frame};
+  use crate::{PixelSink, color::KernelMatrix, frame::V410BeFrame, frame::V410Frame};
   use core::convert::Infallible;
 
   struct CountingSink {
@@ -98,7 +98,7 @@ mod tests {
       last_width: 0,
       last_row_idx: 0,
     };
-    v410_to(&frame, true, Matrix::Bt709, &mut sink).unwrap();
+    v410_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
     assert_eq!(sink.rows_seen, 4);
     assert_eq!(sink.last_width, 4); // width u32 elements per row
     assert_eq!(sink.last_row_idx, 3);
@@ -118,7 +118,7 @@ mod tests {
       last_width: 0,
       last_row_idx: 0,
     };
-    v410_to_endian::<_, true>(&frame, true, Matrix::Bt709, &mut sink).unwrap();
+    v410_to_endian::<_, true>(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
     assert_eq!(sink.rows_seen, 4);
     assert_eq!(sink.last_width, 4); // width u32 elements per row
     assert_eq!(sink.last_row_idx, 3);

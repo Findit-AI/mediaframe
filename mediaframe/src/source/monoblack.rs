@@ -6,7 +6,7 @@
 //! ≥ 1 byte per pixel; 1-bit-per-pixel formats need byte→pixel index expansion
 //! (one byte covers 8 pixels) which doesn't fit the macro's per-element shape.
 
-use crate::{PixelSink, color::Matrix, frame::MonoblackFrame};
+use crate::{PixelSink, color::KernelMatrix, frame::MonoblackFrame};
 
 /// Marker type for the `Monoblack` source format (FFmpeg
 /// `AV_PIX_FMT_MONOBLACK`).
@@ -18,12 +18,12 @@ impl crate::SourceFormat for Monoblack {}
 
 /// A single row from a [`MonoblackFrame`](crate::frame::MonoblackFrame) — byte buffer
 /// (8 pixels per byte, MSB first).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MonoblackRow<'a> {
   data: &'a [u8],
   width: u32,
   row: usize,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   full_range: bool,
 }
 
@@ -34,7 +34,7 @@ impl<'a> MonoblackRow<'a> {
     data: &'a [u8],
     width: u32,
     row: usize,
-    matrix: Matrix,
+    matrix: KernelMatrix,
     full_range: bool,
   ) -> Self {
     Self {
@@ -60,8 +60,8 @@ impl<'a> MonoblackRow<'a> {
 
   /// Color matrix carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub fn matrix(&self) -> Matrix {
-    self.matrix.clone()
+  pub const fn matrix(&self) -> KernelMatrix {
+    self.matrix
   }
 
   /// Full-range flag carried through from the kernel call.
@@ -88,7 +88,7 @@ pub trait MonoblackSink: for<'a> PixelSink<Input<'a> = MonoblackRow<'a>> {}
 pub fn monoblack_to<S: MonoblackSink>(
   src: &MonoblackFrame<'_>,
   full_range: bool,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   sink: &mut S,
 ) -> Result<(), S::Error> {
   sink.begin_frame(src.width(), src.height())?;
@@ -103,13 +103,7 @@ pub fn monoblack_to<S: MonoblackSink>(
     let start = row * stride;
     let avail = data.len().saturating_sub(start);
     let row_data = &data[start..start + packed_bytes.min(avail)];
-    sink.process(MonoblackRow::new(
-      row_data,
-      w,
-      row,
-      matrix.clone(),
-      full_range,
-    ))?;
+    sink.process(MonoblackRow::new(row_data, w, row, matrix, full_range))?;
   }
   Ok(())
 }

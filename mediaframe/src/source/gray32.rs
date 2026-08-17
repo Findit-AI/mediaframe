@@ -33,7 +33,7 @@ walker! {
 #[cfg(all(test, feature = "std"))]
 mod tests {
   use super::*;
-  use crate::{PixelSink, color::Matrix, frame::Gray32Frame};
+  use crate::{PixelSink, color::KernelMatrix, frame::Gray32Frame};
   use core::convert::Infallible;
 
   struct CountingSink {
@@ -66,7 +66,7 @@ mod tests {
       last_y_len: 0,
       last_row_idx: 0,
     };
-    gray32_to(&frame, false, Matrix::Bt709, &mut sink).unwrap();
+    gray32_to(&frame, false, KernelMatrix::Bt709, &mut sink).unwrap();
     assert_eq!(sink.rows_seen, 4);
     assert_eq!(sink.last_y_len, 4); // width u32 elements per row
     assert_eq!(sink.last_row_idx, 3);
@@ -81,8 +81,12 @@ mod tests {
   fn gray32_to_explicit_turbofish_one_generic_compiles() {
     #[allow(clippy::type_complexity)]
     fn _check<S: Gray32Sink>() {
-      let _: fn(&crate::frame::Gray32LeFrame<'_>, bool, Matrix, &mut S) -> Result<(), S::Error> =
-        gray32_to::<S>;
+      let _: fn(
+        &crate::frame::Gray32LeFrame<'_>,
+        bool,
+        KernelMatrix,
+        &mut S,
+      ) -> Result<(), S::Error> = gray32_to::<S>;
     }
   }
 }

@@ -18,7 +18,7 @@
 //! - Step 1 (DCDM inverse-OETF): `xyz_lin = (x_u12 / 4095)^2.6 / 0.91653`
 //!   per SMPTE ST 428-1 §8.
 //! - Step 2 (3×3 matmul): `[R G B] = M_xyz_to_rgb · [X Y Z]`. `M`
-//!   depends on the chosen target gamut — see [`DcpTargetGamut`].
+//!   depends on the chosen target gamut — see [`KernelGamut`].
 //! - Step 3 (OETF — gamma encode): sRGB-shape OETF for u8 / u16
 //!   integer outputs; **skipped** for the lossless `with_rgb_f32` and
 //!   `with_xyz_f32` paths.
@@ -37,7 +37,7 @@
 //! [`Xyz12BeFrame`](crate::frame::Xyz12BeFrame) cover the FFmpeg `XYZ12LE` / `XYZ12BE` variants.
 
 use crate::{
-  PixelSink, SourceFormat, color::DcpTargetGamut, frame::Xyz12Frame, source::sealed::Sealed,
+  PixelSink, SourceFormat, color::KernelGamut, frame::Xyz12Frame, source::sealed::Sealed,
 };
 
 /// Zero-sized marker type for the packed **XYZ12** source format
@@ -62,28 +62,29 @@ pub type Xyz12Be = Xyz12<true>;
 /// `AV_PIX_FMT_XYZ12LE/BE` (active 12 bits in `[15:4]`, low 4 bits
 /// reserved zero).
 ///
-/// Carries the per-frame [`DcpTargetGamut`] choice so downstream row
+/// Carries the per-frame [`KernelGamut`] choice so downstream row
 /// kernels can apply the correct XYZ → RGB matrix without a separate
 /// dispatch parameter. Per-target Q15 luma weights `(k_r, k_g, k_b)`
 /// are also derived once at the walker call site (see
 /// `luma_weights_q15_for_gamut`) so the `with_luma` /
 /// `with_luma_u16` sinker accessors can apply the gamut-matched
-/// coefficients without going through the YUV-leaning `Matrix`
-/// enum (which has no DCI-P3 entry — codex round-2 finding).
-#[derive(Debug, Clone)]
+/// coefficients without going through the YUV-leaning
+/// [`Matrix`](crate::color::Matrix) enum (which has no DCI-P3 entry —
+/// codex round-2 finding).
+#[derive(Debug, Clone, Copy)]
 pub struct Xyz12Row<'a, const BE: bool = false> {
   xyz: &'a [u16],
   row: usize,
-  target_gamut: DcpTargetGamut,
+  target_gamut: KernelGamut,
   luma_q15: (i32, i32, i32),
 }
 
 impl<'a, const BE: bool> Xyz12Row<'a, BE> {
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub(crate) fn new(
+  pub(crate) const fn new(
     xyz: &'a [u16],
     row: usize,
-    target_gamut: DcpTargetGamut,
+    target_gamut: KernelGamut,
     luma_q15: (i32, i32, i32),
   ) -> Self {
     Self {
@@ -108,8 +109,8 @@ impl<'a, const BE: bool> Xyz12Row<'a, BE> {
 
   /// Target RGB gamut chosen at the walker call site.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub fn target_gamut(&self) -> DcpTargetGamut {
-    self.target_gamut.clone()
+  pub const fn target_gamut(&self) -> KernelGamut {
+    self.target_gamut
   }
 
   /// Q15 luma weights `(k_r, k_g, k_b)` matched to the target gamut.
@@ -138,7 +139,7 @@ impl<'a, const BE: bool> Xyz12Row<'a, BE> {
   }
 }
 
-/// Maps a [`DcpTargetGamut`] to the Q15 luma coefficients
+/// Maps a [`KernelGamut`] to the Q15 luma coefficients
 /// `(k_r, k_g, k_b)` used by the `with_luma` / `with_luma_u16` sinker
 /// accessors.
 ///
@@ -160,28 +161,25 @@ impl<'a, const BE: bool> Xyz12Row<'a, BE> {
 /// - **Rec.2020** (D65) — `Y = 0.2627 R + 0.6780 G + 0.0593 B`
 ///   → `(8607, 22217, 1944)`. (Matches `Matrix::Bt2020Ncl`.)
 ///
-/// Returns `None` for [`DcpTargetGamut::Other`]: an unknown /
-/// future / corrupt gamut id has no defined luma basis and **must
-/// not** be silently colour-converted as if it were DCI-P3 (Codex
-/// adversarial-review F4). Callers must resolve `Other(_)` to a
-/// concrete gamut before conversion.
+/// Total, and that is the point: a gamut with no defined luma basis
+/// (`DcpTargetGamut::Other`) has no [`KernelGamut`] to name it, so the
+/// "unknown gamut" case is refused at the
+/// [`TryFrom`](KernelGamut) door and cannot reach here (Codex
+/// adversarial-review F4 — an unknown gamut must never be silently
+/// colour-converted as if it were DCI-P3).
 #[cfg_attr(not(tarpaulin), inline(always))]
-pub(crate) fn luma_weights_q15_for_gamut(g: &DcpTargetGamut) -> Option<(i32, i32, i32)> {
-  match *g {
+pub(crate) const fn luma_weights_q15_for_gamut(g: KernelGamut) -> (i32, i32, i32) {
+  match g {
     // Rec.709 / sRGB: Y = 0.2126 R + 0.7152 G + 0.0722 B (D65).
-    DcpTargetGamut::Rec709 => Some((6966, 23436, 2366)),
+    KernelGamut::Rec709 => (6966, 23436, 2366),
     // DCI-P3 theatrical (DCI white): Y row of the P3-DCI rgb_to_xyz
     // matrix derived in `examples/derive_xyz_matrices.rs`
     // (`Y_red = 0.2094916779`, `Y_green = 0.7215952542`,
     // `Y_blue = 0.0689130679`); each coefficient × 32768 rounded to
     // nearest gives `(6865, 23645, 2258)` with `sum = 32768` exactly.
-    DcpTargetGamut::DciP3 => Some((6865, 23645, 2258)),
+    KernelGamut::DciP3 => (6865, 23645, 2258),
     // Rec.2020: Y = 0.2627 R + 0.6780 G + 0.0593 B (D65).
-    DcpTargetGamut::Rec2020 => Some((8607, 22217, 1944)),
-    // A gamut this build does not name has no defined luma basis —
-    // explicit `None`, never a silent DCI-P3 fallback.
-    #[cfg(any(feature = "std", feature = "alloc"))]
-    DcpTargetGamut::Other(_) => None,
+    KernelGamut::Rec2020 => (8607, 22217, 1944),
   }
 }
 
@@ -204,27 +202,18 @@ pub trait Xyz12Sink<const BE: bool = false>:
 /// own const generic and forwarded to the row marker so kernels can
 /// const-branch on byte-swap; no runtime overhead.
 ///
-/// # Panics
-///
-/// `target_gamut` must be a concrete gamut. Passing
-/// [`DcpTargetGamut::Other`] is a caller error (a gamut this build does
-/// not name has no defined luma basis and must not be silently
-/// colour-converted) and panics with a descriptive message — resolve
-/// `Other(_)` to `Rec709` / `DciP3` / `Rec2020` before calling.
+/// Takes a [`KernelGamut`], not the open
+/// [`DcpTargetGamut`](crate::color::DcpTargetGamut): a gamut this build
+/// does not name has no luma basis, so it is refused by
+/// `KernelGamut::try_from` at the caller's door rather than panicking
+/// here. This function has no failure mode of its own beyond the sink's
+/// (Codex adversarial-review F4 / F7, previously a documented panic).
 pub fn xyz12_to<const BE: bool, S: Xyz12Sink<BE>>(
   src: &Xyz12Frame<'_, BE>,
-  target_gamut: DcpTargetGamut,
+  target_gamut: KernelGamut,
   sink: &mut S,
 ) -> Result<(), S::Error> {
-  // Enforce the gamut precondition BEFORE touching the sink: an
-  // `Other(_)` gamut must panic before any `begin_frame` side
-  // effects, and the panic must not be maskable by a `begin_frame`
-  // error (Codex adversarial-review F7).
-  let luma_q15 = luma_weights_q15_for_gamut(&target_gamut).expect(
-    "xyz12_to: target_gamut is DcpTargetGamut::Other(_); resolve it \
-     to a concrete gamut (Rec709/DciP3/Rec2020) before XYZ->RGB \
-     conversion -- an unnamed gamut must not be silently colour-converted",
-  );
+  let luma_q15 = luma_weights_q15_for_gamut(target_gamut);
 
   sink.begin_frame(src.width(), src.height())?;
 
@@ -237,12 +226,7 @@ pub fn xyz12_to<const BE: bool, S: Xyz12Sink<BE>>(
   for row in 0..h {
     let start = row * stride;
     let xyz = &plane[start..start + row_elems];
-    sink.process(Xyz12Row::<BE>::new(
-      xyz,
-      row,
-      target_gamut.clone(),
-      luma_q15,
-    ))?;
+    sink.process(Xyz12Row::<BE>::new(xyz, row, target_gamut, luma_q15))?;
   }
   Ok(())
 }
@@ -254,41 +238,41 @@ mod tests {
   use core::convert::Infallible;
 
   #[test]
-  fn unnamed_gamut_has_no_luma_weights() {
+  fn unnamed_gamut_has_no_kernel_gamut() {
     #[cfg(any(feature = "std", feature = "alloc"))]
     {
-      assert!(luma_weights_q15_for_gamut(&DcpTargetGamut::other("aces-ap0")).is_none());
-      assert!(luma_weights_q15_for_gamut(&DcpTargetGamut::other("")).is_none());
+      assert!(KernelGamut::try_from(&DcpTargetGamut::other("aces-ap0")).is_err());
+      assert!(KernelGamut::try_from(&DcpTargetGamut::other("")).is_err());
     }
-    assert!(luma_weights_q15_for_gamut(&DcpTargetGamut::Rec709).is_some());
-    assert!(luma_weights_q15_for_gamut(&DcpTargetGamut::DciP3).is_some());
-    assert!(luma_weights_q15_for_gamut(&DcpTargetGamut::Rec2020).is_some());
+    assert_eq!(
+      KernelGamut::try_from(&DcpTargetGamut::Rec709),
+      Ok(KernelGamut::Rec709)
+    );
+    assert_eq!(
+      KernelGamut::try_from(&DcpTargetGamut::DciP3),
+      Ok(KernelGamut::DciP3)
+    );
+    assert_eq!(
+      KernelGamut::try_from(&DcpTargetGamut::Rec2020),
+      Ok(KernelGamut::Rec2020)
+    );
   }
 
-  // `begin_frame` panics with a distinct sentinel. If the gamut
-  // precondition is enforced first (Codex F7), `xyz12_to` panics with
-  // the precondition message and this sentinel is never reached.
-  struct PanicBeginSink;
-  impl PixelSink for PanicBeginSink {
-    type Input<'r> = Xyz12Row<'r, false>;
-    type Error = Infallible;
-    fn begin_frame(&mut self, _w: u32, _h: u32) -> Result<(), Infallible> {
-      panic!("begin_frame ran before the gamut precondition check");
-    }
-    fn process(&mut self, _row: Xyz12Row<'_, false>) -> Result<(), Infallible> {
-      unreachable!("process must not run for an unnamed gamut");
-    }
-  }
-  impl Xyz12Sink for PanicBeginSink {}
-
-  #[cfg(any(feature = "std", feature = "alloc"))]
   #[test]
-  #[should_panic(expected = "DcpTargetGamut::Other")]
-  fn xyz12_to_unnamed_gamut_panics_before_begin_frame() {
-    let plane = [0u16; 3];
-    let frame = Xyz12Frame::new(&plane, 1, 1, 3);
-    let mut sink = PanicBeginSink;
-    let _ = xyz12_to(&frame, DcpTargetGamut::other("aces-ap0"), &mut sink);
+  fn every_kernel_gamut_has_luma_weights_summing_to_unity() {
+    for g in [
+      KernelGamut::Rec709,
+      KernelGamut::DciP3,
+      KernelGamut::Rec2020,
+    ] {
+      let (r, gr, b) = luma_weights_q15_for_gamut(g);
+      // Q15 unity is 32768; rounding the three coefficients
+      // independently can leave the sum one LSB short or long.
+      assert!(
+        (r + gr + b - 32768).abs() <= 1,
+        "{g:?} luma weights must sum to Q15 unity"
+      );
+    }
   }
 
   struct CountingSink {
@@ -310,14 +294,14 @@ mod tests {
   impl Xyz12Sink for CountingSink {}
 
   #[test]
-  fn xyz12_to_concrete_gamut_walks_rows() {
+  fn xyz12_to_walks_rows() {
     let plane = [0u16; 3 * 2];
     let frame = Xyz12Frame::new(&plane, 1, 2, 3);
     let mut sink = CountingSink {
       began: false,
       rows: 0,
     };
-    xyz12_to(&frame, DcpTargetGamut::Rec709, &mut sink).unwrap();
+    xyz12_to(&frame, KernelGamut::Rec709, &mut sink).unwrap();
     assert!(sink.began);
     assert_eq!(sink.rows, 2);
   }

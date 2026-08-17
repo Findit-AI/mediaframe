@@ -7,7 +7,7 @@
 //! ≥ 1 byte per pixel; 1-bit-per-pixel formats need byte→pixel index expansion
 //! (one byte covers 8 pixels) which doesn't fit the macro's per-element shape.
 
-use crate::{PixelSink, color::Matrix, frame::MonowhiteFrame};
+use crate::{PixelSink, color::KernelMatrix, frame::MonowhiteFrame};
 
 /// Marker type for the `Monowhite` source format (FFmpeg
 /// `AV_PIX_FMT_MONOWHITE`).
@@ -19,12 +19,12 @@ impl crate::SourceFormat for Monowhite {}
 
 /// A single row from a [`MonowhiteFrame`](crate::frame::MonowhiteFrame) — byte buffer (8 pixels per
 /// byte, MSB first, inverted polarity).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MonowhiteRow<'a> {
   data: &'a [u8],
   width: u32,
   row: usize,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   full_range: bool,
 }
 
@@ -35,7 +35,7 @@ impl<'a> MonowhiteRow<'a> {
     data: &'a [u8],
     width: u32,
     row: usize,
-    matrix: Matrix,
+    matrix: KernelMatrix,
     full_range: bool,
   ) -> Self {
     Self {
@@ -61,8 +61,8 @@ impl<'a> MonowhiteRow<'a> {
 
   /// Color matrix carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub fn matrix(&self) -> Matrix {
-    self.matrix.clone()
+  pub const fn matrix(&self) -> KernelMatrix {
+    self.matrix
   }
 
   /// Full-range flag carried through from the kernel call.
@@ -90,7 +90,7 @@ pub trait MonowhiteSink: for<'a> PixelSink<Input<'a> = MonowhiteRow<'a>> {}
 pub fn monowhite_to<S: MonowhiteSink>(
   src: &MonowhiteFrame<'_>,
   full_range: bool,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   sink: &mut S,
 ) -> Result<(), S::Error> {
   sink.begin_frame(src.width(), src.height())?;
@@ -105,13 +105,7 @@ pub fn monowhite_to<S: MonowhiteSink>(
     let start = row * stride;
     let avail = data.len().saturating_sub(start);
     let row_data = &data[start..start + packed_bytes.min(avail)];
-    sink.process(MonowhiteRow::new(
-      row_data,
-      w,
-      row,
-      matrix.clone(),
-      full_range,
-    ))?;
+    sink.process(MonowhiteRow::new(row_data, w, row, matrix, full_range))?;
   }
   Ok(())
 }

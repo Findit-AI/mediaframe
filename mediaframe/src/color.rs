@@ -298,6 +298,166 @@ impl core::str::FromStr for Matrix {
   }
 }
 
+/// The **closed** set of colour matrices a conversion kernel has
+/// coefficients for — the `Copy` selector the row walkers carry.
+///
+/// [`Matrix`] is the *descriptor* vocabulary: open, `#[non_exhaustive]`,
+/// and able to name a matrix nobody tabulates coefficients for
+/// ([`Matrix::Other`], plus the H.273 names no conversion kernel in this
+/// ecosystem implements). A kernel cannot pick coefficients from a name,
+/// so carrying a `Matrix` into a row makes an unconvertible row
+/// *representable*, and every consumer then needs a silent fallback arm
+/// to survive one. That fallback is where a wrong picture comes from: a
+/// caller asking for ICtCp gets BT.709 pixels and no diagnostic.
+///
+/// `KernelMatrix` is the other half of the pair:
+///
+/// - **closed** — deliberately *not* `#[non_exhaustive]`, so a
+///   downstream kernel's `match` is exhaustive and the compiler proves
+///   it handles every coefficient set. Adding a variant here is a
+///   breaking change, which is correct: a new coefficient set is
+///   precisely the event a kernel must be told about.
+/// - **`Copy`** — no heap payload, which is what keeps every generated
+///   `*Row<'a>` type `Copy`.
+///
+/// Convert at the door with [`TryFrom<&Matrix>`](Matrix). That
+/// conversion is the *one* place an unsupported matrix is refused, and
+/// past it the wrong value is unrepresentable:
+///
+/// ```
+/// // Positive control for the two `compile_fail` blocks below — the
+/// // path resolves, so their failure is the missing variant and not a
+/// // typo.
+/// let _ = mediaframe::color::KernelMatrix::Bt709;
+/// ```
+///
+/// ```compile_fail
+/// // No `Other`: a row carrying an unnamed matrix cannot be built.
+/// let _ = mediaframe::color::KernelMatrix::Other;
+/// ```
+///
+/// ```compile_fail
+/// // Nor is a *named* matrix without tabulated coefficients spellable.
+/// let _ = mediaframe::color::KernelMatrix::Ictcp;
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KernelMatrix {
+  /// Unified ITU-R BT.601 (`Kr=0.299`, `Kb=0.114`) — see
+  /// [`Matrix::Bt601`].
+  Bt601,
+  /// ITU-R BT.709 (HDTV) — see [`Matrix::Bt709`].
+  Bt709,
+  /// Unspecified — see [`Matrix::Unspecified`].
+  ///
+  /// Kept as an explicit arm rather than refused at the door, because
+  /// refusing it would be a behaviour change: `Unspecified` is
+  /// [`Matrix`]'s own `Default`, it reaches the kernels today, and they
+  /// resolve it themselves (FFmpeg's convention is BT.709 for
+  /// `height >= 720` and BT.601 below; the kernel this crate feeds
+  /// currently resolves it to BT.709 unconditionally). The resolution
+  /// stays the consumer's, exactly as it is today — this arm only makes
+  /// it *nameable* instead of arriving through a fallback.
+  Unspecified,
+  /// FCC CFR 47 §73.682 — see [`Matrix::Fcc`]. Numerically a close
+  /// approximation of BT.601 and tabulated on the same arm.
+  Fcc,
+  /// ITU-R BT.470 System BG / BT.601 625 — see [`Matrix::Bt470Bg`].
+  /// Coefficients identical to [`Self::Bt601`].
+  Bt470Bg,
+  /// SMPTE 170M / BT.601 525 — see [`Matrix::Smpte170M`]. Coefficients
+  /// identical to [`Self::Bt601`].
+  Smpte170M,
+  /// SMPTE 240M — see [`Matrix::Smpte240m`].
+  Smpte240m,
+  /// YCgCo (H.273 `MatrixCoefficients = 8`) — see [`Matrix::YCgCo`].
+  YCgCo,
+  /// ITU-R BT.2020 non-constant-luminance — see [`Matrix::Bt2020Ncl`].
+  Bt2020Ncl,
+  /// Chromaticity-derived non-constant luminance — see
+  /// [`Matrix::ChromaDerivedNcl`]. The only affine member: its
+  /// coefficients are derived from the signalled [`Primaries`] rather
+  /// than tabulated.
+  ChromaDerivedNcl,
+}
+
+/// The error the [`Matrix`] → [`KernelMatrix`] conversion returns: this
+/// matrix names no coefficient set a conversion kernel can use.
+///
+/// Opaque and sealed, like the crate's parse errors — the rejected
+/// matrix is deliberately not retained (this type is available at the
+/// no-alloc tier, where there is nowhere to put an owned copy, and the
+/// caller still holds the [`Matrix`] it passed).
+/// `#[non_exhaustive]` keeps it constructible only here, so it can grow
+/// structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("this colour matrix has no conversion-kernel coefficients")]
+#[non_exhaustive]
+pub struct UnsupportedKernelMatrixError;
+
+impl TryFrom<&Matrix> for KernelMatrix {
+  type Error = UnsupportedKernelMatrixError;
+
+  /// The open → closed exchange, taken at the kernel door.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`UnsupportedKernelMatrixError`] for every [`Matrix`] no
+  /// kernel tabulates coefficients for: [`Matrix::Rgb`] (the GBR
+  /// identity — not a YCbCr matrix at all), the constant-luminance and
+  /// perceptual matrices ([`Matrix::Bt2020Cl`], [`Matrix::Smpte2085`],
+  /// [`Matrix::ChromaDerivedCl`], [`Matrix::Ictcp`], [`Matrix::IptC2`],
+  /// [`Matrix::YCgCoRe`], [`Matrix::YCgCoRo`]), and [`Matrix::Other`].
+  fn try_from(m: &Matrix) -> Result<Self, Self::Error> {
+    // Spelled arm by arm rather than with a wildcard: `Matrix` is
+    // `#[non_exhaustive]` only for *other* crates, so this match is
+    // exhaustiveness-checked here and a new colour matrix cannot be
+    // added without someone deciding whether a kernel can convert it.
+    Ok(match m {
+      Matrix::Bt601 => Self::Bt601,
+      Matrix::Bt709 => Self::Bt709,
+      Matrix::Unspecified => Self::Unspecified,
+      Matrix::Fcc => Self::Fcc,
+      Matrix::Bt470Bg => Self::Bt470Bg,
+      Matrix::Smpte170M => Self::Smpte170M,
+      Matrix::Smpte240m => Self::Smpte240m,
+      Matrix::YCgCo => Self::YCgCo,
+      Matrix::Bt2020Ncl => Self::Bt2020Ncl,
+      Matrix::ChromaDerivedNcl => Self::ChromaDerivedNcl,
+      Matrix::Rgb
+      | Matrix::Bt2020Cl
+      | Matrix::Smpte2085
+      | Matrix::ChromaDerivedCl
+      | Matrix::Ictcp
+      | Matrix::IptC2
+      | Matrix::YCgCoRe
+      | Matrix::YCgCoRo => return Err(UnsupportedKernelMatrixError),
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Matrix::Other(_) => return Err(UnsupportedKernelMatrixError),
+    })
+  }
+}
+
+impl From<KernelMatrix> for Matrix {
+  /// Widens back to the descriptor vocabulary. Total and injective —
+  /// every [`KernelMatrix`] names exactly one [`Matrix`], so
+  /// `KernelMatrix::try_from(&Matrix::from(k)) == Ok(k)`.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn from(k: KernelMatrix) -> Self {
+    match k {
+      KernelMatrix::Bt601 => Self::Bt601,
+      KernelMatrix::Bt709 => Self::Bt709,
+      KernelMatrix::Unspecified => Self::Unspecified,
+      KernelMatrix::Fcc => Self::Fcc,
+      KernelMatrix::Bt470Bg => Self::Bt470Bg,
+      KernelMatrix::Smpte170M => Self::Smpte170M,
+      KernelMatrix::Smpte240m => Self::Smpte240m,
+      KernelMatrix::YCgCo => Self::YCgCo,
+      KernelMatrix::Bt2020Ncl => Self::Bt2020Ncl,
+      KernelMatrix::ChromaDerivedNcl => Self::ChromaDerivedNcl,
+    }
+  }
+}
+
 /// Color primaries per ITU-T H.273 ColourPrimaries (Table 2) /
 /// ISO/IEC 23001-8.
 ///
@@ -1505,6 +1665,72 @@ impl DcpTargetGamut {
   }
 }
 
+/// The **closed** set of DCP target gamuts an XYZ → RGB kernel has a
+/// matrix for — [`KernelMatrix`]'s twin on the gamut axis.
+///
+/// [`DcpTargetGamut`] is the open descriptor vocabulary and can name a
+/// gamut nobody has a 3×3 matrix or a luma basis for
+/// ([`DcpTargetGamut::Other`]). Passing one of those to the XYZ walker
+/// used to be a documented **panic**; converting at the door instead
+/// makes it a refusal the caller can see coming, and past the door the
+/// unconvertible row is unrepresentable.
+///
+/// Same shape as [`KernelMatrix`]: closed (not `#[non_exhaustive]`, so a
+/// kernel's `match` is exhaustive) and `Copy` (so the row type is).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KernelGamut {
+  /// DCI-P3 theatrical, DCI white — see [`DcpTargetGamut::DciP3`].
+  DciP3,
+  /// Rec.709 / sRGB (D65) — see [`DcpTargetGamut::Rec709`].
+  Rec709,
+  /// Rec.2020 (D65) — see [`DcpTargetGamut::Rec2020`].
+  Rec2020,
+}
+
+/// The error the [`DcpTargetGamut`] → [`KernelGamut`] conversion
+/// returns: this gamut has no defined XYZ → RGB matrix or luma basis.
+///
+/// Opaque and sealed on the same reasoning as
+/// [`UnsupportedKernelMatrixError`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("this target gamut has no conversion-kernel matrix")]
+#[non_exhaustive]
+pub struct UnsupportedKernelGamutError;
+
+impl TryFrom<&DcpTargetGamut> for KernelGamut {
+  type Error = UnsupportedKernelGamutError;
+
+  /// The open → closed exchange, taken at the XYZ kernel door.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`UnsupportedKernelGamutError`] for
+  /// [`DcpTargetGamut::Other`] — a gamut this build does not name has
+  /// no defined luma basis and must not be silently colour-converted as
+  /// if it were one of the three that do.
+  fn try_from(g: &DcpTargetGamut) -> Result<Self, Self::Error> {
+    Ok(match g {
+      DcpTargetGamut::DciP3 => Self::DciP3,
+      DcpTargetGamut::Rec709 => Self::Rec709,
+      DcpTargetGamut::Rec2020 => Self::Rec2020,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      DcpTargetGamut::Other(_) => return Err(UnsupportedKernelGamutError),
+    })
+  }
+}
+
+impl From<KernelGamut> for DcpTargetGamut {
+  /// Widens back to the descriptor vocabulary. Total and injective.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn from(k: KernelGamut) -> Self {
+    match k {
+      KernelGamut::DciP3 => Self::DciP3,
+      KernelGamut::Rec709 => Self::Rec709,
+      KernelGamut::Rec2020 => Self::Rec2020,
+    }
+  }
+}
+
 /// The error [`DcpTargetGamut`]'s [`FromStr`](core::str::FromStr) returns.
 ///
 /// Opaque and sealed: the input is deliberately not retained (these types
@@ -2127,6 +2353,12 @@ impl DolbyVisionConfig {
     self
   }
 }
+
+// The kernel-selector door keeps its own suite: it is about the
+// closed `Kernel*` types, not about the descriptor vocabularies the
+// main suite covers.
+#[cfg(test)]
+mod kernel_tests;
 
 #[cfg(test)]
 mod tests {

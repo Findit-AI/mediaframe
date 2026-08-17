@@ -55,7 +55,7 @@ walker! {
 #[cfg(all(test, feature = "std"))]
 mod tests {
   use super::*;
-  use crate::{PixelSink, color::Matrix, frame::Nv20Frame};
+  use crate::{PixelSink, color::KernelMatrix, frame::Nv20Frame};
   use core::convert::Infallible;
 
   struct CountingSink {
@@ -93,7 +93,7 @@ mod tests {
       last_uv_len: 0,
       last_row_idx: 0,
     };
-    nv20_to(&frame, true, Matrix::Bt709, &mut sink).unwrap();
+    nv20_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
     assert_eq!(sink.rows_seen, 4);
     assert_eq!(sink.last_y_len, 8); // full-width Y
     assert_eq!(sink.last_uv_len, 8); // half-width interleaved = width u16
@@ -109,8 +109,12 @@ mod tests {
   fn nv20_to_explicit_turbofish_one_generic_compiles() {
     #[allow(clippy::type_complexity)]
     fn _check<S: Nv20Sink>() {
-      let _: fn(&crate::frame::Nv20LeFrame<'_>, bool, Matrix, &mut S) -> Result<(), S::Error> =
-        nv20_to::<S>;
+      let _: fn(
+        &crate::frame::Nv20LeFrame<'_>,
+        bool,
+        KernelMatrix,
+        &mut S,
+      ) -> Result<(), S::Error> = nv20_to::<S>;
     }
   }
 }

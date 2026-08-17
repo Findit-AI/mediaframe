@@ -39,7 +39,7 @@ walker! {
 #[cfg(all(test, feature = "std"))]
 mod tests {
   use super::*;
-  use crate::color::Matrix;
+  use crate::color::KernelMatrix;
 
   // Mirrors the yuva420p10 turbofish regression: the macro emits an
   // LE-only `yuva420p12_to` wrapper alongside the const-generic
@@ -52,7 +52,7 @@ mod tests {
       let _: fn(
         &crate::frame::Yuva420p12LeFrame<'_>,
         bool,
-        Matrix,
+        KernelMatrix,
         &mut S,
       ) -> Result<(), S::Error> = yuva420p12_to::<S>;
     }

@@ -45,7 +45,7 @@ walker! {
 #[cfg(all(test, feature = "std"))]
 mod tests {
   use super::*;
-  use crate::color::Matrix;
+  use crate::color::KernelMatrix;
 
   // Compile-pass regression mirroring the `planar3_bits_be` arm guarantee
   // (cf. `gbrp12_msb::tests`): the macro emits an LE-only `yuv444p12_msb_to`
@@ -57,7 +57,7 @@ mod tests {
       let _: fn(
         &crate::frame::Yuv444p12MsbLeFrame<'_>,
         bool,
-        Matrix,
+        KernelMatrix,
         &mut S,
       ) -> Result<(), S::Error> = yuv444p12_msb_to::<S>;
     }
