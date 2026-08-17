@@ -1643,6 +1643,13 @@ fn build_codec_module(
     "",
     " `cargo xtask check` verifies every named variant's canonical string",
     " exists in the vendored table — CI gate against drift.",
+    "",
+    " **Derive threshold.** `Unwrap` / `TryUnwrap` generate three methods",
+    " per variant, so an enum in the hundreds pays that in compile time for",
+    " one reachable payload arm. [`SubtitleCodec`] (27 variants) carries the",
+    " pair; [`VideoCodec`] (281) and [`AudioCodec`] (221) do not. The line is",
+    " variant count, not principle — reach for `Other(_)` on the large two",
+    " with a `match` or [`IsVariant`](derive_more::IsVariant)'s `is_other`.",
   ]
   .iter()
   .map(|line| quote! { #![doc = #line] })
@@ -1655,7 +1662,7 @@ fn build_codec_module(
 
     use core::str::FromStr;
 
-    use derive_more::{Display, IsVariant};
+    use derive_more::{Display, IsVariant, TryUnwrap, Unwrap};
     use smol_str::SmolStr;
 
     #video_enum
@@ -1719,6 +1726,22 @@ fn build_codec_enum(
   // constant. Returns `Option<bool>`: `Some(true)` for bitmap subtitles,
   // `Some(false)` for known-text subtitles, `None` for `Other(_)` because
   // an unknown codec name has no FFmpeg `.props` record we can consult.
+  // `Unwrap` / `TryUnwrap` generate three methods per variant, so the two
+  // 200-plus-variant codec enums would pay ~1500 generated methods in
+  // compile time for one reachable payload arm. `SubtitleCodec` has 27
+  // variants and carries the same single `Other(SmolStr)`, so it gets the
+  // pair; `VideoCodec` (281) and `AudioCodec` (221) are exempt. The rule
+  // is written on the module, not left implicit here.
+  let unwrap_derives = if is_subtitle {
+    quote! {
+      #[derive(Unwrap, TryUnwrap)]
+      #[unwrap(ref, ref_mut)]
+      #[try_unwrap(ref, ref_mut)]
+    }
+  } else {
+    quote! {}
+  };
+
   let extra_impl = if is_subtitle {
     let mut bitmap_idents: Vec<Ident> = Vec::new();
     let mut non_bitmap_idents: Vec<Ident> = Vec::new();
@@ -1778,6 +1801,7 @@ fn build_codec_enum(
       quickcheck(arbitrary = #qc_helper)
     )]
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
+    #unwrap_derives
     #[display("{}", self.as_str())]
     #[non_exhaustive]
     pub enum #enum_ident {
@@ -1938,6 +1962,18 @@ fn build_codec_tests(
       /// spelling of a known codec is that codec, and an uppercase
       /// spelling of an unknown one is stored lowercase, so one name is
       /// one value under the derived `Eq` / `Hash`.
+      /// `SubtitleCodec` is the third open enum on the `Unwrap` /
+      /// `TryUnwrap` pair; the two 200-plus-variant codec enums stay
+      /// exempt on compile-time grounds, which is why this names only
+      /// the subtitle one.
+      #[test]
+      fn subtitle_codec_unwrap_other_borrowed_view() {
+        let v = SubtitleCodec::other("vendor_sub");
+        assert_eq!(v.unwrap_other_ref().as_str(), "vendor_sub");
+        assert!(v.try_unwrap_other_ref().is_ok());
+        assert!(SubtitleCodec::Srt.try_unwrap_other_ref().is_err());
+      }
+
       #[test]
       fn codec_lookup_and_escape_both_fold() {
         assert_eq!("H264".parse(), Ok(VideoCodec::H264));

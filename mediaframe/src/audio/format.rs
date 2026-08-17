@@ -25,8 +25,10 @@ use smol_str::SmolStr;
   derive(::quickcheck_richderive::Arbitrary),
   quickcheck(arbitrary = "crate::quickcheck_helpers::strings::sample_format")
 )]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant, Unwrap, TryUnwrap)]
 #[display("{}", self.as_str())]
+#[unwrap(ref, ref_mut)]
+#[try_unwrap(ref, ref_mut)]
 #[non_exhaustive]
 pub enum SampleFormat {
   /// `AV_SAMPLE_FMT_U8` (code `0`) — unsigned 8-bit, packed.
@@ -549,5 +551,16 @@ mod tests {
     assert_eq!("FLAC".parse(), Ok(ContainerFormat::Flac));
     assert_eq!(SampleFormat::other("VENDOR_S24").as_str(), "vendor_s24");
     assert_eq!(ContainerFormat::other("SND").as_str(), "snd");
+  }
+  #[test]
+  fn sample_format_unwrap_other_borrowed_view() {
+    // `Other(SmolStr)` carries data — golden-rule §2 mandates
+    // unwrap/try_unwrap accessors for data-carrying variants, and this
+    // type's 12 variants are far under the compile-time threshold that
+    // exempts the 200-plus codec enums.
+    let v = SampleFormat::other("vendor_s24");
+    assert_eq!(v.unwrap_other_ref().as_str(), "vendor_s24");
+    assert!(v.try_unwrap_other_ref().is_ok());
+    assert!(SampleFormat::S16.try_unwrap_other_ref().is_err());
   }
 }

@@ -10,7 +10,7 @@
 
 use core::str::FromStr;
 
-use derive_more::{Display, IsVariant};
+use derive_more::{Display, IsVariant, TryUnwrap, Unwrap};
 use smol_str::SmolStr;
 
 /// Audio channel layout — the common named layouts plus an
@@ -31,8 +31,10 @@ use smol_str::SmolStr;
   derive(::quickcheck_richderive::Arbitrary),
   quickcheck(arbitrary = "crate::quickcheck_helpers::strings::channel_layout")
 )]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant, Unwrap, TryUnwrap)]
 #[display("{}", self.as_str())]
+#[unwrap(ref, ref_mut)]
+#[try_unwrap(ref, ref_mut)]
 #[non_exhaustive]
 pub enum ChannelLayout {
   /// Single channel: `"mono"` (FFmpeg `AV_CH_LAYOUT_MONO`).
@@ -265,5 +267,12 @@ mod tests {
     assert!(escaped.is_other());
     assert_eq!(escaped.as_str(), "mono_x");
     assert_eq!(ChannelLayout::other("MONO_X"), escaped);
+  }
+  #[test]
+  fn channel_layout_unwrap_other_borrowed_view() {
+    let v = ChannelLayout::other("22.2");
+    assert_eq!(v.unwrap_other_ref().as_str(), "22.2");
+    assert!(v.try_unwrap_other_ref().is_ok());
+    assert!(ChannelLayout::Stereo.try_unwrap_other_ref().is_err());
   }
 }

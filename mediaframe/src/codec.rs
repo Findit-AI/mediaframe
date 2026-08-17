@@ -14,8 +14,15 @@
 //!
 //! `cargo xtask check` verifies every named variant's canonical string
 //! exists in the vendored table — CI gate against drift.
+//!
+//! **Derive threshold.** `Unwrap` / `TryUnwrap` generate three methods
+//! per variant, so an enum in the hundreds pays that in compile time for
+//! one reachable payload arm. [`SubtitleCodec`] (27 variants) carries the
+//! pair; [`VideoCodec`] (281) and [`AudioCodec`] (221) do not. The line is
+//! variant count, not principle — reach for `Other(_)` on the large two
+//! with a `match` or [`IsVariant`](derive_more::IsVariant)'s `is_other`.
 use core::str::FromStr;
-use derive_more::{Display, IsVariant};
+use derive_more::{Display, IsVariant, TryUnwrap, Unwrap};
 use smol_str::SmolStr;
 /** Video codec family — every codec FFmpeg n8.1 knows under media type `video`.
 
@@ -2127,7 +2134,9 @@ impl FromStr for AudioCodec {
   derive(::quickcheck_richderive::Arbitrary),
   quickcheck(arbitrary = "crate::quickcheck_helpers::strings::subtitle_codec")
 )]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant, Unwrap, TryUnwrap)]
+#[unwrap(ref, ref_mut)]
+#[try_unwrap(ref, ref_mut)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 pub enum SubtitleCodec {
@@ -2926,6 +2935,17 @@ mod tests {
   /// spelling of a known codec is that codec, and an uppercase
   /// spelling of an unknown one is stored lowercase, so one name is
   /// one value under the derived `Eq` / `Hash`.
+  /// `SubtitleCodec` is the third open enum on the `Unwrap` /
+  /// `TryUnwrap` pair; the two 200-plus-variant codec enums stay
+  /// exempt on compile-time grounds, which is why this names only
+  /// the subtitle one.
+  #[test]
+  fn subtitle_codec_unwrap_other_borrowed_view() {
+    let v = SubtitleCodec::other("vendor_sub");
+    assert_eq!(v.unwrap_other_ref().as_str(), "vendor_sub");
+    assert!(v.try_unwrap_other_ref().is_ok());
+    assert!(SubtitleCodec::Srt.try_unwrap_other_ref().is_err());
+  }
   #[test]
   fn codec_lookup_and_escape_both_fold() {
     assert_eq!("H264".parse(), Ok(VideoCodec::H264));

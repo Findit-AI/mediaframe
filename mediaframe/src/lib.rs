@@ -32,6 +32,13 @@ mod arbitrary_impls;
 /// embedded metadata tags + cover art. Requires the `alloc` feature
 /// (`std` includes it) for the `Other(SmolStr)` escape arms and the
 /// `Vec<u8>` payloads.
+///
+/// **Derive threshold.** Every open enum here carries `Unwrap` /
+/// `TryUnwrap` for its `Other(SmolStr)` arm. The pair generates three
+/// methods per variant, so an enum in the hundreds pays that in compile
+/// time for one reachable payload arm; the two 200-plus-variant codec
+/// enums in [`codec`] are the crate's only exemptions. The line is
+/// variant count, not principle.
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub mod audio;
 #[cfg(feature = "buffa")]
