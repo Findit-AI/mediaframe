@@ -1,0 +1,160 @@
+//! EBU R128 / ITU-R BS.1770 loudness measurement: integrated
+//! loudness, loudness range, true peak, and sample peak.
+
+/// EBU R128 / ITU-R BS.1770 loudness measurement.
+///
+/// A value object capturing the four canonical loudness scalars
+/// emitted by an EBU R128 analysis pass (e.g. FFmpeg `ebur128`
+/// filter, `libebur128`):
+///
+/// - `integrated_lufs` — programme-integrated loudness in LUFS
+///   (a.k.a. LKFS). Typical broadcast targets: −23 LUFS
+///   (EBU R128) / −24 LUFS (ATSC A/85).
+/// - `range_lu`        — loudness range (LRA) in LU. The macro-
+///   dynamic spread; the difference between the high- and low-
+///   loudness regions of a programme.
+/// - `true_peak_dbtp`  — true peak in dBTP (inter-sample peak as
+///   estimated by 4× oversampling per BS.1770-4 Annex 2).
+/// - `sample_peak_dbfs` — sample peak in dBFS (the raw PCM peak
+///   absolute value, no oversampling).
+///
+/// The default is all-zero — a "silent / fresh measurement" sentinel
+/// rather than a meaningful programme loudness.
+///
+/// `f32` storage precludes `Eq`/`Hash` (NaN ≠ NaN); the derives are
+/// limited to `Debug`/`Clone`/`Copy`/`PartialEq`.
+// `serde(default)` keeps sparse / older-schema JSON deserializable: missing
+// fields fall back to the type-level `Default` impl — the all-zero
+// "silent / fresh measurement" sentinel.
+#[cfg_attr(
+  feature = "serde",
+  derive(serde::Serialize, serde::Deserialize),
+  serde(default)
+)]
+#[cfg_attr(
+  feature = "quickcheck",
+  derive(::quickcheck_richderive::Arbitrary),
+  quickcheck(arbitrary = "crate::quickcheck_helpers::composite::loudness")
+)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Loudness {
+  integrated_lufs: f32,
+  range_lu: f32,
+  true_peak_dbtp: f32,
+  sample_peak_dbfs: f32,
+}
+
+impl Default for Loudness {
+  /// Delegates to [`Loudness::new`] — the all-zero
+  /// "silent / fresh measurement" sentinel.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn default() -> Self {
+    Self::new(0.0, 0.0, 0.0, 0.0)
+  }
+}
+
+impl Loudness {
+  /// Constructs a `Loudness` measurement from the four canonical
+  /// EBU R128 / BS.1770 scalars.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn new(
+    integrated_lufs: f32,
+    range_lu: f32,
+    true_peak_dbtp: f32,
+    sample_peak_dbfs: f32,
+  ) -> Self {
+    Self {
+      integrated_lufs,
+      range_lu,
+      true_peak_dbtp,
+      sample_peak_dbfs,
+    }
+  }
+
+  /// Programme-integrated loudness in LUFS (a.k.a. LKFS).
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn integrated_lufs(&self) -> f32 {
+    self.integrated_lufs
+  }
+
+  /// Loudness range (LRA) in LU.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn range_lu(&self) -> f32 {
+    self.range_lu
+  }
+
+  /// True peak in dBTP (BS.1770-4 4× oversampled inter-sample peak).
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn true_peak_dbtp(&self) -> f32 {
+    self.true_peak_dbtp
+  }
+
+  /// Sample peak in dBFS (raw PCM peak absolute value).
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn sample_peak_dbfs(&self) -> f32 {
+    self.sample_peak_dbfs
+  }
+
+  /// Sets the integrated loudness (LUFS) — consuming builder.
+  #[must_use]
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn with_integrated_lufs(mut self, v: f32) -> Self {
+    self.integrated_lufs = v;
+    self
+  }
+
+  /// Sets the loudness range (LU) — consuming builder.
+  #[must_use]
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn with_range_lu(mut self, v: f32) -> Self {
+    self.range_lu = v;
+    self
+  }
+
+  /// Sets the true peak (dBTP) — consuming builder.
+  #[must_use]
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn with_true_peak_dbtp(mut self, v: f32) -> Self {
+    self.true_peak_dbtp = v;
+    self
+  }
+
+  /// Sets the sample peak (dBFS) — consuming builder.
+  #[must_use]
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn with_sample_peak_dbfs(mut self, v: f32) -> Self {
+    self.sample_peak_dbfs = v;
+    self
+  }
+
+  /// Sets the integrated loudness in place.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn set_integrated_lufs(&mut self, v: f32) -> &mut Self {
+    self.integrated_lufs = v;
+    self
+  }
+
+  /// Sets the loudness range in place.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn set_range_lu(&mut self, v: f32) -> &mut Self {
+    self.range_lu = v;
+    self
+  }
+
+  /// Sets the true peak in place.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn set_true_peak_dbtp(&mut self, v: f32) -> &mut Self {
+    self.true_peak_dbtp = v;
+    self
+  }
+
+  /// Sets the sample peak in place.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn set_sample_peak_dbfs(&mut self, v: f32) -> &mut Self {
+    self.sample_peak_dbfs = v;
+    self
+  }
+}
+
+#[cfg(test)]
+mod tests;

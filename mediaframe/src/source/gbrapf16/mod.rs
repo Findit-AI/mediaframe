@@ -1,0 +1,137 @@
+//! Walker for the `Gbrapf16` source format (`AV_PIX_FMT_GBRAPF16{LE,BE}`) — four
+//! full-resolution `half::f16` planes in **G, B, R, A** order.
+//!
+//! Alpha is real per-pixel; nominal range `[0.0, 1.0]` (opaque = 1.0).
+//! Integer outputs widen to `f32` then clamp; float outputs are lossless
+//! interleave.
+//!
+//! The marker carries `<const BE: bool = false>`: `Gbrapf16`
+//! (= `Gbrapf16<false>`) is the LE source; `Gbrapf16<true>` is the BE
+//! source. The walker [`gbrapf16_to::<BE>`] propagates `BE` from
+//! [`Gbrapf16Frame<'_, BE>`] into the sinker dispatch.
+
+use crate::{
+  PixelSink, SourceFormat,
+  frame::{Gbrapf16Frame, Gbrapf16LeFrame},
+  source::sealed::Sealed,
+};
+
+/// Zero-sized marker for the planar GBRAP float-16 source format
+/// (`AV_PIX_FMT_GBRAPF16{LE,BE}`). `<const BE: bool>` defaults to `false`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct Gbrapf16<const BE: bool = false>;
+
+impl<const BE: bool> Sealed for Gbrapf16<BE> {}
+impl<const BE: bool> SourceFormat for Gbrapf16<BE> {}
+
+/// One output row from a [`Gbrapf16Frame`](crate::frame::Gbrapf16Frame) — four full-width `half::f16`
+/// slices in G / B / R / A order. Use [`Self::g`] / [`Self::b`] /
+/// [`Self::r`] / [`Self::a`].
+#[derive(Debug, Clone, Copy)]
+pub struct Gbrapf16Row<'a> {
+  g: &'a [half::f16],
+  b: &'a [half::f16],
+  r: &'a [half::f16],
+  a: &'a [half::f16],
+  row: usize,
+}
+
+impl<'a> Gbrapf16Row<'a> {
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub(crate) fn new(
+    g: &'a [half::f16],
+    b: &'a [half::f16],
+    r: &'a [half::f16],
+    a: &'a [half::f16],
+    row: usize,
+  ) -> Self {
+    Self { g, b, r, a, row }
+  }
+
+  /// Green plane row — `width` `half::f16` elements.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub fn g(&self) -> &'a [half::f16] {
+    self.g
+  }
+  /// Blue plane row — `width` `half::f16` elements.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub fn b(&self) -> &'a [half::f16] {
+    self.b
+  }
+  /// Red plane row — `width` `half::f16` elements.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub fn r(&self) -> &'a [half::f16] {
+    self.r
+  }
+  /// Alpha plane row — `width` `half::f16` elements (opaque = 1.0).
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub fn a(&self) -> &'a [half::f16] {
+    self.a
+  }
+  /// Output row index within the frame (0-based).
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn row(&self) -> usize {
+    self.row
+  }
+}
+
+/// Sinks that consume rows of a [`Gbrapf16`] source. Defaults to LE
+/// (`BE = false`) for back-compat.
+pub trait Gbrapf16Sink<const BE: bool = false>:
+  for<'a> PixelSink<Input<'a> = Gbrapf16Row<'a>>
+{
+}
+
+/// Walks a [`Gbrapf16Frame<'_, BE>`] row by row, dispatching each row to
+/// the sink. Propagates `<const BE: bool>` from the frame into
+/// [`Gbrapf16Sink<BE>`]. Use the LE-only [`gbrapf16_to`] wrapper for
+/// pre-Phase-4 explicit-turbofish callers.
+pub fn gbrapf16_to_endian<S, const BE: bool>(
+  src: &Gbrapf16Frame<'_, BE>,
+  sink: &mut S,
+) -> Result<(), S::Error>
+where
+  S: Gbrapf16Sink<BE>,
+{
+  sink.begin_frame(src.width(), src.height())?;
+
+  let w = src.width() as usize;
+  let h = src.height() as usize;
+  let g_plane = src.g();
+  let b_plane = src.b();
+  let r_plane = src.r();
+  let a_plane = src.a();
+  let g_stride = src.g_stride() as usize;
+  let b_stride = src.b_stride() as usize;
+  let r_stride = src.r_stride() as usize;
+  let a_stride = src.a_stride() as usize;
+
+  for row in 0..h {
+    let g = &g_plane[row * g_stride..row * g_stride + w];
+    let b = &b_plane[row * b_stride..row * b_stride + w];
+    let r = &r_plane[row * r_stride..row * r_stride + w];
+    let a = &a_plane[row * a_stride..row * a_stride + w];
+    sink.process(Gbrapf16Row::new(g, b, r, a, row))?;
+  }
+  Ok(())
+}
+
+/// LE-only back-compat wrapper preserving the pre-Phase-4 walker
+/// signature. Forwards to [`gbrapf16_to_endian`] with `BE = false`.
+///
+/// Rust forbids defaults on function-position const-generic parameters,
+/// so an explicit-turbofish caller written before the Phase-4 BE
+/// migration (`gbrapf16_to::<MySink>(...)`) would otherwise fail to
+/// compile. Keeping this single-generic wrapper preserves source
+/// compatibility for those call sites. BE-aware callers should use
+/// [`gbrapf16_to_endian`] directly.
+#[cfg_attr(not(tarpaulin), inline(always))]
+pub fn gbrapf16_to<S>(src: &Gbrapf16LeFrame<'_>, sink: &mut S) -> Result<(), S::Error>
+where
+  S: Gbrapf16Sink<false>,
+{
+  gbrapf16_to_endian::<S, false>(src, sink)
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests;

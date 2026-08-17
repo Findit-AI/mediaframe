@@ -238,9 +238,10 @@ modules are gated whole on the same pair. Per-family `frame` /
 - `ffmpeg-codecs.txt` — every codec identifier under media types
   `video` / `audio` / `subtitle` from `libavcodec/codec_desc.c`.
 
-`cargo xtask gen-codec` regenerates `src/codec.rs` from
-`ffmpeg-codecs.txt` — one `VideoCodec` / `AudioCodec` /
-`SubtitleCodec` enum variant per FFmpeg codec.
+`cargo xtask gen-codec` regenerates `src/codec/mod.rs` and its sibling
+`src/codec/tests.rs` from `ffmpeg-codecs.txt` — one `VideoCodec` /
+`AudioCodec` / `SubtitleCodec` enum variant per FFmpeg codec, plus the
+suite that round-trips every one of them.
 
 `cargo xtask check` diffs the vendored tables against the in-tree
 enums and fails on any missing variant or numbering drift:

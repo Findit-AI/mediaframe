@@ -19,10 +19,10 @@
 //! - `cargo xtask check` — verifies mediaframe against both vendored
 //!   files:
 //!   - `PixelFormat`: reads the `as_str()` match in
-//!     `src/pixel_format.rs` and diffs slugs —
+//!     `src/pixel_format/mod.rs` and diffs slugs —
 //!     **missing-from-mediaframe** (FFmpeg has it, we don't) fails CI;
 //!     **mediaframe extras** (cinema-RAW etc.) are informational.
-//!   - Colour enums: reads the `to_u32()` matches in `src/color.rs`
+//!   - Colour enums: reads the `to_u32()` matches in `src/color/mod.rs`
 //!     and asserts every distinct FFmpeg colour code has a named
 //!     mediaframe variant mapping to that value (and the covering
 //!     variant's id is `< DOMAIN_EXT_BASE` — the FFmpeg ingest path
@@ -57,11 +57,11 @@ const COLOR_VENDOR_PATH: &str = "xtask/vendor/ffmpeg-color.txt";
 
 /// Path (relative to the workspace root) of the PixelFormat source
 /// file whose `as_str()` table is the source of truth for our slugs.
-const PIXEL_FORMAT_RS: &str = "mediaframe/src/pixel_format.rs";
+const PIXEL_FORMAT_RS: &str = "mediaframe/src/pixel_format/mod.rs";
 
 /// Path (relative to the workspace root) of the colour-enum source
 /// file whose `to_u32()` matches are the source of truth.
-const COLOR_RS: &str = "mediaframe/src/color.rs";
+const COLOR_RS: &str = "mediaframe/src/color/mod.rs";
 
 /// Path (relative to the workspace root) of the vendored codec-name
 /// table. Format: one `<media_type> <name> [<props>]` per line, sorted;
@@ -73,7 +73,12 @@ const CODEC_VENDOR_PATH: &str = "xtask/vendor/ffmpeg-codecs.txt";
 
 /// Path (relative to the workspace root) of the codec-enum source file
 /// whose `as_str()` matches are the source of truth.
-const CODEC_RS: &str = "mediaframe/src/codec.rs";
+const CODEC_RS: &str = "mediaframe/src/codec/mod.rs";
+
+/// Path (relative to the workspace root) of the codec module's external
+/// test file. The crate keeps unit tests in a sibling `tests.rs`, so the
+/// generator emits two files and `check` verifies both.
+const CODEC_TESTS_RS: &str = "mediaframe/src/codec/tests.rs";
 
 /// The mediaframe codec enums and their corresponding FFmpeg media
 /// type (`AVMEDIA_TYPE_*`, lowercased).
@@ -124,7 +129,7 @@ fn print_help() {
                     - Codec short names ({CODEC_VENDOR_PATH})\n  \
          sync       Fetch FFmpeg {FFMPEG_TAG} (pixfmt.h + codec_desc.c) and\n             \
                     regenerate the vendored files deterministically\n  \
-         gen-codec  Regenerate mediaframe/src/codec.rs from the vendored\n             \
+         gen-codec  Regenerate mediaframe/src/codec/mod.rs from the vendored\n             \
                     table ({CODEC_VENDOR_PATH}) via quote + prettyplease\n  \
          help       Show this help\n"
   );
@@ -219,7 +224,7 @@ fn check_pixfmt(root: &Path) -> bool {
 /// Colour-enum coverage: every distinct FFmpeg colour code in
 /// `xtask/vendor/ffmpeg-color.txt` must have a named mediaframe
 /// variant whose `to_u32()` returns that value (and a non-empty
-/// `as_str()`), parsed from `src/color.rs`. The reverse direction
+/// `as_str()`), parsed from `src/color/mod.rs`. The reverse direction
 /// (mediaframe `Unknown(n)`) is intentionally NOT asserted.
 fn check_color(root: &Path) -> bool {
   let vendor = match fs::read_to_string(root.join(COLOR_VENDOR_PATH)) {
@@ -529,19 +534,36 @@ fn check_codec(root: &Path) -> bool {
   // even when the variant-coverage check happens to pass (e.g. variant
   // ordering changes, `BITMAP_SUBTITLES` updates).
   match build_codec_rs(root) {
-    Ok(expected) => {
+    Ok((expected_module, expected_tests)) => {
       // Reuse the already-loaded source (`codec_rs`) instead of
       // re-reading the file. The first read at the top of `check_codec`
       // returned `false` on I/O error, so by this point the content is
       // known-good — a second `read_to_string + unwrap_or_default()`
       // would both add redundant I/O and silently mask a real read
       // failure as "stale".
-      if expected != codec_rs {
+      if expected_module != codec_rs {
         eprintln!(
           "FAIL: {CODEC_RS} is stale vs the vendored FFmpeg table — \
                  run `cargo xtask gen-codec` to refresh it."
         );
         ok = false;
+      }
+      // The suite is the half that embeds the vendored name table, so a
+      // stale `tests.rs` is the more dangerous of the two: it would keep
+      // asserting round-trips for a codec list nobody ships any more.
+      match fs::read_to_string(root.join(CODEC_TESTS_RS)) {
+        Ok(on_disk) if on_disk == expected_tests => {}
+        Ok(_) => {
+          eprintln!(
+            "FAIL: {CODEC_TESTS_RS} is stale vs the vendored FFmpeg table — \
+                   run `cargo xtask gen-codec` to refresh it."
+          );
+          ok = false;
+        }
+        Err(e) => {
+          eprintln!("FAIL: cannot read {CODEC_TESTS_RS}: {e}");
+          ok = false;
+        }
       }
     }
     Err(e) => {
@@ -724,7 +746,7 @@ fn parse_vendored(text: &str) -> BTreeSet<String> {
     .collect()
 }
 
-/// Parse the `as_str` match block in `src/pixel_format.rs`, extracting
+/// Parse the `as_str` match block in `src/pixel_format/mod.rs`, extracting
 /// every literal slug. Excludes the `none` sentinel (FFmpeg's
 /// `AV_PIX_FMT_NONE`, which the vendored slug list does not carry).
 fn parse_as_str_slugs(rs: &str) -> BTreeSet<String> {
@@ -796,7 +818,7 @@ struct NamedCode {
 }
 
 /// Parse the per-enum `as_str()` + `to_u32()` match blocks in
-/// `src/color.rs`. Returns `mediaframe-enum -> { variant-ident ->
+/// `src/color/mod.rs`. Returns `mediaframe-enum -> { variant-ident ->
 /// NamedCode }`. Implementation is line-oriented (matching the
 /// existing `parse_as_str_slugs` style): an `impl <Enum> {` opens a
 /// scope that the next `impl `/`pub enum `/`pub struct ` closes;
@@ -804,7 +826,7 @@ struct NamedCode {
 /// `fn to_u32(` line are values and `Self::<ident> => "..."` arms
 /// after the `fn as_str(` line are slugs.
 /// Parse the `pub const DOMAIN_EXT_BASE: u32 = <lit>;` line from
-/// `src/color.rs` (the mediaframe-domain colour-id base; ids `>=`
+/// `src/color/mod.rs` (the mediaframe-domain colour-id base; ids `>=`
 /// this are domain concepts H.273 does not enumerate, never produced
 /// by the FFmpeg ingest path). Accepts a decimal or `0x`-hex literal
 /// with optional `_` digit separators. Returns `None` if absent /
@@ -1402,7 +1424,7 @@ fn extract_codec_descriptors(source: &str) -> Vec<CodecDescriptor> {
 
 // ---------- gen-codec ------------------------------------------------------
 //
-// Regenerate `mediaframe/src/codec.rs` from `xtask/vendor/ffmpeg-codecs.txt`
+// Regenerate `mediaframe/src/codec/mod.rs` from `xtask/vendor/ffmpeg-codecs.txt`
 // using the same `quote!` / `proc-macro2` / `prettyplease` toolchain proc-
 // macros use. Single source of truth (the vendored table) → single
 // generated module; `cargo xtask check` is the CI gate against drift.
@@ -1413,7 +1435,7 @@ use syn::Ident;
 
 fn gen_codec() -> ExitCode {
   let root = workspace_root();
-  let (counts, content) = match build_codec_rs_with_counts(&root) {
+  let (counts, module, tests) = match build_codec_rs_with_counts(&root) {
     Ok(v) => v,
     Err(e) => {
       eprintln!("{e}");
@@ -1421,24 +1443,36 @@ fn gen_codec() -> ExitCode {
     }
   };
   let out_path = root.join(CODEC_RS);
-  if let Err(e) = fs::write(&out_path, &content) {
-    eprintln!("error: cannot write {}: {e}", out_path.display());
-    return ExitCode::FAILURE;
+  let tests_path = root.join(CODEC_TESTS_RS);
+  for (path, content) in [(&out_path, &module), (&tests_path, &tests)] {
+    if let Some(dir) = path.parent()
+      && let Err(e) = fs::create_dir_all(dir)
+    {
+      eprintln!("error: cannot create {}: {e}", dir.display());
+      return ExitCode::FAILURE;
+    }
+    if let Err(e) = fs::write(path, content) {
+      eprintln!("error: cannot write {}: {e}", path.display());
+      return ExitCode::FAILURE;
+    }
   }
   let (v, a, s) = counts;
   println!(
-    "Wrote {} codec variants ({} video + {} audio + {} subtitle) to {} ({} bytes)",
+    "Wrote {} codec variants ({} video + {} audio + {} subtitle) to {} ({} bytes) \
+     and its suite to {} ({} bytes)",
     v + a + s,
     v,
     a,
     s,
     out_path.display(),
-    content.len()
+    module.len(),
+    tests_path.display(),
+    tests.len()
   );
   ExitCode::SUCCESS
 }
 
-/// Build the **expected** content of `mediaframe/src/codec.rs` from
+/// Build the **expected** content of `mediaframe/src/codec/mod.rs` from
 /// `xtask/vendor/ffmpeg-codecs.txt`. Used both by `gen-codec` (writes the
 /// result to disk) and by `check_codec`'s freshness check (compares the
 /// result to the on-disk file).
@@ -1448,11 +1482,22 @@ fn gen_codec() -> ExitCode {
 /// final `rustfmt` step is required for CI parity — `prettyplease` is
 /// rustfmt-adjacent but block-wraps long match arms and renders multi-line
 /// docs as `/** */`, neither of which survives `cargo fmt --check`.
-fn build_codec_rs(root: &Path) -> Result<String, String> {
-  build_codec_rs_with_counts(root).map(|(_, s)| s)
+fn build_codec_rs(root: &Path) -> Result<(String, String), String> {
+  build_codec_rs_with_counts(root).map(|(_, module, tests)| (module, tests))
 }
 
-fn build_codec_rs_with_counts(root: &Path) -> Result<((usize, usize, usize), String), String> {
+/// Named codec counts by media type: `(video, audio, subtitle)`.
+type CodecCounts = (usize, usize, usize);
+
+/// Everything `gen-codec` produces: the counts, `codec/mod.rs`, and its
+/// sibling `codec/tests.rs`.
+type GeneratedCodec = (CodecCounts, String, String);
+
+/// The crate keeps unit tests in a sibling file, so the generator emits
+/// the pair and the freshness check compares both — a stale `tests.rs`
+/// is exactly as wrong as a stale `mod.rs`, and it is the half that
+/// carries the vendored name table.
+fn build_codec_rs_with_counts(root: &Path) -> Result<GeneratedCodec, String> {
   let vendor = fs::read_to_string(root.join(CODEC_VENDOR_PATH)).map_err(|e| {
     format!(
       "error: cannot read {CODEC_VENDOR_PATH}: {e}\n\
@@ -1491,13 +1536,15 @@ fn build_codec_rs_with_counts(root: &Path) -> Result<((usize, usize, usize), Str
   let audio = by_type.remove("audio").unwrap_or_default();
   let subtitle = by_type.remove("subtitle").unwrap_or_default();
 
-  let module = build_codec_module(&video, &audio, &subtitle);
-  let parsed: syn::File = syn::parse2(module)
-    .map_err(|e| format!("internal error: generated token stream is not parseable: {e}"))?;
-  let pretty = prettyplease::unparse(&parsed);
   let edition = read_mediaframe_edition(root)?;
-  let formatted = run_rustfmt(&pretty, &edition)?;
-  Ok(((video.len(), audio.len(), subtitle.len()), formatted))
+  let render = |ts: TokenStream| -> Result<String, String> {
+    let parsed: syn::File = syn::parse2(ts)
+      .map_err(|e| format!("internal error: generated token stream is not parseable: {e}"))?;
+    run_rustfmt(&prettyplease::unparse(&parsed), &edition)
+  };
+  let module = render(build_codec_module(&video, &audio, &subtitle))?;
+  let tests = render(build_codec_tests(&video, &audio, &subtitle))?;
+  Ok(((video.len(), audio.len(), subtitle.len()), module, tests))
 }
 
 /// Read the `edition = "<year>"` field from `mediaframe/Cargo.toml`.
@@ -1655,8 +1702,6 @@ fn build_codec_module(
   .map(|line| quote! { #![doc = #line] })
   .collect();
 
-  let tests = build_codec_tests(video, audio, subtitle);
-
   quote! {
     #(#module_doc)*
 
@@ -1671,7 +1716,8 @@ fn build_codec_module(
 
     #subtitle_enum
 
-    #tests
+    #[cfg(test)]
+    mod tests;
   }
 }
 
@@ -1871,9 +1917,7 @@ fn build_codec_tests(
     .chain(audio.keys().map(|n| quote! { ("audio", #n) }))
     .chain(subtitle.keys().map(|n| quote! { ("subtitle", #n) }));
   quote! {
-    #[cfg(test)]
-    mod tests {
-      use super::*;
+    use super::*;
       // Bring `ToString` into scope explicitly. Under `feature = "std"`
       // the trait is in the prelude, but `--no-default-features
       // --features alloc` only has the core prelude — the codec module
@@ -2020,6 +2064,5 @@ fn build_codec_tests(
           "custom_codec"
         );
       }
-    }
   }
 }

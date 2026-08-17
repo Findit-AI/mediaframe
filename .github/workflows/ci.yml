@@ -43,9 +43,10 @@ jobs:
   # Verify mediaframe stays in sync with the vendored FFmpeg tables
   # (`xtask/vendor/*.txt` for pixel formats, colour codes, and codec
   # short-names + `.props`). Runs the same `cargo xtask check` developers
-  # run locally; the codec check now includes a byte-for-byte freshness
-  # diff against `mediaframe/src/codec.rs`, so a stale vendor table or a
-  # missed `cargo xtask gen-codec` regeneration fails CI here.
+  # run locally; the codec check includes a byte-for-byte freshness diff
+  # against both halves of the generated module
+  # (`mediaframe/src/codec/mod.rs` and its `tests.rs`), so a stale vendor
+  # table or a missed `cargo xtask gen-codec` regeneration fails CI here.
   xtask-check:
     name: xtask-check
     runs-on: ubuntu-latest
