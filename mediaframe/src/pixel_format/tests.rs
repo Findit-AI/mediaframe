@@ -264,6 +264,50 @@ fn every_named_pixel_format_round_trips_through_its_slug() {
   );
 }
 
+/// The FFmpeg synonyms are **accepted, never emitted**, and none of them
+/// shadows a canonical slug.
+///
+/// Two directions make that airtight together with
+/// [`every_named_pixel_format_round_trips_through_its_slug`], which
+/// proves every canonical slug still parses back to its own variant:
+/// were a synonym to collide with some variant's slug, either the
+/// synonym arm would shadow it (breaking that sweep) or the canonical
+/// arm would win (breaking the `as_str() != synonym` assertion here).
+#[test]
+fn ffmpeg_synonyms_are_accepted_but_never_emitted() {
+  for (synonym, canonical) in FFMPEG_SYNONYMS {
+    let from_synonym = synonym
+      .parse::<PixelFormat>()
+      .expect("a documented FFmpeg synonym parses");
+    assert_eq!(
+      from_synonym.as_str(),
+      *canonical,
+      "FFmpeg name {synonym:?} must parse to the variant spelled {canonical:?}"
+    );
+    assert_ne!(
+      from_synonym.as_str(),
+      *synonym,
+      "{synonym:?} is emitted by a variant — it is a canonical slug, not a synonym"
+    );
+    assert_eq!(
+      canonical.parse::<PixelFormat>(),
+      Ok(from_synonym.clone()),
+      "the canonical slug and its FFmpeg synonym must name one value"
+    );
+    // The fold gate applies to synonyms too — one name, one value.
+    let mut upper = [0u8; 64];
+    let n = synonym.len();
+    upper[..n].copy_from_slice(synonym.as_bytes());
+    upper[..n].make_ascii_uppercase();
+    let upper = core::str::from_utf8(&upper[..n]).unwrap();
+    assert_eq!(
+      upper.parse::<PixelFormat>(),
+      Ok(from_synonym),
+      "PixelFormat does not fold the synonym {upper:?}"
+    );
+  }
+}
+
 /// A vendor format mediaframe has never heard of keeps its **name**.
 /// That is the whole point of the escape: the old `Unknown(u32)` handed
 /// a downstream RAW/sensor backend a bare number and `as_str() ==

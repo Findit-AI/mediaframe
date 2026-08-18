@@ -37,6 +37,12 @@
 //! The **text** form is the wire form: [`PixelFormat::as_str`] renders the
 //! FFmpeg slug and [`FromStr`](core::str::FromStr) reads it back, with
 //! [`PixelFormat::Other`] carrying any name this build does not enumerate.
+//! The two sides are deliberately not mirror images — **emission is one
+//! canonical slug per variant, parse additionally accepts the documented
+//! FFmpeg synonyms** (`gray`, `monob`, `monow`, the three names FFmpeg's
+//! descriptor table spells differently from its `AV_PIX_FMT_<NAME>`
+//! enumerator). Round-tripping a value is unaffected; reading a name off
+//! `ffprobe` now lands on the named variant.
 //! [`PixelFormat::to_u32`] / [`PixelFormat::from_u32`] remain as FFmpeg
 //! interop helpers over a number space that has no room for a name, and
 //! return [`None`] outside it.
@@ -639,6 +645,10 @@ pub enum PixelFormat {
   // Greyscale
   // ===================================================================
   /// 8-bit greyscale (`AV_PIX_FMT_GRAY8`).
+  ///
+  /// Renders `"gray8"` — the header identifier. FFmpeg's own descriptor
+  /// name for this format is `"gray"`, which [`FromStr`](core::str::FromStr)
+  /// accepts as a synonym.
   Gray8,
   /// 8-bit greyscale — FFmpeg `AV_PIX_FMT_GRAY8A` alias of [`Self::Ya8`];
   /// preserved as a separate variant since mediaframe's wire format is
@@ -698,8 +708,14 @@ pub enum PixelFormat {
   // Monochrome 1-bit
   // ===================================================================
   /// 1-bit monochrome, white = 0 (`AV_PIX_FMT_MONOWHITE`).
+  ///
+  /// Renders `"monowhite"` — the header identifier. FFmpeg's own
+  /// descriptor name is `"monow"`, accepted as a parse synonym.
   Monowhite,
   /// 1-bit monochrome, black = 0 (`AV_PIX_FMT_MONOBLACK`).
+  ///
+  /// Renders `"monoblack"` — the header identifier. FFmpeg's own
+  /// descriptor name is `"monob"`, accepted as a parse synonym.
   Monoblack,
 
   // ===================================================================
@@ -1830,9 +1846,20 @@ pub struct ParsePixelFormatError;
 impl core::str::FromStr for PixelFormat {
   type Err = ParsePixelFormatError;
 
-  /// Parses the canonical slug [`Self::as_str`] renders, the exact
-  /// inverse of [`Display`](core::fmt::Display) for every **named**
-  /// variant.
+  /// Reads a pixel-format name: the canonical slug [`Self::as_str`]
+  /// renders, **or** the FFmpeg spelling of the same format where the
+  /// two differ.
+  ///
+  /// Emission is injective and canonical — [`Self::as_str`],
+  /// [`Display`](core::fmt::Display) and serde render one slug per
+  /// variant and never a synonym — so `parse(display(x)) == x` holds
+  /// for every named variant and `display(parse(s))` is idempotent.
+  /// Parse is the wider side: it also takes the three names FFmpeg's
+  /// `av_get_pix_fmt_name` renders differently from the
+  /// `AV_PIX_FMT_<NAME>` header identifier this vocabulary is spelled
+  /// after — `gray` ([`Self::Gray8`]), `monob` ([`Self::Monoblack`])
+  /// and `monow` ([`Self::Monowhite`]) — so a name copied off
+  /// `ffprobe` lands on the named variant instead of the escape.
   ///
   /// # Errors
   ///
@@ -2131,6 +2158,16 @@ impl core::str::FromStr for PixelFormat {
       b"bayer_gbrg16be" => Self::BayerGbrg16Be,
       b"bayer_grbg16le" => Self::BayerGrbg16Le,
       b"bayer_grbg16be" => Self::BayerGrbg16Be,
+
+      // FFmpeg's own spelling for the three formats where
+      // `av_get_pix_fmt_name` disagrees with the `AV_PIX_FMT_<NAME>`
+      // header identifier. Accepted, never emitted — keep these in step
+      // with `FFMPEG_SYNONYMS`, which is what the collision nail test
+      // sweeps.
+      b"gray" => Self::Gray8,
+      b"monob" => Self::Monoblack,
+      b"monow" => Self::Monowhite,
+
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -2138,6 +2175,22 @@ impl core::str::FromStr for PixelFormat {
     })
   }
 }
+
+/// The FFmpeg spellings [`FromStr`](core::str::FromStr) accepts on top of
+/// the canonical slugs, as `(ffmpeg_name, canonical_slug)`.
+///
+/// FFmpeg names a pixel format twice: the `AV_PIX_FMT_<NAME>` enumerator
+/// (what this vocabulary is spelled after) and the descriptor name
+/// `av_get_pix_fmt_name` returns (what `ffprobe` prints). The two agree
+/// for every format but these three. Emission stays canonical, so this
+/// table is parse-side only; it is `cfg(test)` because its one consumer
+/// is the nail test that proves no synonym shadows a canonical slug.
+#[cfg(test)]
+const FFMPEG_SYNONYMS: &[(&str, &str)] = &[
+  ("gray", "gray8"),
+  ("monob", "monoblack"),
+  ("monow", "monowhite"),
+];
 
 impl PixelFormat {
   /// Lowercase FFmpeg-style identifier for this variant — the FFmpeg
