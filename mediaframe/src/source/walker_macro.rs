@@ -26,6 +26,14 @@
 //! quantisation fact about the *frame*, not a colour intent the sink
 //! owns.
 //!
+//! The generated `Row::new` is `pub(crate)` for the same reason, which
+//! carries the rule down to row grain: nothing outside this crate can
+//! build a row beside the description that chose its matrix. Each arm
+//! also emits a `#[doc(hidden)] pub const fn for_tests` with the
+//! identical parameter list — the one named exception, for out-of-tree
+//! kernel-parity suites that drive a row kernel without a frame. It
+//! forwards to `new`, so the two cannot drift.
+//!
 //! # Forms
 //!
 //! The macro has one entry rule per *plane topology*. Pick the one
@@ -113,13 +121,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         $buf: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { $buf, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        $buf: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new($buf, row, matrix, full_range)
       }
       /// Packed source row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -240,13 +260,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         $buf: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { $buf, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        $buf: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new($buf, row, matrix, full_range)
       }
       /// Packed source row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -401,13 +433,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         $buf: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { $buf, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        $buf: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new($buf, row, matrix, full_range)
       }
       /// Packed source row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -553,7 +597,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -562,6 +606,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, row, matrix, full_range)
       }
       /// Full-width Y row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -731,7 +789,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -741,6 +799,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, a, row, matrix, full_range)
       }
       /// Full-width Y row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -925,7 +998,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         $chroma_field: &'a [$elem],
         row: usize,
@@ -933,6 +1006,19 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, $chroma_field, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        $chroma_field: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, $chroma_field, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1205,7 +1291,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -1214,6 +1300,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1332,7 +1432,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_quarter: &'a [$elem],
         v_quarter: &'a [$elem],
@@ -1341,6 +1441,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_quarter, v_quarter, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_quarter: &'a [$elem],
+        v_quarter: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_quarter, v_quarter, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1464,7 +1578,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -1473,6 +1587,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1583,7 +1711,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -1592,6 +1720,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1712,7 +1854,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -1721,6 +1863,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1839,7 +1995,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -1849,6 +2005,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1971,7 +2142,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -1981,6 +2152,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2104,7 +2290,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -2114,6 +2300,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2449,7 +2650,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         $chroma_field: &'a [$elem],
         row: usize,
@@ -2457,6 +2658,19 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, $chroma_field, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        $chroma_field: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, $chroma_field, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2586,7 +2800,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -2595,6 +2809,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2730,7 +2958,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -2739,6 +2967,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2870,7 +3112,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -2880,6 +3122,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3024,7 +3281,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -3033,6 +3290,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3177,7 +3448,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -3186,6 +3457,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3331,7 +3616,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -3341,6 +3626,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3499,7 +3799,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -3509,6 +3809,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3661,13 +3976,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { y, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3758,13 +4085,25 @@ macro_rules! walker {
 
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { y, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3877,13 +4216,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { y, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -4022,13 +4373,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { y, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -4161,7 +4524,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -4171,6 +4534,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]

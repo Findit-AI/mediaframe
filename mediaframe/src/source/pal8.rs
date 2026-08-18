@@ -31,8 +31,15 @@ pub struct Pal8Row<'a> {
 
 impl<'a> Pal8Row<'a> {
   /// Constructs a [`Pal8Row`].
-  pub fn new(row: &'a [u8], palette: &'a [[u8; 4]; 256], idx: usize) -> Self {
+  pub(crate) fn new(row: &'a [u8], palette: &'a [[u8; 4]; 256], idx: usize) -> Self {
     Self { row, palette, idx }
+  }
+
+  #[doc = row_test_door_doc!()]
+  #[doc(hidden)]
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub fn for_tests(row: &'a [u8], palette: &'a [[u8; 4]; 256], idx: usize) -> Self {
+    Self::new(row, palette, idx)
   }
 
   /// The pixel-index slice for this row. Length equals the frame width.

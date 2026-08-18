@@ -107,3 +107,54 @@ fn the_matrix_comes_from_the_sink() {
   assert_eq!(silent.kernel_matrix(), KernelMatrix::Unspecified);
   nv20_to(&frame, true, &mut silent).unwrap();
 }
+
+/// The `#[doc(hidden)]` door builds a row without a frame, which is the
+/// one thing `pub(crate) new` took away and the only reason the door
+/// exists — an out-of-tree kernel-parity suite drives a single kernel
+/// this way. Exercised here so it cannot rot untested: nothing in this
+/// crate needs it (every in-tree row comes from a walker), so without
+/// this test the door would ship unproven.
+#[test]
+fn the_hidden_door_builds_a_row_without_a_frame() {
+  use crate::color::KernelMatrix;
+
+  struct OneRowSink {
+    matrix: Option<KernelMatrix>,
+    full_range: Option<bool>,
+    y_len: usize,
+  }
+  impl PixelSink for OneRowSink {
+    type Input<'r> = Nv20Row<'r>;
+    type Error = Infallible;
+    fn process(&mut self, row: Nv20Row<'_>) -> Result<(), Infallible> {
+      self.matrix = Some(row.matrix());
+      self.full_range = Some(row.full_range());
+      self.y_len = row.y().len();
+      Ok(())
+    }
+  }
+  impl Nv20Sink for OneRowSink {}
+
+  let y = std::vec![0u16; 8];
+  let uv = std::vec![0u16; 8];
+  let mut sink = OneRowSink {
+    matrix: None,
+    full_range: None,
+    y_len: 0,
+  };
+
+  // No frame, no walker — exactly the shape a kernel-parity test uses.
+  sink
+    .process(Nv20Row::for_tests(
+      &y,
+      &uv,
+      0,
+      KernelMatrix::Bt2020Ncl,
+      true,
+    ))
+    .unwrap();
+
+  assert_eq!(sink.matrix, Some(KernelMatrix::Bt2020Ncl));
+  assert_eq!(sink.full_range, Some(true));
+  assert_eq!(sink.y_len, 8);
+}

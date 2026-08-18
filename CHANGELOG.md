@@ -35,6 +35,30 @@ through `VideoCodec::Other`.
 
 ### Changed
 
+- **`*Row::new` is `pub(crate)`; a hidden test door replaces the public
+  promise.** Breaking. With the walkers no longer taking a selector, a public
+  row constructor was the last way to build a row beside the description that
+  chose its matrix — so it is gone from the public surface, and the one-source
+  rule now holds at row grain for everything outside this crate. Covers all
+  132 walker-generated row types plus `Pal8Row`, `BayerRow` and `BayerRow16`
+  — 135 in all; the ten hand-written source rows that were already
+  `pub(crate)` are unchanged and get no door, because there was no public
+  promise there to replace.
+
+  The named exception is `#[doc(hidden)] *Row::for_tests`, emitted beside
+  `new` with the identical parameter list — selector included — and
+  forwarding to it, so the two cannot drift. It exists for one reason: a
+  kernel-parity suite drives a single row kernel without materialising a
+  frame, and there is no other way to reach one from outside. That is
+  measured, not assumed — a census on 2026-08-19 found **493 such
+  constructions across 85 files and 52 row types** in `pixon` alone, all of
+  them test code, and every one of those 52 types has a door. It carries no
+  stability promise and its doc says so.
+
+  Nothing in this crate needed migrating: every in-tree row already came from
+  a walker, which is why the door is exercised by a test of its own rather
+  than by existing callers. **pixon's suites are the breakage**, and their
+  migration (`Row::new` → `Row::for_tests`) rides pixon's own 0.4 bump.
 - **The walkers stop taking a colour selector; the sink supplies it.**
   Breaking, across every `{fmt}_to` / `{fmt}_to_endian` entry point. The
   `matrix: KernelMatrix` parameter is **gone** — no deprecation — and

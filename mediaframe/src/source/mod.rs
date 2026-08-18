@@ -60,6 +60,14 @@ pub trait PixelSink {
   /// Formats whose rows carry no matrix (paletted, 1-bit mono, the
   /// float GBR planes) never call this.
   ///
+  /// **How far the rule reaches.** On the public surface it is now total
+  /// at row grain: the walkers take no selector and `*Row::new` is
+  /// `pub(crate)`, so from outside this crate a row cannot be built
+  /// beside the description that chose its matrix. The one named
+  /// exception is the `#[doc(hidden)]` `*Row::for_tests` door, which
+  /// exists so an out-of-tree kernel-parity suite can drive a single row
+  /// kernel without a frame. It carries no stability promise and says so.
+  ///
   /// [`KernelMatrix::Unspecified`]: crate::color::KernelMatrix::Unspecified
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn kernel_matrix(&self) -> crate::color::KernelMatrix {
