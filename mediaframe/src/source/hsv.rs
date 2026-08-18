@@ -17,9 +17,9 @@ impl HsvPlane {
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn as_str(&self) -> &'static str {
     match self {
-      Self::H => "H",
-      Self::S => "S",
-      Self::V => "V",
+      Self::H => "h",
+      Self::S => "s",
+      Self::V => "v",
     }
   }
 }

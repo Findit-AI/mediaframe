@@ -45,8 +45,8 @@ speak to without agreeing on anything heavier.
 - **`color`** — ITU-T H.273 colour-metadata enums (`color::Matrix`,
   `color::Primaries`, `color::Transfer`, `color::DynamicRange`,
   `color::ChromaLocation`) bundled into `color::Info`, with
-  FFmpeg-exact code points and a lossless `Unknown(u32)` arm on
-  each. Plus `DcpTargetGamut`
+  FFmpeg-exact code points and the crate-wide `Other(SmolStr)` escape
+  arm on each (`alloc` tier). Plus `DcpTargetGamut`
   (DCI-XYZ target-gamut selection), `Rotation`, HDR static side-
   data (`ContentLightLevel`, `ChromaCoord`, `MasteringDisplay`,
   `HdrStaticMetadata` per SMPTE ST 2086 / FFmpeg HDR10), and
@@ -65,8 +65,8 @@ speak to without agreeing on anything heavier.
 - **`frame`** — structural primitives (`Dimensions`, `Rect`,
   `Plane<B>`), exact-ratio building blocks (`Rational`,
   `FrameRate`, `SampleAspectRatio` as a `Rational` newtype), stream-
-  descriptor metadata (`FieldOrder`, `StereoMode` — both with
-  lossless `Unknown(u32)`), `BayerPattern` for color-filter-array
+  descriptor metadata (`FieldOrder`, `StereoMode` — both with the
+  `Other(SmolStr)` escape), `BayerPattern` for color-filter-array
   description, the runtime-tagged `VideoFrame<P, B>`, and the
   orthogonal `TimestampedFrame<F>` wrapper bundling
   `mediatime::Timestamp` PTS + duration around any inner frame
@@ -119,15 +119,16 @@ speak to without agreeing on anything heavier.
   - Open codec / format enums (`codec::*`, `container::Format`,
     `subtitle::Format`, `audio::{ChannelLayout, ContainerFormat}`) — the
     `as_str()` slug, unknown slugs ride `Other`.
-  - FFmpeg-coded enums with an `Unknown(u32)` arm (colour, pixel-format,
-    frame coded enums, `TrackDisposition`) — the `to_u32()` integer;
-    unknown *codes* round-trip via `Unknown` (no slug form).
+  - The FFmpeg-coded name vocabularies (colour, pixel-format, frame coded
+    enums, `audio::SampleFormat`) — the same `as_str()` slug. They carry
+    the same `Other(SmolStr)` escape at the `alloc` tier, so an
+    unenumerated *name* round-trips; at the no-alloc tier they are closed
+    and an unrecognised slug is a serde error.
+  - `disposition::TrackDisposition` — the `to_u32()` integer. It is a bit
+    set, not a name vocabulary, so a number is its faithful spelling.
   - Strictly-closed coded enums (`subtitle::TrackOrigin`,
     `audio::BitRateMode`) — the `to_u32()` integer, but unknown codes are
     **rejected** as serde errors rather than collapsing to the default.
-  - `audio::SampleFormat` (both `Unknown(u32)` and `Other(SmolStr)`) —
-    bespoke: human-readable formats emit a string for named/`Other` and a
-    number for `Unknown`; binary formats use a tagged `{Code, Slug}` wire.
   - `lang::Language` — its BCP-47 string. Validated structs (`GeoLocation`
     / `Fingerprint` / `CoverArt`) deserialize through their checking
     constructors.
@@ -215,11 +216,14 @@ mediaframe = { version = "0.2", default-features = false }
 mediaframe = { version = "0.2", default-features = false, features = ["alloc"] }
 ```
 
-The `color`, `cfa`, and `pixel_format` modules work without `alloc`
-(pure enums / `Copy` types). The `codec` module is gated on
-`any(feature = "std", feature = "alloc")` because of its
-`Other(SmolStr)` arm. Per-family `frame` / `source` features work
-under `no_std + alloc`.
+The `color`, `frame`, and `pixel_format` modules work without `alloc`
+— but at that tier their vocabularies are **closed**: the
+`Other(SmolStr)` escape needs a heap, so it is gated on
+`any(feature = "std", feature = "alloc")` and an unrecognised slug is
+*rejected* rather than carried. An error beats a wrong value. The
+`codec`, `container`, `audio`, `subtitle`, `capture` and `lang`
+modules are gated whole on the same pair. Per-family `frame` /
+`source` features work under `no_std` at every tier.
 
 ## xtask
 
@@ -234,9 +238,10 @@ under `no_std + alloc`.
 - `ffmpeg-codecs.txt` — every codec identifier under media types
   `video` / `audio` / `subtitle` from `libavcodec/codec_desc.c`.
 
-`cargo xtask gen-codec` regenerates `src/codec.rs` from
-`ffmpeg-codecs.txt` — one `VideoCodec` / `AudioCodec` /
-`SubtitleCodec` enum variant per FFmpeg codec.
+`cargo xtask gen-codec` regenerates `src/codec/mod.rs` and its sibling
+`src/codec/tests.rs` from `ffmpeg-codecs.txt` — one `VideoCodec` /
+`AudioCodec` / `SubtitleCodec` enum variant per FFmpeg codec, plus the
+suite that round-trips every one of them.
 
 `cargo xtask check` diffs the vendored tables against the in-tree
 enums and fails on any missing variant or numbering drift:

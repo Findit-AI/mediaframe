@@ -368,6 +368,145 @@ impl Dimensions {
   pub const fn is_zero(&self) -> bool {
     self.width == 0 && self.height == 0
   }
+
+  /// The **storage** aspect ratio `width / height`, exact and
+  /// unreduced.
+  ///
+  /// This is the raster's own shape, ignoring pixel geometry. Compose
+  /// it with a [`SampleAspectRatio`] through [`Self::display_size`] to
+  /// get what a viewer actually sees.
+  ///
+  /// [`None`] when `height == 0`: the ratio is undefined, and
+  /// [`Dimensions::default`] is `0×0`, so that is an ordinary state
+  /// rather than an exceptional one. Mirrors [`Rational::try_new`] —
+  /// the same invariant (`den > 0`) at the same altitude.
+  ///
+  /// Like [`Rational`] generally the result is **not** reduced to
+  /// lowest terms: `1920×1080` reads back as `1920/1080`, not `16/9`.
+  ///
+  /// ```
+  /// use mediaframe::frame::Dimensions;
+  ///
+  /// let r = Dimensions::new(1920, 1080).aspect_ratio().unwrap();
+  /// assert_eq!(r.num(), 1920);
+  /// assert_eq!(r.den().get(), 1080);
+  /// assert!(Dimensions::default().aspect_ratio().is_none());
+  /// ```
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn aspect_ratio(&self) -> Option<Rational> {
+    match core::num::NonZeroI64::new(self.height as i64) {
+      Some(den) => Rational::try_new(self.width as i64, den),
+      None => None,
+    }
+  }
+
+  /// Applies a [`SampleAspectRatio`] to these **coded** dimensions,
+  /// returning the size the picture occupies in *square* pixels.
+  ///
+  /// A SAR is a pixel's display width over its display height, so it
+  /// scales the horizontal axis and leaves the vertical one alone —
+  /// FFmpeg's `scale=iw*sar:ih` / `setsar` convention, and the meaning
+  /// of ISO/IEC 14496-12 `pasp`. Height comes back unchanged, so the
+  /// derivation never discards detail.
+  ///
+  /// # Rounding
+  ///
+  /// `width × num / den` is rounded **half away from zero**, matching
+  /// FFmpeg's `av_rescale` — `av_rescale_rnd` with `AV_ROUND_NEAR_INF`,
+  /// which computes `(a * b + c / 2) / c`. The intermediate product is
+  /// taken in `i128`, so no representable input can overflow it.
+  ///
+  /// [`None`] in exactly two cases:
+  ///
+  /// - `sar.num() == 0`. That is FFmpeg's spelling of an *unknown*
+  ///   pixel aspect (see [`Rational::is_zero`]), and there is no
+  ///   display size to derive from it. [`SampleAspectRatio`]'s own
+  ///   contract asks callers to normalise it to the `1:1` default
+  ///   before construction — do that first if the square-pixel reading
+  ///   is what you want.
+  /// - the derived width exceeds [`u32::MAX`], which [`Dimensions`]
+  ///   cannot hold.
+  ///
+  /// ```
+  /// use core::num::NonZeroI64;
+  ///
+  /// use mediaframe::frame::{Dimensions, SampleAspectRatio};
+  ///
+  /// // ITU-R BT.601 NTSC 16:9: 720×480 at SAR 40:33 displays as
+  /// // 873×480 — (720 × 40 + 16) / 33 = 873.2… → 873.
+  /// let coded = Dimensions::new(720, 480);
+  /// let sar = SampleAspectRatio::new(40, NonZeroI64::new(33).unwrap());
+  /// assert_eq!(coded.display_size(sar), Some(Dimensions::new(873, 480)));
+  ///
+  /// // Square pixels are the identity.
+  /// assert_eq!(coded.display_size(SampleAspectRatio::default()), Some(coded));
+  /// ```
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn display_size(&self, sar: SampleAspectRatio) -> Option<Self> {
+    let num = sar.num() as i128;
+    if num == 0 {
+      return None;
+    }
+    let den = sar.den().get() as i128;
+    // `av_rescale`'s AV_ROUND_NEAR_INF: `(a * b + c / 2) / c`. Both
+    // operands are non-negative here, so that is round-half-up.
+    let scaled = (self.width as i128 * num + den / 2) / den;
+    if scaled > u32::MAX as i128 {
+      return None;
+    }
+    Some(Self::new(scaled as u32, self.height))
+  }
+
+  /// Whether `rect` lies entirely inside the raster these dimensions
+  /// describe.
+  ///
+  /// The predicate is the whole definition —
+  /// `rect.x + rect.width <= self.width`, and the same on the vertical
+  /// axis — evaluated with checked addition, so an origin plus extent
+  /// that overflows `u32` is simply not contained rather than wrapping
+  /// into a false positive.
+  ///
+  /// Three boundary cases fall out of that one formula rather than
+  /// being special-cased:
+  ///
+  /// - **Flush is inside.** A rect ending exactly on the edge
+  ///   (`x + width == self.width`) is contained: the raster's columns
+  ///   are `0..width`, and such a rect touches column `width - 1` last.
+  /// - **One pixel over is outside.**
+  /// - **An empty rect is contained wherever its origin is.** A zero
+  ///   width and/or height reduces the test to `x <= self.width &&
+  ///   y <= self.height`, so [`Rect::default`] is inside every
+  ///   `Dimensions` — including [`Dimensions::default`]. An empty
+  ///   rectangle covers no pixel, so it has no pixel that could fall
+  ///   outside.
+  ///
+  /// Nothing in this crate enforces the relation: [`VideoFrame`]'s
+  /// visible-rect builders and setters assign whatever they are given,
+  /// deliberately, because a descriptor is usually assembled field by
+  /// field and the coded size may not be set yet. This is the check to
+  /// run once the pair is complete.
+  ///
+  /// ```
+  /// use mediaframe::frame::{Dimensions, Rect};
+  ///
+  /// let coded = Dimensions::new(1920, 1080);
+  /// // 480 + 1440 == 1920: flush with the right edge, so inside.
+  /// assert!(coded.contains(&Rect::new(480, 0, 1440, 1080)));
+  /// // 481 + 1440 == 1921: one column past it.
+  /// assert!(!coded.contains(&Rect::new(481, 0, 1440, 1080)));
+  /// // An empty rect covers no pixel, so it is inside.
+  /// assert!(coded.contains(&Rect::default()));
+  /// ```
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn contains(&self, rect: &Rect) -> bool {
+    match (
+      rect.x().checked_add(rect.width()),
+      rect.y().checked_add(rect.height()),
+    ) {
+      (Some(right), Some(bottom)) => right <= self.width && bottom <= self.height,
+      _ => false,
+    }
+  }
 }
 
 impl core::fmt::Display for Dimensions {
@@ -376,27 +515,30 @@ impl core::fmt::Display for Dimensions {
   }
 }
 
+/// The error [`Dimensions`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed; the rejected input is deliberately not retained.
+/// `#[non_exhaustive]` keeps it constructible only here, so it can grow
+/// structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a WIDTHxHEIGHT dimension pair")]
+#[non_exhaustive]
+pub struct ParseDimensionsError;
+
 impl core::str::FromStr for Dimensions {
-  type Err = crate::parse::ParseError;
+  type Err = ParseDimensionsError;
 
   /// Parses the `WIDTHxHEIGHT` form [`Display`](core::fmt::Display)
   /// renders (`"1920x1080"`).
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) unless the input
-  /// is exactly two `u32` values separated by a single `x`.
+  /// Returns [`ParseDimensionsError`] unless the input is exactly two
+  /// `u32` values separated by a single `x`.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    const TY: &str = "Dimensions";
-    let (w, h) = s
-      .split_once('x')
-      .ok_or(crate::parse::ParseError::malformed(TY))?;
-    let width = w
-      .parse()
-      .map_err(|_| crate::parse::ParseError::malformed(TY))?;
-    let height = h
-      .parse()
-      .map_err(|_| crate::parse::ParseError::malformed(TY))?;
+    let (w, h) = s.split_once('x').ok_or(ParseDimensionsError)?;
+    let width = w.parse().map_err(|_| ParseDimensionsError)?;
+    let height = h.parse().map_err(|_| ParseDimensionsError)?;
     Ok(Self::new(width, height))
   }
 }
@@ -508,6 +650,28 @@ impl Rect {
     self.height = h;
     self
   }
+
+  /// The rectangle's own aspect ratio `width / height`, exact and
+  /// unreduced — [`Dimensions::aspect_ratio`] over the visible
+  /// subregion rather than the coded raster.
+  ///
+  /// The origin does not enter into it. [`None`] when `height == 0`,
+  /// for the same reason as [`Dimensions::aspect_ratio`].
+  ///
+  /// ```
+  /// use mediaframe::frame::Rect;
+  ///
+  /// // A 1440×1080 crop out of a 1920×1080 frame is 4:3 of itself.
+  /// let r = Rect::new(240, 0, 1440, 1080).aspect_ratio().unwrap();
+  /// assert_eq!((r.num(), r.den().get()), (1440, 1080));
+  /// ```
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn aspect_ratio(&self) -> Option<Rational> {
+    match core::num::NonZeroI64::new(self.height as i64) {
+      Some(den) => Rational::try_new(self.width as i64, den),
+      None => None,
+    }
+  }
 }
 
 /// Display rotation applied to the decoded picture before presentation.
@@ -518,15 +682,21 @@ impl Rect {
 /// WebCodecs `VideoFrame` rotation attribute. Only the four
 /// axis-aligned multiples of 90° are representable — every container
 /// rotation tag in practice is one of these. Any other / future /
-/// corrupt wire value is preserved verbatim as [`Self::Unknown`]
-/// rather than silently collapsed to a valid rotation (mirrors the
-/// lossless `Unknown(u32)` convention of the colour enums).
+/// corrupt wire value is **rejected** by [`Self::from_u32`] rather than
+/// silently collapsed to a valid rotation; a *name* this build does not
+/// enumerate is carried verbatim as [`Self::Other`], the crate-wide
+/// extension idiom.
 ///
 /// The angle is the **clockwise** rotation to apply for display
 /// (matching WebCodecs' `rotation`); callers normalising FFmpeg's
 /// counter-clockwise convention negate accordingly. [`Self::D0`] is
 /// the default (no rotation / square presentation).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -535,10 +705,6 @@ impl Rect {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::rotation")
 )]
 pub enum Rotation {
-  /// Unknown / unrecognised rotation wire value. The wrapped `u32`
-  /// is the original value passed to [`Self::from_u32`] — preserved
-  /// so the round-trip is lossless (no silent collapse to `D0`).
-  Unknown(u32),
   /// No rotation.
   #[default]
   D0,
@@ -548,54 +714,91 @@ pub enum Rotation {
   D180,
   /// 270° clockwise (= 90° counter-clockwise).
   D270,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Rotation {
   /// Degree string for this rotation (`"0"` / `"90"` / `"180"` /
-  /// `"270"`); [`Self::Unknown`] renders as `"unknown"`.
+  /// `"270"`); [`Self::Other`] renders the name it carries.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
       Self::D0 => "0",
       Self::D90 => "90",
       Self::D180 => "180",
       Self::D270 => "270",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
   /// Stable `u32` wire id: `0`/`1`/`2`/`3` for
-  /// `D0`/`D90`/`D180`/`D270`; [`Self::Unknown`] carries its
-  /// original value through unchanged so `from_u32(to_u32(x)) == x`
-  /// for every unrecognised `x`. Stable and append-only.
+  /// `D0`/`D90`/`D180`/`D270`. Stable and append-only.
+  ///
+  /// [`None`] for [`Self::Other`]: it names a rotation this build does
+  /// not enumerate, and there is no id to invent for it.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::D0 => 0,
       Self::D90 => 1,
       Self::D180 => 2,
       Self::D270 => 3,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the stable `u32` wire id produced by
-  /// [`Self::to_u32`]. Unrecognised values are preserved as
-  /// [`Self::Unknown`] (lossless) rather than mapped to a default.
+  /// [`Self::to_u32`]. [`None`] for an unrecognised value — never a
+  /// silent collapse to a default rotation.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       0 => Self::D0,
       1 => Self::D90,
       2 => Self::D180,
       3 => Self::D270,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
+/// The error [`Rotation`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a rotation")]
+#[non_exhaustive]
+pub struct ParseRotationError;
+
 impl core::str::FromStr for Rotation {
-  type Err = crate::parse::ParseError;
+  type Err = ParseRotationError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -603,17 +806,24 @@ impl core::str::FromStr for Rotation {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseRotationError`] only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
-      "0" => Self::D0,
-      "90" => Self::D90,
-      "180" => Self::D180,
-      "270" => Self::D270,
-      _ => return Err(crate::parse::ParseError::unrecognised("Rotation")),
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    Ok(match folded {
+      b"0" => Self::D0,
+      b"90" => Self::D90,
+      b"180" => Self::D180,
+      b"270" => Self::D270,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
+      _ => return Err(ParseRotationError),
     })
   }
 }
@@ -754,7 +964,7 @@ impl core::fmt::Display for SampleAspectRatio {
 }
 
 impl core::str::FromStr for SampleAspectRatio {
-  type Err = crate::parse::ParseError;
+  type Err = ParseSampleAspectRatioError;
 
   /// Parses the `NUM:DEN` form [`Display`](core::fmt::Display) renders
   /// (`"40:33"`). The separator is a colon, not the `/` [`Rational`]
@@ -763,11 +973,13 @@ impl core::str::FromStr for SampleAspectRatio {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) when the input is
-  /// not two `i64` values separated by a single `:`, or when the pair
-  /// violates [`Rational::try_new`]'s invariant (`num >= 0`, `den > 0`).
+  /// Returns [`ParseSampleAspectRatioError`] when the input is not two
+  /// `i64` values separated by a single `:`, or when the pair violates
+  /// [`Rational::try_new`]'s invariant (`num >= 0`, `den > 0`).
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    parse_ratio(s, ':', "SampleAspectRatio").map(Self)
+    parse_ratio(s, ':')
+      .map(Self)
+      .map_err(|kind| ParseSampleAspectRatioError { kind })
   }
 }
 
@@ -1007,33 +1219,88 @@ impl core::fmt::Display for Rational {
 /// Splits `NUM<sep>DEN` and runs the pair through [`Rational::try_new`], so
 /// parsing cannot become a second construction path that mints a ratio the
 /// constructor would reject.
-fn parse_ratio(s: &str, sep: char, ty: &'static str) -> Result<Rational, crate::parse::ParseError> {
-  let (n, d) = s
-    .split_once(sep)
-    .ok_or(crate::parse::ParseError::malformed(ty))?;
-  let num: i64 = n
-    .parse()
-    .map_err(|_| crate::parse::ParseError::malformed(ty))?;
-  let den: i64 = d
-    .parse()
-    .map_err(|_| crate::parse::ParseError::malformed(ty))?;
-  let den = core::num::NonZeroI64::new(den).ok_or(crate::parse::ParseError::out_of_range(ty))?;
-  Rational::try_new(num, den).ok_or(crate::parse::ParseError::out_of_range(ty))
+/// Why a ratio spelling was rejected.
+///
+/// Public because the two cases are genuinely different: a caller
+/// forwarding user input wants to say "that is not a ratio" for the first
+/// and "that ratio is not representable" for the second.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum RatioParseKind {
+  /// The input does not have the shape at all — no separator, a
+  /// non-numeric component, or trailing text.
+  Malformed,
+  /// The input parsed, but the pair violates [`Rational::try_new`]'s
+  /// invariant (`num >= 0`, `den > 0`).
+  OutOfRange,
+}
+
+impl core::fmt::Display for RatioParseKind {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    f.write_str(match self {
+      Self::Malformed => "malformed",
+      Self::OutOfRange => "value out of range",
+    })
+  }
+}
+
+/// The error [`Rational`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Carries [`RatioParseKind`] — unlike the name vocabularies, a ratio can
+/// fail for two reasons a caller reports differently. The rejected input
+/// itself is not retained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a NUM/DEN rational: {kind}")]
+pub struct ParseRationalError {
+  kind: RatioParseKind,
+}
+
+impl ParseRationalError {
+  /// Why the input was rejected.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn kind(&self) -> RatioParseKind {
+    self.kind
+  }
+}
+
+/// The error [`SampleAspectRatio`]'s [`FromStr`](core::str::FromStr)
+/// returns. Same two cases as [`ParseRationalError`], over the `NUM:DEN`
+/// spelling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a NUM:DEN sample aspect ratio: {kind}")]
+pub struct ParseSampleAspectRatioError {
+  kind: RatioParseKind,
+}
+
+impl ParseSampleAspectRatioError {
+  /// Why the input was rejected.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn kind(&self) -> RatioParseKind {
+    self.kind
+  }
+}
+
+fn parse_ratio(s: &str, sep: char) -> Result<Rational, RatioParseKind> {
+  let (n, d) = s.split_once(sep).ok_or(RatioParseKind::Malformed)?;
+  let num: i64 = n.parse().map_err(|_| RatioParseKind::Malformed)?;
+  let den: i64 = d.parse().map_err(|_| RatioParseKind::Malformed)?;
+  let den = core::num::NonZeroI64::new(den).ok_or(RatioParseKind::OutOfRange)?;
+  Rational::try_new(num, den).ok_or(RatioParseKind::OutOfRange)
 }
 
 impl core::str::FromStr for Rational {
-  type Err = crate::parse::ParseError;
+  type Err = ParseRationalError;
 
   /// Parses the `NUM/DEN` form [`Display`](core::fmt::Display) renders
   /// (`"30000/1001"`).
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) when the input is
-  /// not two `i64` values separated by a single `/`, or when the pair
-  /// violates [`Rational::try_new`]'s invariant (`num >= 0`, `den > 0`).
+  /// Returns [`ParseRationalError`] when the input is not two `i64`
+  /// values separated by a single `/`, or when the pair violates
+  /// [`Rational::try_new`]'s invariant (`num >= 0`, `den > 0`).
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    parse_ratio(s, '/', "Rational")
+    parse_ratio(s, '/').map_err(|kind| ParseRationalError { kind })
   }
 }
 
@@ -1149,13 +1416,19 @@ impl FrameRate {
 /// `AV_FIELD_PROGRESSIVE = 1`, `AV_FIELD_TT = 2`,
 /// `AV_FIELD_BB = 3`, `AV_FIELD_TB = 4`, `AV_FIELD_BT = 5`. Any
 /// other / future / corrupt wire value is preserved verbatim as
-/// [`Self::Unknown`] rather than collapsed (mirrors the lossless
-/// `Unknown(u32)` convention of [`Rotation`] / the colour enums).
+/// [`None`] from [`Self::from_u32`] rather than collapsed; a *name*
+/// this build does not enumerate rides [`Self::Other`].
 ///
 /// FFmpeg's own `AV_FIELD_UNKNOWN` sentinel is code `0`, so the
-/// [`Default`] is `Unknown(0)` — the same default-is-`Unknown(0)`
-/// precedent as [`PixelFormat`](crate::pixel_format::PixelFormat).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+/// [`Default`] is the named [`Self::Unknown`] — the same
+/// FFmpeg-names-its-own-absence precedent as
+/// [`PixelFormat::None`](crate::pixel_format::PixelFormat::None).
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -1164,11 +1437,14 @@ impl FrameRate {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::field_order")
 )]
 pub enum FieldOrder {
-  /// Unknown / unrecognised field-order wire value. The wrapped
-  /// `u32` is the original value passed to [`Self::from_u32`] —
-  /// preserved so the round-trip is lossless. Also the [`Default`]
-  /// (`Unknown(0)`), since FFmpeg's `AV_FIELD_UNKNOWN` is code `0`.
-  Unknown(u32),
+  /// Field order not known — FFmpeg's own `AV_FIELD_UNKNOWN` (code `0`),
+  /// and the [`Default`].
+  ///
+  /// A **named** member of the FFmpeg vocabulary, not an escape arm: it
+  /// carries no payload, owns the slug `"unknown"`, and round-trips
+  /// exactly. "The container did not say" is a field order a stream can
+  /// state, and it is the state a freshly-defaulted descriptor is in.
+  Unknown,
   /// Progressive (not interlaced) — `AV_FIELD_PROGRESSIVE`.
   Progressive,
   /// Top coded first, top displayed first — `AV_FIELD_TT`.
@@ -1179,68 +1455,107 @@ pub enum FieldOrder {
   Tb,
   /// Bottom coded first, top displayed first — `AV_FIELD_BT`.
   Bt,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for FieldOrder {
-  /// `Unknown(0)` — FFmpeg's `AV_FIELD_UNKNOWN` is code `0`.
+  /// [`Self::Unknown`] — FFmpeg's `AV_FIELD_UNKNOWN`, code `0`.
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn default() -> Self {
-    Self::Unknown(0)
+    Self::Unknown
   }
 }
 
 impl FieldOrder {
   /// Lowercase slug for this field order (`"progressive"` / `"tt"` /
-  /// `"bb"` / `"tb"` / `"bt"`); [`Self::Unknown`] renders as
-  /// `"unknown"`.
+  /// `"bb"` / `"tb"` / `"bt"`); [`Self::Unknown`] is FFmpeg's own named
+  /// `"unknown"`, and [`Self::Other`] renders the name it carries.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
+      Self::Unknown => "unknown",
       Self::Progressive => "progressive",
       Self::Tt => "tt",
       Self::Bb => "bb",
       Self::Tb => "tb",
       Self::Bt => "bt",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
   /// Stable `u32` wire id = the FFmpeg `AVFieldOrder` code
-  /// (`Unknown`→its carried value, `Progressive`=1, `Tt`=2, `Bb`=3,
-  /// `Tb`=4, `Bt`=5). [`Self::Unknown`] carries its original value
-  /// through unchanged so `from_u32(to_u32(x)) == x` for every
-  /// unrecognised `x`.
+  /// (`Unknown`=0, `Progressive`=1, `Tt`=2, `Bb`=3, `Tb`=4, `Bt`=5).
+  ///
+  /// [`None`] for [`Self::Other`]: FFmpeg has no code for a name it
+  /// does not know.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
+      Self::Unknown => 0,
       Self::Progressive => 1,
       Self::Tt => 2,
       Self::Bb => 3,
       Self::Tb => 4,
       Self::Bt => 5,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the FFmpeg `AVFieldOrder` code produced by
-  /// [`Self::to_u32`]. The canonical `AV_FIELD_UNKNOWN` code `0`
-  /// (and any other unrecognised id) maps to [`Self::Unknown`]
-  /// carrying the original value, so the round-trip is lossless.
+  /// [`Self::to_u32`]. Code `0` is FFmpeg's own `AV_FIELD_UNKNOWN` and
+  /// decodes to the named [`Self::Unknown`]; any other unrecognised id
+  /// yields [`None`].
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
+      0 => Self::Unknown,
       1 => Self::Progressive,
       2 => Self::Tt,
       3 => Self::Bb,
       4 => Self::Tb,
       5 => Self::Bt,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
+/// The error [`FieldOrder`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a field-order name")]
+#[non_exhaustive]
+pub struct ParseFieldOrderError;
+
 impl core::str::FromStr for FieldOrder {
-  type Err = crate::parse::ParseError;
+  type Err = ParseFieldOrderError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -1248,18 +1563,26 @@ impl core::str::FromStr for FieldOrder {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseFieldOrderError`] only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
-      "progressive" => Self::Progressive,
-      "tt" => Self::Tt,
-      "bb" => Self::Bb,
-      "tb" => Self::Tb,
-      "bt" => Self::Bt,
-      _ => return Err(crate::parse::ParseError::unrecognised("FieldOrder")),
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    Ok(match folded {
+      b"unknown" => Self::Unknown,
+      b"progressive" => Self::Progressive,
+      b"tt" => Self::Tt,
+      b"bb" => Self::Bb,
+      b"tb" => Self::Tb,
+      b"bt" => Self::Bt,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
+      _ => return Err(ParseFieldOrderError),
     })
   }
 }
@@ -1273,16 +1596,21 @@ impl core::str::FromStr for FieldOrder {
 /// `AV_STEREO3D_FRAMESEQUENCE = 3`, `AV_STEREO3D_CHECKERBOARD = 4`,
 /// `AV_STEREO3D_SIDEBYSIDE_QUINCUNX = 5`, `AV_STEREO3D_LINES = 6`,
 /// `AV_STEREO3D_COLUMNS = 7`. Any other / future / corrupt wire
-/// value is preserved verbatim as [`Self::Unknown`] (lossless
-/// `Unknown(u32)` convention shared with [`Rotation`] / the colour
-/// enums).
+/// value is **rejected** by [`Self::from_u32`]; a *name* this build
+/// does not enumerate rides [`Self::Other`], the crate-wide extension
+/// idiom shared with [`Rotation`] / the colour enums.
 ///
 /// The [`Default`] is [`Self::Mono`] — a *real* code (value `0`,
 /// FFmpeg `AV_STEREO3D_2D`, plain monoscopic video), so the default
-/// is a named variant rather than `Unknown(0)` (the colour-enum
-/// named-default precedent, e.g. `DcpTargetGamut::DciP3`), distinct
-/// from [`FieldOrder`] whose `0` *is* FFmpeg's UNKNOWN sentinel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
+/// is a real mode rather than an absence (the colour-enum named-default
+/// precedent, e.g. `DcpTargetGamut::DciP3`), distinct from
+/// [`FieldOrder`] whose `0` *is* FFmpeg's UNKNOWN sentinel.
+///
+/// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
+/// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
+/// **closed** and an unrecognised slug is rejected rather than
+/// collapsed onto a named variant — an error beats a wrong value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
@@ -1291,10 +1619,6 @@ impl core::str::FromStr for FieldOrder {
   quickcheck(arbitrary = "crate::quickcheck_helpers::coded::stereo_mode")
 )]
 pub enum StereoMode {
-  /// Unknown / unrecognised wire value. The wrapped `u32` is the
-  /// original value passed to [`Self::from_u32`] — preserved so the
-  /// round-trip is lossless.
-  Unknown(u32),
   /// Plain monoscopic (non-stereo) video — `AV_STEREO3D_2D` (code
   /// `0`). The [`Default`].
   Mono,
@@ -1312,12 +1636,23 @@ pub enum StereoMode {
   Lines,
   /// Interleaved by columns — `AV_STEREO3D_COLUMNS`.
   Columns,
+  /// A slug this vocabulary does not enumerate — carried verbatim,
+  /// ASCII-folded to lowercase by the parse gate. The crate-wide
+  /// extension idiom: a downstream backend naming a value mediaframe
+  /// has never heard of keeps that **name**, and it round-trips through
+  /// `as_str` / `FromStr` / `serde` intact.
+  ///
+  /// Requires the `alloc` feature (`std` includes it) — the payload is
+  /// heap-capable. At the no-alloc tier the vocabulary is closed and an
+  /// unrecognised slug is rejected instead.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  Other(SmolStr),
 }
 
 impl Default for StereoMode {
   /// [`Self::Mono`] — FFmpeg `AV_STEREO3D_2D` (code `0`), plain
-  /// monoscopic video. A named variant (not `Unknown(0)`), the
-  /// colour-enum named-default precedent.
+  /// monoscopic video — a real mode, not an absence; the colour-enum
+  /// named-default precedent.
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn default() -> Self {
     Self::Mono
@@ -1325,12 +1660,11 @@ impl Default for StereoMode {
 }
 
 impl StereoMode {
-  /// Lowercase slug for this stereo mode; [`Self::Unknown`] renders
-  /// as `"unknown"`.
+  /// Lowercase slug for this stereo mode; [`Self::Other`] renders the
+  /// name it carries.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn as_str(&self) -> &'static str {
+  pub fn as_str(&self) -> &str {
     match self {
-      Self::Unknown(_) => "unknown",
       Self::Mono => "mono",
       Self::SideBySide => "side-by-side",
       Self::TopBottom => "top-bottom",
@@ -1339,19 +1673,21 @@ impl StereoMode {
       Self::SideBySideQuincunx => "side-by-side-quincunx",
       Self::Lines => "lines",
       Self::Columns => "columns",
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(s) => s.as_str(),
     }
   }
 
   /// Stable `u32` wire id = the FFmpeg `AVStereo3DType` code
   /// (`Mono`=0, `SideBySide`=1, `TopBottom`=2, `FrameSequence`=3,
   /// `Checkerboard`=4, `SideBySideQuincunx`=5, `Lines`=6,
-  /// `Columns`=7). [`Self::Unknown`] carries its original value
-  /// through unchanged so `from_u32(to_u32(x)) == x` for every
-  /// unrecognised `x`.
+  /// `Columns`=7).
+  ///
+  /// [`None`] for [`Self::Other`]: FFmpeg has no code for a name it
+  /// does not know.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn to_u32(&self) -> u32 {
-    match self {
-      Self::Unknown(v) => *v,
+  pub const fn to_u32(&self) -> Option<u32> {
+    Some(match self {
       Self::Mono => 0,
       Self::SideBySide => 1,
       Self::TopBottom => 2,
@@ -1360,17 +1696,17 @@ impl StereoMode {
       Self::SideBySideQuincunx => 5,
       Self::Lines => 6,
       Self::Columns => 7,
-    }
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      Self::Other(_) => return None,
+    })
   }
 
   /// Decodes from the FFmpeg `AVStereo3DType` code produced by
-  /// [`Self::to_u32`]. The canonical codes map to their named
-  /// variants (so a decoded value always round-trips); any other id
-  /// maps to [`Self::Unknown`] carrying the original value, so the
-  /// round-trip is lossless.
+  /// [`Self::to_u32`]. The canonical codes map to their named variants;
+  /// any other id yields [`None`].
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn from_u32(v: u32) -> Self {
-    match v {
+  pub const fn from_u32(v: u32) -> Option<Self> {
+    Some(match v {
       0 => Self::Mono,
       1 => Self::SideBySide,
       2 => Self::TopBottom,
@@ -1379,13 +1715,36 @@ impl StereoMode {
       5 => Self::SideBySideQuincunx,
       6 => Self::Lines,
       7 => Self::Columns,
-      _ => Self::Unknown(v),
-    }
+      _ => return None,
+    })
+  }
+  /// The open escape for a slug this vocabulary does not name, ASCII-folded
+  /// to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is what
+  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
+  /// `Hash` compare names rather than spellings. Constructing the variant
+  /// directly bypasses the fold and is not the supported spelling.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
 
+/// The error [`StereoMode`]'s [`FromStr`](core::str::FromStr) returns.
+///
+/// Opaque and sealed: the input is deliberately not retained (these types
+/// are available at the crate's no-alloc tier, where there is nowhere to
+/// put an owned copy, and the input is attacker-controlled on the
+/// deserialization path). `#[non_exhaustive]` keeps it constructible only
+/// here, so it can grow structure later without breaking callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("not a stereo-mode name")]
+#[non_exhaustive]
+pub struct ParseStereoModeError;
+
 impl core::str::FromStr for StereoMode {
-  type Err = crate::parse::ParseError;
+  type Err = ParseStereoModeError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
   /// inverse of [`Display`](core::fmt::Display) for every **named**
@@ -1393,21 +1752,28 @@ impl core::str::FromStr for StereoMode {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseError`](crate::parse::ParseError) for any other
-  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
-  /// string for every payload, so there is no code to recover; use
-  /// [`Self::from_u32`] when the numeric id is what you hold.
+  /// Returns [`ParseStereoModeError`] only at the
+  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
+  /// parse is **total**: a slug this type does not name rides
+  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(match s {
-      "mono" => Self::Mono,
-      "side-by-side" => Self::SideBySide,
-      "top-bottom" => Self::TopBottom,
-      "frame-sequence" => Self::FrameSequence,
-      "checkerboard" => Self::Checkerboard,
-      "side-by-side-quincunx" => Self::SideBySideQuincunx,
-      "lines" => Self::Lines,
-      "columns" => Self::Columns,
-      _ => return Err(crate::parse::ParseError::unrecognised("StereoMode")),
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    // An input too long to fold cannot name a variant either, so the
+    // unfolded original falls through to the miss arm.
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    Ok(match folded {
+      b"mono" => Self::Mono,
+      b"side-by-side" => Self::SideBySide,
+      b"top-bottom" => Self::TopBottom,
+      b"frame-sequence" => Self::FrameSequence,
+      b"checkerboard" => Self::Checkerboard,
+      b"side-by-side-quincunx" => Self::SideBySideQuincunx,
+      b"lines" => Self::Lines,
+      b"columns" => Self::Columns,
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      _ => Self::other(s),
+      #[cfg(not(any(feature = "std", feature = "alloc")))]
+      _ => return Err(ParseStereoModeError),
     })
   }
 }
@@ -1497,7 +1863,7 @@ impl<B> Plane<B> {
 /// **No timestamp.** PTS / duration ride on the orthogonal
 /// [`TimestampedFrame<F>`] wrapper so the pixel-data layer stays
 /// independent of the timekeeping layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VideoFrame<P, B> {
   dimensions: Dimensions,
   visible_rect: Option<Rect>,
@@ -1557,6 +1923,10 @@ impl<P, B> VideoFrame<P, B> {
   }
 
   /// Returns the visible / clean-aperture rectangle, if any.
+  ///
+  /// Not checked against [`Self::dimensions`] on assignment — a
+  /// descriptor is usually filled in field by field. Check the pair
+  /// with [`Dimensions::contains`] once both are set.
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn visible_rect(&self) -> Option<Rect> {
     self.visible_rect
@@ -1592,8 +1962,8 @@ impl<P, B> VideoFrame<P, B> {
 
   /// Returns the color metadata.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn color(&self) -> crate::color::Info {
-    self.color
+  pub fn color(&self) -> crate::color::Info {
+    self.color.clone()
   }
 
   /// Sets the visible rect to `Some(v)` (consuming builder).
@@ -1615,7 +1985,7 @@ impl<P, B> VideoFrame<P, B> {
   /// Sets the color metadata (consuming builder).
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_color(mut self, v: crate::color::Info) -> Self {
+  pub fn with_color(mut self, v: crate::color::Info) -> Self {
     self.color = v;
     self
   }
@@ -1643,7 +2013,7 @@ impl<P, B> VideoFrame<P, B> {
 
   /// Sets the color metadata in place.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_color(&mut self, v: crate::color::Info) -> &mut Self {
+  pub fn set_color(&mut self, v: crate::color::Info) -> &mut Self {
     self.color = v;
     self
   }
@@ -1806,6 +2176,8 @@ mod subsampled_high_bit_planar;
 use derive_more::{Display, IsVariant};
 #[cfg(feature = "yuv-planar")]
 pub use planar_8bit::*;
+#[cfg(any(feature = "std", feature = "alloc"))]
+use smol_str::SmolStr;
 #[cfg(feature = "yuv-planar")]
 pub use subsampled_high_bit_planar::*;
 
@@ -1945,669 +2317,16 @@ pub use pal8::*;
 
 // === Tests ===
 
+// The geometry *projections* keep their own suite: they are about
+// derived shape (aspect ratio, display size), not about the primitives'
+// construction and accessors that `tests_primitives` covers.
 #[cfg(test)]
-mod tests_primitives {
-  use super::*;
-
-  #[test]
-  fn dimensions_construction_and_accessors() {
-    let d = Dimensions::new(1920, 1080);
-    assert_eq!(d.width(), 1920);
-    assert_eq!(d.height(), 1080);
-    assert!(!d.is_zero());
-    assert!(Dimensions::default().is_zero());
-  }
-
-  #[test]
-  fn dimensions_builder() {
-    let d = Dimensions::new(0, 0).with_width(640).with_height(480);
-    assert_eq!(d.width(), 640);
-    assert_eq!(d.height(), 480);
-  }
-
-  #[cfg(feature = "std")]
-  #[test]
-  fn dimensions_display() {
-    assert_eq!(std::format!("{}", Dimensions::new(1920, 1080)), "1920x1080");
-  }
-
-  #[test]
-  fn rect_construction_and_accessors() {
-    let r = Rect::new(10, 20, 1280, 720);
-    assert_eq!(r.x(), 10);
-    assert_eq!(r.y(), 20);
-    assert_eq!(r.width(), 1280);
-    assert_eq!(r.height(), 720);
-  }
-
-  #[test]
-  fn rect_builder_chains() {
-    let r = Rect::default()
-      .with_x(8)
-      .with_y(8)
-      .with_width(640)
-      .with_height(360);
-    assert_eq!((r.x(), r.y(), r.width(), r.height()), (8, 8, 640, 360));
-  }
-
-  #[test]
-  fn rotation_defaults_and_as_str() {
-    assert!(matches!(Rotation::default(), Rotation::D0));
-    assert_eq!(Rotation::D0.as_str(), "0");
-    assert_eq!(Rotation::D90.as_str(), "90");
-    assert_eq!(Rotation::D180.as_str(), "180");
-    assert_eq!(Rotation::D270.as_str(), "270");
-    assert!(Rotation::D90.is_d_90());
-  }
-
-  #[test]
-  fn rotation_u32_round_trip_and_unknown() {
-    for r in [
-      Rotation::D0,
-      Rotation::D90,
-      Rotation::D180,
-      Rotation::D270,
-      Rotation::Unknown(99),
-      Rotation::Unknown(4242),
-    ] {
-      assert_eq!(Rotation::from_u32(r.to_u32()), r);
-    }
-    assert_eq!(Rotation::from_u32(0), Rotation::D0);
-    assert_eq!(Rotation::from_u32(3), Rotation::D270);
-    // Unrecognised → preserved losslessly (no silent collapse to D0).
-    assert_eq!(Rotation::from_u32(99), Rotation::Unknown(99));
-    assert_eq!(Rotation::from_u32(99).to_u32(), 99);
-  }
-
-  #[test]
-  fn sample_aspect_ratio_default_is_square() {
-    let s = SampleAspectRatio::default();
-    assert_eq!(s.num(), 1);
-    assert_eq!(s.den().get(), 1);
-    assert!(s.is_square());
-  }
-
-  #[test]
-  fn sample_aspect_ratio_construction_and_builders() {
-    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
-    let s = SampleAspectRatio::new(40, nz(33));
-    assert_eq!(s.num(), 40);
-    assert_eq!(s.den().get(), 33);
-    assert!(!s.is_square());
-    let s2 = SampleAspectRatio::default().with_num(16).with_den(nz(9));
-    assert_eq!((s2.num(), s2.den().get()), (16, 9));
-    let mut s3 = SampleAspectRatio::default();
-    s3.set_num(4).set_den(nz(3));
-    assert_eq!((s3.num(), s3.den().get()), (4, 3));
-  }
-
-  #[cfg(feature = "std")]
-  #[test]
-  fn sample_aspect_ratio_display() {
-    let nz = core::num::NonZeroI64::new(11).unwrap();
-    assert_eq!(std::format!("{}", SampleAspectRatio::new(10, nz)), "10:11");
-  }
-
-  #[test]
-  fn plane_holds_owned_buffer() {
-    let p: Plane<[u8; 4]> = Plane::new([1, 2, 3, 4], 4);
-    assert_eq!(p.stride(), 4);
-    assert_eq!(p.data_ref(), &[1, 2, 3, 4]);
-    let raw = p.into_data();
-    assert_eq!(raw, [1, 2, 3, 4]);
-  }
-
-  #[test]
-  fn plane_holds_borrowed_buffer() {
-    let backing = [10u8, 20, 30, 40];
-    let p: Plane<&[u8]> = Plane::new(&backing[..], 2);
-    assert_eq!(p.stride(), 2);
-    assert_eq!(*p.data_ref(), &[10, 20, 30, 40][..]);
-  }
-
-  #[test]
-  fn plane_with_stride_builder() {
-    let p = Plane::new([0u8; 2], 0).with_stride(64);
-    assert_eq!(p.stride(), 64);
-  }
-
-  // ---------- VideoFrame -------------------------------------------------
-
-  use crate::{color::Info, pixel_format::PixelFormat};
-
-  #[test]
-  fn video_frame_construction_defaults() {
-    let planes: [Plane<&[u8]>; 4] = [
-      Plane::new(&[][..], 16),
-      Plane::new(&[][..], 8),
-      Plane::new(&[][..], 8),
-      Plane::new(&[][..], 0),
-    ];
-    let vf = VideoFrame::new(Dimensions::new(16, 16), PixelFormat::Yuv420p, planes, 3);
-    assert_eq!(vf.dimensions(), Dimensions::new(16, 16));
-    assert_eq!(vf.width(), 16);
-    assert_eq!(vf.height(), 16);
-    assert_eq!(*vf.pixel_format_ref(), PixelFormat::Yuv420p);
-    assert_eq!(vf.plane_count(), 3);
-    assert!(vf.visible_rect().is_none());
-    assert_eq!(vf.color(), Info::UNSPECIFIED);
-  }
-
-  #[test]
-  fn video_frame_planes_slice_uses_plane_count() {
-    let planes: [Plane<u32>; 4] = [
-      Plane::new(1, 0),
-      Plane::new(2, 0),
-      Plane::new(3, 0),
-      Plane::new(4, 0),
-    ];
-    let vf = VideoFrame::new(Dimensions::new(2, 2), PixelFormat::Yuv420p, planes, 2);
-    assert_eq!(vf.planes().len(), 2);
-    assert_eq!(*vf.plane(0).unwrap().data_ref(), 1);
-    assert_eq!(*vf.plane(1).unwrap().data_ref(), 2);
-    assert!(vf.plane(2).is_none());
-    assert!(vf.plane(7).is_none());
-  }
-
-  #[test]
-  #[should_panic(expected = "plane_count exceeds the fixed 4-plane array")]
-  fn video_frame_new_panics_on_plane_count_over_4() {
-    let planes: [Plane<()>; 4] = [Plane::new((), 0); 4];
-    let _ = VideoFrame::new(Dimensions::new(1, 1), PixelFormat::Yuv420p, planes, 5);
-  }
-
-  #[test]
-  fn video_frame_with_visible_rect_and_color_chain() {
-    let planes: [Plane<()>; 4] = [Plane::new((), 0); 4];
-    let vf = VideoFrame::new(Dimensions::new(8, 8), PixelFormat::Yuv420p, planes, 3)
-      .with_visible_rect(Rect::new(0, 0, 6, 6));
-    assert_eq!(vf.visible_rect(), Some(Rect::new(0, 0, 6, 6)));
-  }
-
-  // ---------- TimestampedFrame ------------------------------------------
-
-  #[test]
-  fn timestamped_frame_construction_defaults() {
-    let tf: TimestampedFrame<&'static str> = TimestampedFrame::new("payload");
-    assert!(tf.pts().is_none());
-    assert!(tf.duration().is_none());
-    assert_eq!(*tf.frame_ref(), "payload");
-  }
-
-  #[test]
-  fn timestamped_frame_into_frame_consumes() {
-    let tf = TimestampedFrame::new(42u32);
-    let raw = tf.into_frame();
-    assert_eq!(raw, 42);
-  }
-
-  #[test]
-  fn timestamped_frame_pts_builder() {
-    let tb = mediatime::Timebase::new(1, core::num::NonZeroI32::new(1000).unwrap());
-    let ts = mediatime::Timestamp::new(1000, tb);
-    let tf = TimestampedFrame::new(0u8).with_pts(ts).with_duration(ts);
-    assert_eq!(tf.pts(), Some(ts));
-    assert_eq!(tf.duration(), Some(ts));
-  }
-
-  #[test]
-  fn timestamped_frame_wraps_video_frame() {
-    let planes: [Plane<()>; 4] = [Plane::new((), 0); 4];
-    let vf = VideoFrame::new(Dimensions::new(4, 4), PixelFormat::Yuv420p, planes, 3);
-    let tf = TimestampedFrame::new(vf);
-    assert_eq!(tf.frame_ref().dimensions(), Dimensions::new(4, 4));
-  }
-
-  // ---------- Rational --------------------------------------------------
-
-  #[test]
-  fn rational_default_is_one_over_one() {
-    let r = Rational::default();
-    assert_eq!(r.num(), 1);
-    assert_eq!(r.den().get(), 1);
-    assert!(!r.is_zero());
-  }
-
-  #[test]
-  fn rational_construction_builders_and_is_zero() {
-    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
-    let r = Rational::new(30000, nz(1001));
-    assert_eq!(r.num(), 30000);
-    assert_eq!(r.den().get(), 1001);
-    assert!(!r.is_zero());
-    let z = Rational::new(0, nz(1));
-    assert!(z.is_zero());
-    let r2 = Rational::default().with_num(24).with_den(nz(1));
-    assert_eq!((r2.num(), r2.den().get()), (24, 1));
-    let mut r3 = Rational::default();
-    r3.set_num(16).set_den(nz(9));
-    assert_eq!((r3.num(), r3.den().get()), (16, 9));
-  }
-
-  #[cfg(feature = "std")]
-  #[test]
-  fn rational_display() {
-    let nz = core::num::NonZeroI64::new(1001).unwrap();
-    assert_eq!(std::format!("{}", Rational::new(30000, nz)), "30000/1001");
-  }
-
-  // ---------- Rational sign / width invariants --------------------------
-  //
-  // `num`/`den` were `u32`/`NonZeroU32`, where the types made every
-  // invariant unrepresentable. Under `i64`/`NonZeroI64` only
-  // "denominator is non-zero" is still enforced by the type; the sign
-  // half moved into `new`, so it needs pinning here.
-
-  #[test]
-  fn rational_rejects_negative_numerator() {
-    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
-    assert!(Rational::try_new(-1, nz(1)).is_none());
-    assert!(Rational::try_new(i64::MIN, nz(1)).is_none());
-    // `0` is a legal degenerate ratio (FFmpeg's "unknown" `0/1`).
-    assert!(Rational::try_new(0, nz(1)).is_some());
-  }
-
-  #[test]
-  fn rational_rejects_negative_denominator() {
-    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
-    assert!(Rational::try_new(1, nz(-1)).is_none());
-    assert!(Rational::try_new(1, nz(i64::MIN)).is_none());
-  }
-
-  #[test]
-  fn rational_zero_denominator_is_unrepresentable() {
-    // Not a runtime check in `new` — `NonZeroI64` has no zero value at
-    // all, so the state cannot be constructed to be rejected.
-    assert!(core::num::NonZeroI64::new(0).is_none());
-  }
-
-  #[test]
-  #[should_panic(expected = "rational numerator must not be negative")]
-  fn rational_new_panics_on_negative_numerator() {
-    let _ = Rational::new(-1, DEN_ONE);
-  }
-
-  #[test]
-  #[should_panic(expected = "rational denominator must be positive")]
-  fn rational_new_panics_on_negative_denominator() {
-    let nz = core::num::NonZeroI64::new(-2).unwrap();
-    let _ = Rational::new(1, nz);
-  }
-
-  #[test]
-  #[should_panic(expected = "rational numerator must not be negative")]
-  fn rational_set_num_routes_through_new() {
-    // The four mutators are the invariant hole a direct field
-    // assignment would leave open; each goes through `new`.
-    let mut r = Rational::default();
-    r.set_num(-1);
-  }
-
-  #[test]
-  #[should_panic(expected = "rational denominator must be positive")]
-  fn rational_set_den_routes_through_new() {
-    let mut r = Rational::default();
-    r.set_den(core::num::NonZeroI64::new(-3).unwrap());
-  }
-
-  #[test]
-  #[should_panic(expected = "rational numerator must not be negative")]
-  fn rational_with_num_routes_through_new() {
-    let _ = Rational::default().with_num(-1);
-  }
-
-  #[test]
-  #[should_panic(expected = "rational denominator must be positive")]
-  fn rational_with_den_routes_through_new() {
-    let _ = Rational::default().with_den(core::num::NonZeroI64::new(-3).unwrap());
-  }
-
-  #[test]
-  fn rational_accepts_i64_max_at_both_positions() {
-    let nz = core::num::NonZeroI64::new(i64::MAX).unwrap();
-    let r = Rational::new(i64::MAX, nz);
-    assert_eq!(r.num(), i64::MAX);
-    assert_eq!(r.den().get(), i64::MAX);
-  }
-
-  #[test]
-  fn rational_accepts_values_above_u32_max() {
-    // The capability the widening buys: a numerator (and denominator)
-    // the previous `u32` representation could not hold at all.
-    let big = i64::from(u32::MAX) + 1;
-    let nz = core::num::NonZeroI64::new(big).unwrap();
-    let r = Rational::new(big, nz);
-    assert_eq!(r.num(), big);
-    assert_eq!(r.den().get(), big);
-    // And through the semantic wrappers, which carry no width of their own.
-    let sar = SampleAspectRatio::new(big, nz);
-    assert_eq!((sar.num(), sar.den().get()), (big, big));
-    assert_eq!(FrameRate::new(r, false).rate(), r);
-  }
-
-  #[test]
-  fn sample_aspect_ratio_fallible_path_is_try_new_plus_from() {
-    // `SampleAspectRatio::new` panics like `Rational::new`; the
-    // fallible route is the existing `From<Rational>`.
-    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
-    let ok = Rational::try_new(40, nz(33)).map(SampleAspectRatio::from);
-    assert_eq!(ok, Some(SampleAspectRatio::new(40, nz(33))));
-    let bad = Rational::try_new(-40, nz(33)).map(SampleAspectRatio::from);
-    assert!(bad.is_none());
-  }
-
-  // ---------- SampleAspectRatio ↔ Rational interop ----------------------
-
-  #[test]
-  fn sample_aspect_ratio_rational_interop() {
-    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
-    let sar = SampleAspectRatio::new(40, nz(33));
-    let via_method: Rational = sar.as_rational();
-    let via_from: Rational = Rational::from(sar);
-    let via_into: Rational = sar.into();
-    assert_eq!(via_method, Rational::new(40, nz(33)));
-    assert_eq!(via_method, via_from);
-    assert_eq!(via_from, via_into);
-    // Default 1:1 SAR maps to the 1/1 Rational default.
-    assert_eq!(
-      SampleAspectRatio::default().as_rational(),
-      Rational::default()
-    );
-  }
-
-  #[test]
-  fn sample_aspect_ratio_rational_round_trip_both_ways() {
-    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
-    // SAR -> Rational -> SAR
-    let sar = SampleAspectRatio::new(40, nz(33));
-    let r: Rational = sar.into();
-    let back: SampleAspectRatio = r.into();
-    assert_eq!(back, sar);
-    assert_eq!(sar.rational(), r);
-    assert_eq!(sar.rational(), sar.as_rational());
-    // Rational -> SAR -> Rational
-    let r2 = Rational::new(16, nz(9));
-    let s2 = SampleAspectRatio::from(r2);
-    assert_eq!((s2.num(), s2.den().get()), (16, 9));
-    assert_eq!(Rational::from(s2), r2);
-  }
-
-  #[test]
-  fn sample_aspect_ratio_default_is_one_to_one() {
-    let d = SampleAspectRatio::default();
-    assert_eq!((d.num(), d.den().get()), (1, 1));
-    assert!(d.is_square());
-    assert_eq!(d, SampleAspectRatio::new(1, DEN_ONE));
-  }
-
-  #[test]
-  fn sample_aspect_ratio_eq_and_hash_parity() {
-    use core::hash::{Hash, Hasher};
-    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
-    let a = SampleAspectRatio::new(40, nz(33));
-    let b = SampleAspectRatio::default().with_num(40).with_den(nz(33));
-    assert_eq!(a, b);
-
-    fn h(s: &SampleAspectRatio) -> u64 {
-      // `no_std`-friendly deterministic hasher (FNV-1a).
-      struct Fnv(u64);
-      impl Hasher for Fnv {
-        fn finish(&self) -> u64 {
-          self.0
-        }
-        fn write(&mut self, bytes: &[u8]) {
-          for &x in bytes {
-            self.0 = (self.0 ^ x as u64).wrapping_mul(0x0100_0000_01b3);
-          }
-        }
-      }
-      let mut hasher = Fnv(0xcbf2_9ce4_8422_2325);
-      s.hash(&mut hasher);
-      hasher.finish()
-    }
-    assert_eq!(h(&a), h(&b));
-  }
-
-  // ---------- FrameRate -------------------------------------------------
-
-  #[test]
-  fn frame_rate_default_is_one_over_one_cfr() {
-    let fr = FrameRate::default();
-    assert_eq!(fr.rate(), Rational::default());
-    assert!(!fr.is_vfr());
-  }
-
-  #[test]
-  fn frame_rate_construction_and_builders() {
-    let nz = |n: i64| core::num::NonZeroI64::new(n).unwrap();
-    let ntsc = Rational::new(30000, nz(1001));
-    let fr = FrameRate::new(ntsc, false);
-    assert_eq!(fr.rate(), ntsc);
-    assert!(!fr.is_vfr());
-    let vfr = FrameRate::default().with_rate(ntsc).with_is_vfr();
-    assert_eq!(vfr.rate(), ntsc);
-    assert!(vfr.is_vfr());
-    let mut fr3 = FrameRate::default();
-    fr3.set_rate(Rational::new(25, nz(1))).set_is_vfr();
-    assert_eq!(fr3.rate(), Rational::new(25, nz(1)));
-    assert!(fr3.is_vfr());
-    // raw-wrapper + clear forms
-    let fr4 = FrameRate::default().maybe_is_vfr(true);
-    assert!(fr4.is_vfr());
-    let mut fr5 = FrameRate::default();
-    fr5.update_is_vfr(true);
-    assert!(fr5.is_vfr());
-    fr5.clear_is_vfr();
-    assert!(!fr5.is_vfr());
-  }
-
-  // ---------- FieldOrder ------------------------------------------------
-
-  #[test]
-  fn field_order_default_is_unknown_zero_and_as_str() {
-    assert_eq!(FieldOrder::default(), FieldOrder::Unknown(0));
-    assert_eq!(FieldOrder::Unknown(0).as_str(), "unknown");
-    assert_eq!(FieldOrder::Progressive.as_str(), "progressive");
-    assert_eq!(FieldOrder::Tt.as_str(), "tt");
-    assert_eq!(FieldOrder::Bb.as_str(), "bb");
-    assert_eq!(FieldOrder::Tb.as_str(), "tb");
-    assert_eq!(FieldOrder::Bt.as_str(), "bt");
-    assert!(FieldOrder::Progressive.is_progressive());
-  }
-
-  #[test]
-  fn field_order_u32_round_trip_and_unknown() {
-    for f in [
-      FieldOrder::Progressive,
-      FieldOrder::Tt,
-      FieldOrder::Bb,
-      FieldOrder::Tb,
-      FieldOrder::Bt,
-      FieldOrder::Unknown(0),
-      FieldOrder::Unknown(99),
-      FieldOrder::Unknown(4242),
-    ] {
-      assert_eq!(FieldOrder::from_u32(f.to_u32()), f);
-    }
-    assert_eq!(FieldOrder::from_u32(1), FieldOrder::Progressive);
-    assert_eq!(FieldOrder::from_u32(5), FieldOrder::Bt);
-    // FFmpeg's own UNKNOWN sentinel (0) decodes to Unknown(0).
-    assert_eq!(FieldOrder::from_u32(0), FieldOrder::Unknown(0));
-    assert_eq!(FieldOrder::from_u32(99), FieldOrder::Unknown(99));
-    assert_eq!(FieldOrder::from_u32(99).to_u32(), 99);
-  }
-
-  // ---------- StereoMode ------------------------------------------------
-
-  #[test]
-  fn stereo_mode_default_is_mono_and_as_str() {
-    assert_eq!(StereoMode::default(), StereoMode::Mono);
-    assert_eq!(StereoMode::Mono.as_str(), "mono");
-    assert_eq!(StereoMode::SideBySide.as_str(), "side-by-side");
-    assert_eq!(StereoMode::Columns.as_str(), "columns");
-    assert_eq!(StereoMode::Unknown(0).as_str(), "unknown");
-    assert!(StereoMode::Mono.is_mono());
-  }
-
-  #[test]
-  fn stereo_mode_u32_round_trip_and_unknown() {
-    for s in [
-      StereoMode::Mono,
-      StereoMode::SideBySide,
-      StereoMode::TopBottom,
-      StereoMode::FrameSequence,
-      StereoMode::Checkerboard,
-      StereoMode::SideBySideQuincunx,
-      StereoMode::Lines,
-      StereoMode::Columns,
-      StereoMode::Unknown(99),
-      StereoMode::Unknown(4242),
-    ] {
-      assert_eq!(StereoMode::from_u32(s.to_u32()), s);
-    }
-    assert_eq!(StereoMode::from_u32(0), StereoMode::Mono);
-    assert_eq!(StereoMode::from_u32(7), StereoMode::Columns);
-    // Unrecognised → preserved losslessly.
-    assert_eq!(StereoMode::from_u32(99), StereoMode::Unknown(99));
-    assert_eq!(StereoMode::from_u32(99).to_u32(), 99);
-  }
-
-  /// Every named variant of the three coded frame enums must survive
-  /// `as_str()` → `FromStr`, with no shared slugs.
-  #[test]
-  fn every_named_frame_enum_variant_round_trips_through_its_slug() {
-    macro_rules! sweep {
-      ($ty:ty) => {{
-        let mut named = 0usize;
-        let mut seen: [&str; 32] = [""; 32];
-        for code in 0..=1024u32 {
-          let value = <$ty>::from_u32(code);
-          if value.is_unknown() {
-            continue;
-          }
-          let slug = value.as_str();
-          assert_eq!(
-            slug.parse::<$ty>(),
-            Ok(value),
-            "{} slug {slug:?} does not parse back to {value:?}",
-            stringify!($ty)
-          );
-          for prior in seen.iter().take(named) {
-            assert_ne!(
-              *prior,
-              slug,
-              "{} has two variants spelled {slug:?}",
-              stringify!($ty)
-            );
-          }
-          seen[named] = slug;
-          named += 1;
-        }
-        assert!(
-          named > 0,
-          "{} sweep found no named variants",
-          stringify!($ty)
-        );
-      }};
-    }
-
-    sweep!(Rotation);
-    sweep!(FieldOrder);
-    sweep!(StereoMode);
-  }
-
-  #[test]
-  fn frame_enum_unknown_has_no_parseable_spelling() {
-    assert!("unknown".parse::<Rotation>().is_err());
-    assert!("unknown".parse::<FieldOrder>().is_err());
-    assert!("unknown".parse::<StereoMode>().is_err());
-    assert_eq!(
-      "not-a-rotation"
-        .parse::<Rotation>()
-        .unwrap_err()
-        .type_name(),
-      "Rotation"
-    );
-  }
-
-  /// The geometry types render an injective form, so `FromStr` is a true
-  /// inverse of `Display` for every value — not only the named ones.
-  // `std::format!` needs the allocator; these types themselves are
-  // available at the no-alloc tier, where the round trip is untestable.
-  #[cfg(any(feature = "std", feature = "alloc"))]
-  #[test]
-  fn geometry_display_round_trips_through_from_str() {
-    use core::num::NonZeroI64;
-
-    let nz = |n: i64| NonZeroI64::new(n).unwrap();
-
-    for dims in [
-      Dimensions::default(),
-      Dimensions::new(1920, 1080),
-      Dimensions::new(u32::MAX, u32::MAX),
-    ] {
-      assert_eq!(std::format!("{dims}").parse(), Ok(dims));
-    }
-
-    for ratio in [
-      Rational::default(),
-      Rational::new(30_000, nz(1001)),
-      Rational::new(0, nz(1)),
-      Rational::new(i64::MAX, nz(i64::MAX)),
-    ] {
-      assert_eq!(std::format!("{ratio}").parse(), Ok(ratio));
-    }
-
-    for sar in [
-      SampleAspectRatio::default(),
-      SampleAspectRatio::new(40, nz(33)),
-      SampleAspectRatio::new(16, nz(9)),
-    ] {
-      assert_eq!(std::format!("{sar}").parse(), Ok(sar));
-    }
-  }
-
-  /// The separators are part of each type's contract: a SAR is written
-  /// `a:b` and a bare ratio `a/b`, so neither accepts the other's form.
-  #[test]
-  fn geometry_separators_are_not_interchangeable() {
-    assert!("40/33".parse::<SampleAspectRatio>().is_err());
-    assert!("40:33".parse::<Rational>().is_err());
-    assert!("1920X1080".parse::<Dimensions>().is_err());
-  }
-
-  /// Parsing routes through `Rational::try_new`, so it cannot mint a
-  /// value the constructor rejects — the invariant has exactly one gate.
-  #[test]
-  fn geometry_parsing_cannot_bypass_the_constructor_invariant() {
-    // `num < 0` and `den <= 0` are what `Rational::try_new` refuses.
-    assert!("-5/4".parse::<Rational>().is_err());
-    assert!("5/-4".parse::<Rational>().is_err());
-    assert!("5/0".parse::<Rational>().is_err());
-    assert!("-1:1".parse::<SampleAspectRatio>().is_err());
-
-    assert_eq!(
-      "-5/4".parse::<Rational>().unwrap_err().type_name(),
-      "Rational"
-    );
-  }
-
-  #[test]
-  fn geometry_rejects_malformed_input() {
-    for bad in ["", "1920", "1920x", "x1080", "1920x1080x1", "axb", " 1x2"] {
-      assert!(
-        bad.parse::<Dimensions>().is_err(),
-        "{bad:?} should not parse as Dimensions"
-      );
-    }
-    for bad in ["", "30000", "30000/", "/1001", "a/b", "1/2/3"] {
-      assert!(
-        bad.parse::<Rational>().is_err(),
-        "{bad:?} should not parse as Rational"
-      );
-    }
-  }
-}
+mod aspect_tests;
+#[cfg(test)]
+mod contains_tests;
+
+#[cfg(test)]
+mod tests_primitives;
 
 // === Frame-family tests (feature-gated) ===
 
