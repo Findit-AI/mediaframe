@@ -56,6 +56,27 @@ through `VideoCodec::Other`.
 
 ### Fixed
 
+- **`ChannelLayout`'s 5.x slugs were inverted against FFmpeg** — breaking, and
+  the wire form moves with them. FFmpeg's `channel_layout_map[]` gives the
+  unqualified name to the **back**-speaker layouts (`"5.0"` →
+  `AV_CH_LAYOUT_5POINT0_BACK` = `SURROUND|BACK_LEFT|BACK_RIGHT`, `"5.1"` →
+  `AV_CH_LAYOUT_5POINT1_BACK`) and qualifies the side ones (`"5.0(side)"` →
+  `AV_CH_LAYOUT_5POINT0` = `SURROUND|SIDE_LEFT|SIDE_RIGHT`, `"5.1(side)"` →
+  `AV_CH_LAYOUT_5POINT1`). This crate had the four the other way round, so an
+  FFmpeg- or `ffprobe`-sourced `"5.1"` parsed to `N5Point1`, whose docs promise
+  side speakers, when FFmpeg meant back. The strings round-tripped, so nothing
+  caught it; anything keying off the variant's documented speaker set was
+  quietly wrong. The four slugs are swapped to match:
+  `N5Point0` → `"5.0(side)"`, `N5Point0Back` → `"5.0"`,
+  `N5Point1` → `"5.1(side)"`, `N5Point1Back` → `"5.1"`. `as_str`, `Display`,
+  `FromStr` and the serde wire form move together. A transcribed
+  `channel_layout_map[]` table now pins every named layout, so the next
+  inversion fails a test instead of shipping.
+- `ChannelLayout::Quad`'s doc claimed it was "L+R+SL+SR **or** L+R+BL+BR". It
+  is `AV_CH_LAYOUT_QUAD` = `STEREO|BACK_LEFT|BACK_RIGHT` — back only. The side
+  four-channel layout is FFmpeg's `AV_CH_LAYOUT_2_2`, named `"quad(side)"`,
+  which this vocabulary does not enumerate and which rides `Other`. Doc only;
+  the slug was already right.
 - The hardware-exclusion roster no longer lies: `xvmc` had outlived
   `AV_PIX_FMT_XVMC` (already gone at n8.1) and excluded nothing.
   `cargo xtask sync` now proves every roster entry against the pinned header
