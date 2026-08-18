@@ -165,13 +165,13 @@ Opt into typed `*Frame<'a>` borrow views + the per-format
 `source::*` walker quartet per family:
 
 ```toml
-mediaframe = { version = "0.2", features = ["yuv-planar", "rgb"] }
+mediaframe = { version = "0.3", features = ["yuv-planar", "rgb"] }
 ```
 
 Or take everything via the umbrella:
 
 ```toml
-mediaframe = { version = "0.2", features = ["frame"] }
+mediaframe = { version = "0.3", features = ["frame"] }
 ```
 
 ## Per-family feature flags
@@ -210,10 +210,10 @@ Deps pulled in by family features:
 
 ```toml
 # Pure no_std — just enums, marker ZSTs, structural primitives.
-mediaframe = { version = "0.2", default-features = false }
+mediaframe = { version = "0.3", default-features = false }
 
 # no_std + alloc — adds Vec-using helpers and tests.
-mediaframe = { version = "0.2", default-features = false, features = ["alloc"] }
+mediaframe = { version = "0.3", default-features = false, features = ["alloc"] }
 ```
 
 The `color`, `frame`, and `pixel_format` modules work without `alloc`
