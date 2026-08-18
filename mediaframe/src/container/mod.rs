@@ -170,23 +170,23 @@ impl FromStr for Format {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "mov" => Self::Mov,
-      "mp4" => Self::Mp4,
-      "mkv" => Self::Mkv,
-      "webm" => Self::Webm,
-      "avi" => Self::Avi,
-      "flv" => Self::Flv,
-      "mpegts" => Self::MpegTs,
-      "ogg" => Self::Ogg,
-      "asf" => Self::Asf,
-      "rm" => Self::Rm,
-      "wmv" => Self::Wmv,
-      "mxf" => Self::Mxf,
-      "gxf" => Self::Gxf,
-      "3gp" => Self::Threegp,
-      other => Self::other(other),
+      b"mov" => Self::Mov,
+      b"mp4" => Self::Mp4,
+      b"mkv" => Self::Mkv,
+      b"webm" => Self::Webm,
+      b"avi" => Self::Avi,
+      b"flv" => Self::Flv,
+      b"mpegts" => Self::MpegTs,
+      b"ogg" => Self::Ogg,
+      b"asf" => Self::Asf,
+      b"rm" => Self::Rm,
+      b"wmv" => Self::Wmv,
+      b"mxf" => Self::Mxf,
+      b"gxf" => Self::Gxf,
+      b"3gp" => Self::Threegp,
+      _ => Self::other(s),
     })
   }
 }

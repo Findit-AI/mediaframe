@@ -1429,7 +1429,7 @@ fn extract_codec_descriptors(source: &str) -> Vec<CodecDescriptor> {
 // macros use. Single source of truth (the vendored table) → single
 // generated module; `cargo xtask check` is the CI gate against drift.
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Literal, Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::Ident;
 
@@ -1754,7 +1754,10 @@ fn build_codec_enum(
     quote! { Self::#ident => #name, }
   });
 
+  // The parse table compares on the byte side — `crate::parse::fold`
+  // hands back the folded bytes — so the arms are `b"name"` literals.
   let from_str_arms = variants.iter().map(|(ident, name)| {
+    let name = Literal::byte_string(name.as_bytes());
     quote! { #name => Self::#ident, }
   });
 
@@ -1889,11 +1892,13 @@ fn build_codec_enum(
       fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut buf = [0u8; crate::parse::FOLD_CAP];
         // An input too long to fold cannot name a codec either, so the
-        // unfolded original falls through to the escape.
-        let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+        // unfolded original falls through to the escape. `Self::other`
+        // folds and ASCII folding is idempotent, so the escape is built
+        // from `s` rather than converting the folded bytes back.
+        let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
         Ok(match folded {
           #(#from_str_arms)*
-          other => Self::other(other),
+          _ => Self::other(s),
         })
       }
     }

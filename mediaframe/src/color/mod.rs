@@ -270,26 +270,26 @@ impl core::str::FromStr for Matrix {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "rgb" => Self::Rgb,
-      "bt601" => Self::Bt601,
-      "bt709" => Self::Bt709,
-      "unspecified" => Self::Unspecified,
-      "fcc" => Self::Fcc,
-      "bt470bg" => Self::Bt470Bg,
-      "smpte170m" => Self::Smpte170M,
-      "smpte240m" => Self::Smpte240m,
-      "ycgco" => Self::YCgCo,
-      "bt2020nc" => Self::Bt2020Ncl,
-      "bt2020c" => Self::Bt2020Cl,
-      "smpte2085" => Self::Smpte2085,
-      "chroma-derived-nc" => Self::ChromaDerivedNcl,
-      "chroma-derived-c" => Self::ChromaDerivedCl,
-      "ictcp" => Self::Ictcp,
-      "ipt-c2" => Self::IptC2,
-      "ycgco-re" => Self::YCgCoRe,
-      "ycgco-ro" => Self::YCgCoRo,
+      b"rgb" => Self::Rgb,
+      b"bt601" => Self::Bt601,
+      b"bt709" => Self::Bt709,
+      b"unspecified" => Self::Unspecified,
+      b"fcc" => Self::Fcc,
+      b"bt470bg" => Self::Bt470Bg,
+      b"smpte170m" => Self::Smpte170M,
+      b"smpte240m" => Self::Smpte240m,
+      b"ycgco" => Self::YCgCo,
+      b"bt2020nc" => Self::Bt2020Ncl,
+      b"bt2020c" => Self::Bt2020Cl,
+      b"smpte2085" => Self::Smpte2085,
+      b"chroma-derived-nc" => Self::ChromaDerivedNcl,
+      b"chroma-derived-c" => Self::ChromaDerivedCl,
+      b"ictcp" => Self::Ictcp,
+      b"ipt-c2" => Self::IptC2,
+      b"ycgco-re" => Self::YCgCoRe,
+      b"ycgco-ro" => Self::YCgCoRo,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -774,20 +774,20 @@ impl core::str::FromStr for Primaries {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "bt709" => Self::Bt709,
-      "unspecified" => Self::Unspecified,
-      "bt470m" => Self::Bt470M,
-      "bt470bg" => Self::Bt470Bg,
-      "smpte170m" => Self::Smpte170M,
-      "smpte240m" => Self::Smpte240M,
-      "film" => Self::Film,
-      "bt2020" => Self::Bt2020,
-      "smpte428" => Self::SmpteSt428,
-      "smpte431" => Self::SmpteRp431,
-      "smpte432" => Self::SmpteEg432,
-      "ebu3213" => Self::Ebu3213E,
+      b"bt709" => Self::Bt709,
+      b"unspecified" => Self::Unspecified,
+      b"bt470m" => Self::Bt470M,
+      b"bt470bg" => Self::Bt470Bg,
+      b"smpte170m" => Self::Smpte170M,
+      b"smpte240m" => Self::Smpte240M,
+      b"film" => Self::Film,
+      b"bt2020" => Self::Bt2020,
+      b"smpte428" => Self::SmpteSt428,
+      b"smpte431" => Self::SmpteRp431,
+      b"smpte432" => Self::SmpteEg432,
+      b"ebu3213" => Self::Ebu3213E,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -1006,25 +1006,25 @@ impl core::str::FromStr for Transfer {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "bt709" => Self::Bt709,
-      "unspecified" => Self::Unspecified,
-      "gamma22" => Self::Gamma22,
-      "gamma28" => Self::Gamma28,
-      "smpte170m" => Self::Smpte170M,
-      "smpte240m" => Self::Smpte240M,
-      "linear" => Self::Linear,
-      "log100" => Self::Log100,
-      "log316" => Self::Log316,
-      "iec61966-2-4" => Self::Iec6196624,
-      "bt1361e" => Self::Bt1361Ecg,
-      "iec61966-2-1" => Self::Iec6196621,
-      "bt2020-10" => Self::Bt2020_10Bit,
-      "bt2020-12" => Self::Bt2020_12Bit,
-      "smpte2084" => Self::SmpteSt2084Pq,
-      "smpte428" => Self::SmpteSt428,
-      "arib-std-b67" => Self::AribStdB67Hlg,
+      b"bt709" => Self::Bt709,
+      b"unspecified" => Self::Unspecified,
+      b"gamma22" => Self::Gamma22,
+      b"gamma28" => Self::Gamma28,
+      b"smpte170m" => Self::Smpte170M,
+      b"smpte240m" => Self::Smpte240M,
+      b"linear" => Self::Linear,
+      b"log100" => Self::Log100,
+      b"log316" => Self::Log316,
+      b"iec61966-2-4" => Self::Iec6196624,
+      b"bt1361e" => Self::Bt1361Ecg,
+      b"iec61966-2-1" => Self::Iec6196621,
+      b"bt2020-10" => Self::Bt2020_10Bit,
+      b"bt2020-12" => Self::Bt2020_12Bit,
+      b"smpte2084" => Self::SmpteSt2084Pq,
+      b"smpte428" => Self::SmpteSt428,
+      b"arib-std-b67" => Self::AribStdB67Hlg,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -1167,11 +1167,11 @@ impl core::str::FromStr for DynamicRange {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "unspecified" => Self::Unspecified,
-      "tv" => Self::Limited,
-      "pc" => Self::Full,
+      b"unspecified" => Self::Unspecified,
+      b"tv" => Self::Limited,
+      b"pc" => Self::Full,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -1335,15 +1335,15 @@ impl core::str::FromStr for ChromaLocation {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "unspecified" => Self::Unspecified,
-      "left" => Self::Left,
-      "center" => Self::Center,
-      "topleft" => Self::TopLeft,
-      "top" => Self::Top,
-      "bottomleft" => Self::BottomLeft,
-      "bottom" => Self::Bottom,
+      b"unspecified" => Self::Unspecified,
+      b"left" => Self::Left,
+      b"center" => Self::Center,
+      b"topleft" => Self::TopLeft,
+      b"top" => Self::Top,
+      b"bottomleft" => Self::BottomLeft,
+      b"bottom" => Self::Bottom,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -1760,11 +1760,11 @@ impl core::str::FromStr for DcpTargetGamut {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "dci-p3" => Self::DciP3,
-      "rec709" => Self::Rec709,
-      "rec2020" => Self::Rec2020,
+      b"dci-p3" => Self::DciP3,
+      b"rec709" => Self::Rec709,
+      b"rec2020" => Self::Rec2020,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]

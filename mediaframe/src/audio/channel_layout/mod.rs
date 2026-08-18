@@ -151,29 +151,29 @@ impl FromStr for ChannelLayout {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "mono" => Self::Mono,
-      "stereo" => Self::Stereo,
-      "2.1" => Self::N2Point1,
-      "3.0" => Self::N3Point0,
-      "3.0(back)" => Self::N3Point0Back,
-      "3.1" => Self::N3Point1,
-      "quad" => Self::Quad,
-      "5.0" => Self::N5Point0,
-      "5.0(side)" => Self::N5Point0Back,
-      "5.1" => Self::N5Point1,
-      "5.1(side)" => Self::N5Point1Back,
-      "6.0" => Self::N6Point0,
-      "6.1" => Self::N6Point1,
-      "7.0" => Self::N7Point0,
-      "7.1" => Self::N7Point1,
-      "hexagonal" => Self::Hexagonal,
-      "octagonal" => Self::Octagonal,
-      "ambisonic1" => Self::Ambisonic1,
-      "ambisonic2" => Self::Ambisonic2,
-      "ambisonic3" => Self::Ambisonic3,
-      other => Self::other(other),
+      b"mono" => Self::Mono,
+      b"stereo" => Self::Stereo,
+      b"2.1" => Self::N2Point1,
+      b"3.0" => Self::N3Point0,
+      b"3.0(back)" => Self::N3Point0Back,
+      b"3.1" => Self::N3Point1,
+      b"quad" => Self::Quad,
+      b"5.0" => Self::N5Point0,
+      b"5.0(side)" => Self::N5Point0Back,
+      b"5.1" => Self::N5Point1,
+      b"5.1(side)" => Self::N5Point1Back,
+      b"6.0" => Self::N6Point0,
+      b"6.1" => Self::N6Point1,
+      b"7.0" => Self::N7Point0,
+      b"7.1" => Self::N7Point1,
+      b"hexagonal" => Self::Hexagonal,
+      b"octagonal" => Self::Octagonal,
+      b"ambisonic1" => Self::Ambisonic1,
+      b"ambisonic2" => Self::Ambisonic2,
+      b"ambisonic3" => Self::Ambisonic3,
+      _ => Self::other(s),
     })
   }
 }

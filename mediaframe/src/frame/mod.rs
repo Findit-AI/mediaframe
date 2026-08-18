@@ -814,12 +814,12 @@ impl core::str::FromStr for Rotation {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "0" => Self::D0,
-      "90" => Self::D90,
-      "180" => Self::D180,
-      "270" => Self::D270,
+      b"0" => Self::D0,
+      b"90" => Self::D90,
+      b"180" => Self::D180,
+      b"270" => Self::D270,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -1571,14 +1571,14 @@ impl core::str::FromStr for FieldOrder {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "unknown" => Self::Unknown,
-      "progressive" => Self::Progressive,
-      "tt" => Self::Tt,
-      "bb" => Self::Bb,
-      "tb" => Self::Tb,
-      "bt" => Self::Bt,
+      b"unknown" => Self::Unknown,
+      b"progressive" => Self::Progressive,
+      b"tt" => Self::Tt,
+      b"bb" => Self::Bb,
+      b"tb" => Self::Tb,
+      b"bt" => Self::Bt,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -1760,16 +1760,16 @@ impl core::str::FromStr for StereoMode {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "mono" => Self::Mono,
-      "side-by-side" => Self::SideBySide,
-      "top-bottom" => Self::TopBottom,
-      "frame-sequence" => Self::FrameSequence,
-      "checkerboard" => Self::Checkerboard,
-      "side-by-side-quincunx" => Self::SideBySideQuincunx,
-      "lines" => Self::Lines,
-      "columns" => Self::Columns,
+      b"mono" => Self::Mono,
+      b"side-by-side" => Self::SideBySide,
+      b"top-bottom" => Self::TopBottom,
+      b"frame-sequence" => Self::FrameSequence,
+      b"checkerboard" => Self::Checkerboard,
+      b"side-by-side-quincunx" => Self::SideBySideQuincunx,
+      b"lines" => Self::Lines,
+      b"columns" => Self::Columns,
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]

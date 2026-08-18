@@ -166,21 +166,21 @@ impl FromStr for SampleFormat {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "u8" => Self::U8,
-      "s16" => Self::S16,
-      "s32" => Self::S32,
-      "flt" => Self::Flt,
-      "dbl" => Self::Dbl,
-      "u8p" => Self::U8p,
-      "s16p" => Self::S16p,
-      "s32p" => Self::S32p,
-      "fltp" => Self::Fltp,
-      "dblp" => Self::Dblp,
-      "s64" => Self::S64,
-      "s64p" => Self::S64p,
-      other => Self::other(other),
+      b"u8" => Self::U8,
+      b"s16" => Self::S16,
+      b"s32" => Self::S32,
+      b"flt" => Self::Flt,
+      b"dbl" => Self::Dbl,
+      b"u8p" => Self::U8p,
+      b"s16p" => Self::S16p,
+      b"s32p" => Self::S32p,
+      b"fltp" => Self::Fltp,
+      b"dblp" => Self::Dblp,
+      b"s64" => Self::S64,
+      b"s64p" => Self::S64p,
+      _ => Self::other(s),
     })
   }
 }
@@ -347,23 +347,23 @@ impl FromStr for ContainerFormat {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "mp3" => Self::Mp3,
-      "aac" => Self::Aac,
-      "flac" => Self::Flac,
-      "ogg" => Self::Ogg,
-      "opus" => Self::Opus,
-      "wav" => Self::Wav,
-      "aiff" => Self::Aiff,
-      "alac" => Self::Alac,
-      "wma" => Self::Wma,
-      "ape" => Self::Ape,
-      "wv" => Self::Wv,
-      "mka" => Self::Mka,
-      "m4a" => Self::M4a,
-      "caf" => Self::Caf,
-      other => Self::other(other),
+      b"mp3" => Self::Mp3,
+      b"aac" => Self::Aac,
+      b"flac" => Self::Flac,
+      b"ogg" => Self::Ogg,
+      b"opus" => Self::Opus,
+      b"wav" => Self::Wav,
+      b"aiff" => Self::Aiff,
+      b"alac" => Self::Alac,
+      b"wma" => Self::Wma,
+      b"ape" => Self::Ape,
+      b"wv" => Self::Wv,
+      b"mka" => Self::Mka,
+      b"m4a" => Self::M4a,
+      b"caf" => Self::Caf,
+      _ => Self::other(s),
     })
   }
 }

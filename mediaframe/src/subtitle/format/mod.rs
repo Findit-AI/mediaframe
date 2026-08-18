@@ -235,25 +235,25 @@ impl FromStr for Format {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "srt" => Self::Srt,
-      "webvtt" => Self::WebVtt,
-      "ass" => Self::Ass,
-      "ssa" => Self::Ssa,
-      "microdvd" => Self::Sub,
-      "mpl2" => Self::Mpl2,
-      "lrc" => Self::Lrc,
-      "sami" => Self::Smi,
-      "stl" => Self::Stl,
-      "subviewer" => Self::Sbv,
-      "ttml" => Self::Ttml,
-      "mov_text" => Self::MovText,
-      "dvd_subtitle" => Self::DvdSub,
-      "hdmv_pgs_subtitle" => Self::PgsSub,
-      "dvb_subtitle" => Self::DvbSub,
-      "xsub" => Self::XSub,
-      other => Self::other(other),
+      b"srt" => Self::Srt,
+      b"webvtt" => Self::WebVtt,
+      b"ass" => Self::Ass,
+      b"ssa" => Self::Ssa,
+      b"microdvd" => Self::Sub,
+      b"mpl2" => Self::Mpl2,
+      b"lrc" => Self::Lrc,
+      b"sami" => Self::Smi,
+      b"stl" => Self::Stl,
+      b"subviewer" => Self::Sbv,
+      b"ttml" => Self::Ttml,
+      b"mov_text" => Self::MovText,
+      b"dvd_subtitle" => Self::DvdSub,
+      b"hdmv_pgs_subtitle" => Self::PgsSub,
+      b"dvb_subtitle" => Self::DvbSub,
+      b"xsub" => Self::XSub,
+      _ => Self::other(s),
     })
   }
 }

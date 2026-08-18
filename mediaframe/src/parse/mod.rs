@@ -8,6 +8,10 @@
 //! value space canonical and the derived `Eq` / `Hash` comparing *names*
 //! rather than spellings.
 //!
+//! The lookup itself is on the **byte side**: [`fold`] yields the folded
+//! bytes and every table arm is a `b"slug"` literal. A `FromStr` added
+//! here writes its table that way.
+//!
 //! Folding is deliberately **ASCII-only**. These are FFmpeg / H.273 / file
 //! extension identifiers; Unicode case folding is locale-sensitive
 //! (Turkish dotless i maps `I` to `ı`, not `i`) in ways a wire vocabulary
@@ -27,12 +31,18 @@
 /// overflow as an ordinary miss.
 pub(crate) const FOLD_CAP: usize = 64;
 
-/// ASCII-fold `s` into `buf`, returning the lowercase view, or [`None`]
+/// ASCII-fold `s` into `buf`, returning the lowercase bytes, or [`None`]
 /// when `s` is longer than any slug can be.
+///
+/// The lookup tables compare on the byte side — every `FromStr` in the
+/// crate matches `b"slug"` literals — so the fold hands back the buffer
+/// itself and never re-derives a `str` from it. That conversion would be
+/// a second O(n) pass over bytes this function just wrote, to prove a
+/// property no caller consumes.
 ///
 /// Allocation-free, so the lookup gate is the same at every capability
 /// tier.
-pub(crate) fn fold<'b>(s: &str, buf: &'b mut [u8; FOLD_CAP]) -> Option<&'b str> {
+pub(crate) fn fold<'b>(s: &str, buf: &'b mut [u8; FOLD_CAP]) -> Option<&'b [u8]> {
   let bytes = s.as_bytes();
   let n = bytes.len();
   if n > FOLD_CAP {
@@ -40,21 +50,27 @@ pub(crate) fn fold<'b>(s: &str, buf: &'b mut [u8; FOLD_CAP]) -> Option<&'b str> 
   }
   buf[..n].copy_from_slice(bytes);
   buf[..n].make_ascii_lowercase();
-  // ASCII-lowercasing maps ASCII bytes to ASCII bytes and leaves every
-  // other byte untouched, so UTF-8 validity is preserved; `ok()` keeps
-  // this total without reaching for `unsafe`.
-  core::str::from_utf8(&buf[..n]).ok()
+  Some(&buf[..n])
 }
 
 /// ASCII-fold a slug that is about to be stored in an `Other(SmolStr)`
 /// escape.
 ///
-/// The one gate every escape is built through. Allocates only when the
-/// input is not already folded.
+/// The one gate every escape is built through. A slug that fits
+/// `SmolStr`'s inline capacity never allocates, folded or not: the fold
+/// happens on the stack, straight into the inline representation, with
+/// no `String` in between.
+///
+/// A `FromStr` miss arm hands this the **original** input rather than
+/// [`fold`]'s bytes: ASCII folding is idempotent, so the escape is the
+/// same value either way, and this direction needs no `str` back out of
+/// the byte buffer.
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub(crate) fn fold_owned(s: &str) -> smol_str::SmolStr {
+  use smol_str::StrExt as _;
+
   if s.bytes().any(|b| b.is_ascii_uppercase()) {
-    smol_str::SmolStr::new(s.to_ascii_lowercase())
+    s.to_ascii_lowercase_smolstr()
   } else {
     smol_str::SmolStr::new(s)
   }

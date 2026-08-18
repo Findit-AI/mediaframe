@@ -610,12 +610,12 @@ impl core::str::FromStr for BayerPattern {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "bggr" => Self::Bggr,
-      "rggb" => Self::Rggb,
-      "grbg" => Self::Grbg,
-      "gbrg" => Self::Gbrg,
+      b"bggr" => Self::Bggr,
+      b"rggb" => Self::Rggb,
+      b"grbg" => Self::Grbg,
+      b"gbrg" => Self::Gbrg,
       _ => return Err(ParseBayerPatternError),
     })
   }
@@ -688,9 +688,9 @@ impl core::str::FromStr for BayerDemosaic {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "bilinear" => Self::Bilinear,
+      b"bilinear" => Self::Bilinear,
       _ => return Err(ParseBayerDemosaicError),
     })
   }
@@ -1088,11 +1088,11 @@ impl core::str::FromStr for WbChannel {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
     // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s);
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
-      "r" => Self::R,
-      "g" => Self::G,
-      "b" => Self::B,
+      b"r" => Self::R,
+      b"g" => Self::G,
+      b"b" => Self::B,
       _ => return Err(ParseWbChannelError),
     })
   }
