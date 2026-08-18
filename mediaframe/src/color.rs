@@ -213,6 +213,44 @@ impl Matrix {
   }
 }
 
+impl core::str::FromStr for Matrix {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders, the exact
+  /// inverse of [`Display`](core::fmt::Display) for every **named**
+  /// variant.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any other
+  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
+  /// string for every payload, so there is no code to recover; use
+  /// [`Self::from_u32`] when the numeric id is what you hold.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "rgb" => Self::Rgb,
+      "bt601" => Self::Bt601,
+      "bt709" => Self::Bt709,
+      "unspecified" => Self::Unspecified,
+      "fcc" => Self::Fcc,
+      "bt470bg" => Self::Bt470Bg,
+      "smpte170m" => Self::Smpte170M,
+      "smpte240m" => Self::Smpte240m,
+      "ycgco" => Self::YCgCo,
+      "bt2020nc" => Self::Bt2020Ncl,
+      "bt2020c" => Self::Bt2020Cl,
+      "smpte2085" => Self::Smpte2085,
+      "chroma-derived-nc" => Self::ChromaDerivedNcl,
+      "chroma-derived-c" => Self::ChromaDerivedCl,
+      "ictcp" => Self::Ictcp,
+      "ipt-c2" => Self::IptC2,
+      "ycgco-re" => Self::YCgCoRe,
+      "ycgco-ro" => Self::YCgCoRo,
+      _ => return Err(crate::parse::ParseError::unrecognised("Matrix")),
+    })
+  }
+}
+
 /// Color primaries per ITU-T H.273 ColourPrimaries (Table 2) /
 /// ISO/IEC 23001-8.
 ///
@@ -470,6 +508,38 @@ impl Primaries {
   }
 }
 
+impl core::str::FromStr for Primaries {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders, the exact
+  /// inverse of [`Display`](core::fmt::Display) for every **named**
+  /// variant.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any other
+  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
+  /// string for every payload, so there is no code to recover; use
+  /// [`Self::from_u32`] when the numeric id is what you hold.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "bt709" => Self::Bt709,
+      "unspecified" => Self::Unspecified,
+      "bt470m" => Self::Bt470M,
+      "bt470bg" => Self::Bt470Bg,
+      "smpte170m" => Self::Smpte170M,
+      "smpte240m" => Self::Smpte240M,
+      "film" => Self::Film,
+      "bt2020" => Self::Bt2020,
+      "smpte428" => Self::SmpteSt428,
+      "smpte431" => Self::SmpteRp431,
+      "smpte432" => Self::SmpteEg432,
+      "ebu3213" => Self::Ebu3213E,
+      _ => return Err(crate::parse::ParseError::unrecognised("Primaries")),
+    })
+  }
+}
+
 /// Transfer characteristics per ITU-T H.273 (Table 3).
 ///
 /// Read from `AVFrame.color_trc` / `VideoColorSpace.transfer` /
@@ -625,6 +695,43 @@ impl Transfer {
   }
 }
 
+impl core::str::FromStr for Transfer {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders, the exact
+  /// inverse of [`Display`](core::fmt::Display) for every **named**
+  /// variant.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any other
+  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
+  /// string for every payload, so there is no code to recover; use
+  /// [`Self::from_u32`] when the numeric id is what you hold.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "bt709" => Self::Bt709,
+      "unspecified" => Self::Unspecified,
+      "gamma22" => Self::Gamma22,
+      "gamma28" => Self::Gamma28,
+      "smpte170m" => Self::Smpte170M,
+      "smpte240m" => Self::Smpte240M,
+      "linear" => Self::Linear,
+      "log100" => Self::Log100,
+      "log316" => Self::Log316,
+      "iec61966-2-4" => Self::Iec6196624,
+      "bt1361e" => Self::Bt1361Ecg,
+      "iec61966-2-1" => Self::Iec6196621,
+      "bt2020-10" => Self::Bt2020_10Bit,
+      "bt2020-12" => Self::Bt2020_12Bit,
+      "smpte2084" => Self::SmpteSt2084Pq,
+      "smpte428" => Self::SmpteSt428,
+      "arib-std-b67" => Self::AribStdB67Hlg,
+      _ => return Err(crate::parse::ParseError::unrecognised("Transfer")),
+    })
+  }
+}
+
 /// Sample range — limited (TV / studio swing) vs. full (PC).
 ///
 /// [`Self::to_u32`] / [`Self::from_u32`] use the **FFmpeg
@@ -699,6 +806,29 @@ impl DynamicRange {
       2 => Self::Full,
       _ => Self::Unknown(v),
     }
+  }
+}
+
+impl core::str::FromStr for DynamicRange {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders, the exact
+  /// inverse of [`Display`](core::fmt::Display) for every **named**
+  /// variant.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any other
+  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
+  /// string for every payload, so there is no code to recover; use
+  /// [`Self::from_u32`] when the numeric id is what you hold.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "unspecified" => Self::Unspecified,
+      "tv" => Self::Limited,
+      "pc" => Self::Full,
+      _ => return Err(crate::parse::ParseError::unrecognised("DynamicRange")),
+    })
   }
 }
 
@@ -797,6 +927,33 @@ impl ChromaLocation {
       6 => Self::Bottom,
       _ => Self::Unknown(v),
     }
+  }
+}
+
+impl core::str::FromStr for ChromaLocation {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders, the exact
+  /// inverse of [`Display`](core::fmt::Display) for every **named**
+  /// variant.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any other
+  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
+  /// string for every payload, so there is no code to recover; use
+  /// [`Self::from_u32`] when the numeric id is what you hold.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "unspecified" => Self::Unspecified,
+      "left" => Self::Left,
+      "center" => Self::Center,
+      "topleft" => Self::TopLeft,
+      "top" => Self::Top,
+      "bottomleft" => Self::BottomLeft,
+      "bottom" => Self::Bottom,
+      _ => return Err(crate::parse::ParseError::unrecognised("ChromaLocation")),
+    })
   }
 }
 
@@ -1000,7 +1157,8 @@ impl Info {
 /// round-trip — which is correct (the id *is* that gamut), not data
 /// loss. Shared convention of every lossless `Unknown(u32)` enum here
 /// (Codex adversarial-review F8).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IsVariant)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IsVariant, Display)]
+#[display("{}", self.as_str())]
 #[non_exhaustive]
 #[cfg_attr(
   feature = "quickcheck",
@@ -1043,6 +1201,23 @@ impl DcpTargetGamut {
     Self::DciP3
   }
 
+  /// Lowercase identifier for this variant, in the same style as the
+  /// five H.273 colour enums (`"dci-p3"` / `"rec709"` / `"rec2020"`).
+  ///
+  /// [`Self::Unknown`] renders as `"unknown"` for every payload, so
+  /// this rendering is **not** injective on that arm — the same reason
+  /// [`FromStr`](core::str::FromStr) rejects `"unknown"` rather than
+  /// inventing a payload for it.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn as_str(&self) -> &'static str {
+    match self {
+      Self::Unknown(_) => "unknown",
+      Self::DciP3 => "dci-p3",
+      Self::Rec709 => "rec709",
+      Self::Rec2020 => "rec2020",
+    }
+  }
+
   /// Stable mediaframe-local wire id (no FFmpeg analog); `DciP3`
   /// (the default) is `0`. [`Self::Unknown`] carries its original
   /// `u32` through unchanged so `from_u32(to_u32(x)) == x` for every
@@ -1068,6 +1243,29 @@ impl DcpTargetGamut {
       2 => Self::Rec2020,
       _ => Self::Unknown(v),
     }
+  }
+}
+
+impl core::str::FromStr for DcpTargetGamut {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders, the exact
+  /// inverse of [`Display`](core::fmt::Display) for every **named**
+  /// variant.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any other
+  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
+  /// string for every payload, so there is no code to recover; use
+  /// [`Self::from_u32`] when the numeric id is what you hold.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "dci-p3" => Self::DciP3,
+      "rec709" => Self::Rec709,
+      "rec2020" => Self::Rec2020,
+      _ => return Err(crate::parse::ParseError::unrecognised("DcpTargetGamut")),
+    })
   }
 }
 
@@ -2212,5 +2410,94 @@ mod tests {
     // proven at compile time.
     const _: () = assert!(Primaries::SmpteSt428.is_cie_xyz());
     const _: () = assert!(!Primaries::Bt2020.is_cie_xyz());
+  }
+
+  /// Every **named** variant of every coded colour enum must survive
+  /// `as_str()` → `FromStr` unchanged, and no two named variants may share
+  /// a slug (a collision would silently make one of them unparseable).
+  ///
+  /// The sweep enumerates variants through `from_u32` over both id ranges
+  /// (H.273 codes and the `DOMAIN_EXT_BASE` mediaframe extensions) rather
+  /// than a hand-written list, so a variant added later is covered without
+  /// touching this test.
+  #[test]
+  fn every_named_colour_variant_round_trips_through_its_slug() {
+    macro_rules! sweep {
+      ($ty:ty) => {{
+        let mut named = 0usize;
+        let mut seen: [&str; 64] = [""; 64];
+        for code in (0..=1024u32).chain(DOMAIN_EXT_BASE..=DOMAIN_EXT_BASE + 1024) {
+          let value = <$ty>::from_u32(code);
+          if value.is_unknown() {
+            continue;
+          }
+          let slug = value.as_str();
+          assert_eq!(
+            slug.parse::<$ty>(),
+            Ok(value),
+            "{} slug {slug:?} does not parse back to {value:?}",
+            stringify!($ty)
+          );
+          for prior in seen.iter().take(named) {
+            assert_ne!(
+              *prior,
+              slug,
+              "{} has two variants spelled {slug:?}",
+              stringify!($ty)
+            );
+          }
+          seen[named] = slug;
+          named += 1;
+        }
+        assert!(
+          named > 0,
+          "{} sweep found no named variants — the id range is wrong",
+          stringify!($ty)
+        );
+      }};
+    }
+
+    sweep!(Matrix);
+    sweep!(Primaries);
+    sweep!(Transfer);
+    sweep!(DynamicRange);
+    sweep!(ChromaLocation);
+    sweep!(DcpTargetGamut);
+  }
+
+  /// `Unknown(_)` renders as the single string `"unknown"` for every
+  /// payload, so it has no parseable spelling: rejecting it is the only
+  /// answer that never returns a value the caller did not write.
+  #[test]
+  fn unknown_has_no_parseable_spelling() {
+    assert_eq!(Matrix::Unknown(250).as_str(), "unknown");
+    assert!("unknown".parse::<Matrix>().is_err());
+    assert!("unknown".parse::<Primaries>().is_err());
+    assert!("unknown".parse::<Transfer>().is_err());
+    assert!("unknown".parse::<DynamicRange>().is_err());
+    assert!("unknown".parse::<ChromaLocation>().is_err());
+    assert!("unknown".parse::<DcpTargetGamut>().is_err());
+
+    // …and the numeric id is still the way to carry one.
+    assert_eq!(Matrix::from_u32(250), Matrix::Unknown(250));
+  }
+
+  #[test]
+  fn unrecognised_slugs_are_rejected_and_name_their_vocabulary() {
+    let err = "definitely-not-a-matrix".parse::<Matrix>().unwrap_err();
+    assert_eq!(err.type_name(), "Matrix");
+    // Case matters — the slugs are canonical, not normalised.
+    assert!("BT709".parse::<Matrix>().is_err());
+    assert!("".parse::<Matrix>().is_err());
+  }
+
+  /// `DcpTargetGamut` gained `as_str`/`Display` to match the five H.273
+  /// enums; pin the spellings so they cannot drift silently.
+  #[test]
+  fn dcp_target_gamut_slugs_are_stable() {
+    assert_eq!(DcpTargetGamut::DciP3.as_str(), "dci-p3");
+    assert_eq!(DcpTargetGamut::Rec709.as_str(), "rec709");
+    assert_eq!(DcpTargetGamut::Rec2020.as_str(), "rec2020");
+    assert_eq!("dci-p3".parse(), Ok(DcpTargetGamut::DciP3));
   }
 }

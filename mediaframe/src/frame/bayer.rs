@@ -579,6 +579,27 @@ impl BayerPattern {
   }
 }
 
+impl core::str::FromStr for BayerPattern {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders — the exact
+  /// inverse of [`Display`](core::fmt::Display).
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any input
+  /// outside this closed vocabulary.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "bggr" => Self::Bggr,
+      "rggb" => Self::Rggb,
+      "grbg" => Self::Grbg,
+      "gbrg" => Self::Gbrg,
+      _ => return Err(crate::parse::ParseError::unrecognised("BayerPattern")),
+    })
+  }
+}
+
 /// Demosaic algorithm.
 ///
 /// Selects the per-pixel reconstruction kernel the walker uses to
@@ -612,6 +633,24 @@ impl BayerDemosaic {
     match self {
       Self::Bilinear => "Bilinear",
     }
+  }
+}
+
+impl core::str::FromStr for BayerDemosaic {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders — the exact
+  /// inverse of [`Display`](core::fmt::Display).
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any input
+  /// outside this closed vocabulary.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "Bilinear" => Self::Bilinear,
+      _ => return Err(crate::parse::ParseError::unrecognised("BayerDemosaic")),
+    })
   }
 }
 
@@ -906,6 +945,26 @@ impl WbChannel {
       WbChannel::G => "G",
       WbChannel::B => "B",
     }
+  }
+}
+
+impl core::str::FromStr for WbChannel {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders — the exact
+  /// inverse of [`Display`](core::fmt::Display).
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any input
+  /// outside this closed vocabulary.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "R" => Self::R,
+      "G" => Self::G,
+      "B" => Self::B,
+      _ => return Err(crate::parse::ParseError::unrecognised("WbChannel")),
+    })
   }
 }
 
@@ -1634,5 +1693,62 @@ mod tests {
       assert_eq!(v.as_str(), format!("{v}"));
     }
     assert_eq!(BayerPattern::Bggr.as_str(), "bggr");
+  }
+
+  /// The three closed bayer vocabularies round-trip through their slugs.
+  /// The `match` arms make the variant lists exhaustive by construction —
+  /// adding a variant stops this compiling until the list is updated.
+  #[test]
+  fn bayer_vocabularies_round_trip_through_their_slugs() {
+    const fn _pattern_is_exhaustive(p: BayerPattern) {
+      match p {
+        BayerPattern::Bggr | BayerPattern::Rggb | BayerPattern::Grbg | BayerPattern::Gbrg => (),
+      }
+    }
+    const fn _demosaic_is_exhaustive(d: BayerDemosaic) {
+      match d {
+        BayerDemosaic::Bilinear => (),
+      }
+    }
+    const fn _channel_is_exhaustive(c: WbChannel) {
+      match c {
+        WbChannel::R | WbChannel::G | WbChannel::B => (),
+      }
+    }
+
+    for pattern in [
+      BayerPattern::Bggr,
+      BayerPattern::Rggb,
+      BayerPattern::Grbg,
+      BayerPattern::Gbrg,
+    ] {
+      assert_eq!(pattern.as_str().parse(), Ok(pattern));
+    }
+    // Only one algorithm is wired up today, so this is a single value
+    // rather than a loop; `_demosaic_is_exhaustive` above is what fails
+    // when a second one lands.
+    assert_eq!(
+      BayerDemosaic::Bilinear.as_str().parse(),
+      Ok(BayerDemosaic::Bilinear)
+    );
+    for channel in [WbChannel::R, WbChannel::G, WbChannel::B] {
+      assert_eq!(channel.as_str().parse(), Ok(channel));
+    }
+  }
+
+  #[test]
+  fn bayer_vocabularies_reject_anything_else() {
+    assert_eq!(
+      "rgbg".parse::<BayerPattern>().unwrap_err().type_name(),
+      "BayerPattern"
+    );
+    assert!("BGGR".parse::<BayerPattern>().is_err());
+    assert!("".parse::<WbChannel>().is_err());
+
+    // `BayerDemosaic`'s slug is capitalised, unlike every other slug in
+    // the crate; `FromStr` mirrors `Display` exactly rather than papering
+    // over the inconsistency, so the lowercase spelling is not accepted.
+    assert_eq!(BayerDemosaic::Bilinear.as_str(), "Bilinear");
+    assert!("bilinear".parse::<BayerDemosaic>().is_err());
   }
 }

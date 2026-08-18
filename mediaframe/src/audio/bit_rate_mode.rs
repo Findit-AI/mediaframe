@@ -81,6 +81,26 @@ impl BitRateMode {
   }
 }
 
+impl core::str::FromStr for BitRateMode {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders — the exact
+  /// inverse of [`Display`](core::fmt::Display).
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any input
+  /// outside this closed vocabulary.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "cbr" => Self::Cbr,
+      "vbr" => Self::Vbr,
+      "abr" => Self::Abr,
+      _ => return Err(crate::parse::ParseError::unrecognised("BitRateMode")),
+    })
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -117,5 +137,25 @@ mod tests {
     assert!(BitRateMode::Cbr.is_cbr());
     assert!(BitRateMode::Vbr.is_vbr());
     assert!(BitRateMode::Abr.is_abr());
+  }
+
+  /// `BitRateMode` is a closed unit vocabulary — the slug round-trips for
+  /// every variant and nothing else parses.
+  #[test]
+  fn every_mode_round_trips_through_its_slug() {
+    const fn _is_exhaustive(m: BitRateMode) {
+      match m {
+        BitRateMode::Cbr | BitRateMode::Vbr | BitRateMode::Abr => (),
+      }
+    }
+
+    for mode in [BitRateMode::Cbr, BitRateMode::Vbr, BitRateMode::Abr] {
+      assert_eq!(mode.as_str().parse(), Ok(mode));
+    }
+
+    let err = "constant".parse::<BitRateMode>().unwrap_err();
+    assert_eq!(err.type_name(), "BitRateMode");
+    assert!("CBR".parse::<BitRateMode>().is_err());
+    assert!("".parse::<BitRateMode>().is_err());
   }
 }

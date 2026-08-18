@@ -376,6 +376,31 @@ impl core::fmt::Display for Dimensions {
   }
 }
 
+impl core::str::FromStr for Dimensions {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the `WIDTHxHEIGHT` form [`Display`](core::fmt::Display)
+  /// renders (`"1920x1080"`).
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) unless the input
+  /// is exactly two `u32` values separated by a single `x`.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    const TY: &str = "Dimensions";
+    let (w, h) = s
+      .split_once('x')
+      .ok_or(crate::parse::ParseError::malformed(TY))?;
+    let width = w
+      .parse()
+      .map_err(|_| crate::parse::ParseError::malformed(TY))?;
+    let height = h
+      .parse()
+      .map_err(|_| crate::parse::ParseError::malformed(TY))?;
+    Ok(Self::new(width, height))
+  }
+}
+
 /// An axis-aligned integer rectangle.
 ///
 /// Used for `VideoFrame::visible_rect` (FFmpeg crop /
@@ -569,6 +594,30 @@ impl Rotation {
   }
 }
 
+impl core::str::FromStr for Rotation {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders, the exact
+  /// inverse of [`Display`](core::fmt::Display) for every **named**
+  /// variant.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any other
+  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
+  /// string for every payload, so there is no code to recover; use
+  /// [`Self::from_u32`] when the numeric id is what you hold.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "0" => Self::D0,
+      "90" => Self::D90,
+      "180" => Self::D180,
+      "270" => Self::D270,
+      _ => return Err(crate::parse::ParseError::unrecognised("Rotation")),
+    })
+  }
+}
+
 /// Pixel (sample) aspect ratio — the ratio of a pixel's display
 /// width to its display height.
 ///
@@ -701,6 +750,24 @@ impl SampleAspectRatio {
 impl core::fmt::Display for SampleAspectRatio {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     write!(f, "{}:{}", self.0.num(), self.0.den())
+  }
+}
+
+impl core::str::FromStr for SampleAspectRatio {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the `NUM:DEN` form [`Display`](core::fmt::Display) renders
+  /// (`"40:33"`). The separator is a colon, not the `/` [`Rational`]
+  /// uses — an aspect ratio is conventionally written `a:b`, and the
+  /// two spellings stay distinguishable.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) when the input is
+  /// not two `i64` values separated by a single `:`, or when the pair
+  /// violates [`Rational::try_new`]'s invariant (`num >= 0`, `den > 0`).
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    parse_ratio(s, ':', "SampleAspectRatio").map(Self)
   }
 }
 
@@ -937,6 +1004,39 @@ impl core::fmt::Display for Rational {
   }
 }
 
+/// Splits `NUM<sep>DEN` and runs the pair through [`Rational::try_new`], so
+/// parsing cannot become a second construction path that mints a ratio the
+/// constructor would reject.
+fn parse_ratio(s: &str, sep: char, ty: &'static str) -> Result<Rational, crate::parse::ParseError> {
+  let (n, d) = s
+    .split_once(sep)
+    .ok_or(crate::parse::ParseError::malformed(ty))?;
+  let num: i64 = n
+    .parse()
+    .map_err(|_| crate::parse::ParseError::malformed(ty))?;
+  let den: i64 = d
+    .parse()
+    .map_err(|_| crate::parse::ParseError::malformed(ty))?;
+  let den = core::num::NonZeroI64::new(den).ok_or(crate::parse::ParseError::out_of_range(ty))?;
+  Rational::try_new(num, den).ok_or(crate::parse::ParseError::out_of_range(ty))
+}
+
+impl core::str::FromStr for Rational {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the `NUM/DEN` form [`Display`](core::fmt::Display) renders
+  /// (`"30000/1001"`).
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) when the input is
+  /// not two `i64` values separated by a single `/`, or when the pair
+  /// violates [`Rational::try_new`]'s invariant (`num >= 0`, `den > 0`).
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    parse_ratio(s, '/', "Rational")
+  }
+}
+
 /// The frame rate of a video stream as an exact [`Rational`]
 /// (frames per second) plus a variable-frame-rate marker.
 ///
@@ -1139,6 +1239,31 @@ impl FieldOrder {
   }
 }
 
+impl core::str::FromStr for FieldOrder {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders, the exact
+  /// inverse of [`Display`](core::fmt::Display) for every **named**
+  /// variant.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any other
+  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
+  /// string for every payload, so there is no code to recover; use
+  /// [`Self::from_u32`] when the numeric id is what you hold.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "progressive" => Self::Progressive,
+      "tt" => Self::Tt,
+      "bb" => Self::Bb,
+      "tb" => Self::Tb,
+      "bt" => Self::Bt,
+      _ => return Err(crate::parse::ParseError::unrecognised("FieldOrder")),
+    })
+  }
+}
+
 /// Stereoscopic-3D packing mode of a video stream.
 ///
 /// Mirrors FFmpeg `AVStereo3DType` (the `AV_FRAME_DATA_STEREO3D`
@@ -1256,6 +1381,34 @@ impl StereoMode {
       7 => Self::Columns,
       _ => Self::Unknown(v),
     }
+  }
+}
+
+impl core::str::FromStr for StereoMode {
+  type Err = crate::parse::ParseError;
+
+  /// Parses the canonical slug [`Self::as_str`] renders, the exact
+  /// inverse of [`Display`](core::fmt::Display) for every **named**
+  /// variant.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ParseError`](crate::parse::ParseError) for any other
+  /// input — including `"unknown"`. [`Self::Unknown`] renders that one
+  /// string for every payload, so there is no code to recover; use
+  /// [`Self::from_u32`] when the numeric id is what you hold.
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(match s {
+      "mono" => Self::Mono,
+      "side-by-side" => Self::SideBySide,
+      "top-bottom" => Self::TopBottom,
+      "frame-sequence" => Self::FrameSequence,
+      "checkerboard" => Self::Checkerboard,
+      "side-by-side-quincunx" => Self::SideBySideQuincunx,
+      "lines" => Self::Lines,
+      "columns" => Self::Columns,
+      _ => return Err(crate::parse::ParseError::unrecognised("StereoMode")),
+    })
   }
 }
 
@@ -2317,6 +2470,142 @@ mod tests_primitives {
     // Unrecognised → preserved losslessly.
     assert_eq!(StereoMode::from_u32(99), StereoMode::Unknown(99));
     assert_eq!(StereoMode::from_u32(99).to_u32(), 99);
+  }
+
+  /// Every named variant of the three coded frame enums must survive
+  /// `as_str()` → `FromStr`, with no shared slugs.
+  #[test]
+  fn every_named_frame_enum_variant_round_trips_through_its_slug() {
+    macro_rules! sweep {
+      ($ty:ty) => {{
+        let mut named = 0usize;
+        let mut seen: [&str; 32] = [""; 32];
+        for code in 0..=1024u32 {
+          let value = <$ty>::from_u32(code);
+          if value.is_unknown() {
+            continue;
+          }
+          let slug = value.as_str();
+          assert_eq!(
+            slug.parse::<$ty>(),
+            Ok(value),
+            "{} slug {slug:?} does not parse back to {value:?}",
+            stringify!($ty)
+          );
+          for prior in seen.iter().take(named) {
+            assert_ne!(
+              *prior,
+              slug,
+              "{} has two variants spelled {slug:?}",
+              stringify!($ty)
+            );
+          }
+          seen[named] = slug;
+          named += 1;
+        }
+        assert!(
+          named > 0,
+          "{} sweep found no named variants",
+          stringify!($ty)
+        );
+      }};
+    }
+
+    sweep!(Rotation);
+    sweep!(FieldOrder);
+    sweep!(StereoMode);
+  }
+
+  #[test]
+  fn frame_enum_unknown_has_no_parseable_spelling() {
+    assert!("unknown".parse::<Rotation>().is_err());
+    assert!("unknown".parse::<FieldOrder>().is_err());
+    assert!("unknown".parse::<StereoMode>().is_err());
+    assert_eq!(
+      "not-a-rotation"
+        .parse::<Rotation>()
+        .unwrap_err()
+        .type_name(),
+      "Rotation"
+    );
+  }
+
+  /// The geometry types render an injective form, so `FromStr` is a true
+  /// inverse of `Display` for every value — not only the named ones.
+  // `std::format!` needs the allocator; these types themselves are
+  // available at the no-alloc tier, where the round trip is untestable.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  #[test]
+  fn geometry_display_round_trips_through_from_str() {
+    use core::num::NonZeroI64;
+
+    let nz = |n: i64| NonZeroI64::new(n).unwrap();
+
+    for dims in [
+      Dimensions::default(),
+      Dimensions::new(1920, 1080),
+      Dimensions::new(u32::MAX, u32::MAX),
+    ] {
+      assert_eq!(std::format!("{dims}").parse(), Ok(dims));
+    }
+
+    for ratio in [
+      Rational::default(),
+      Rational::new(30_000, nz(1001)),
+      Rational::new(0, nz(1)),
+      Rational::new(i64::MAX, nz(i64::MAX)),
+    ] {
+      assert_eq!(std::format!("{ratio}").parse(), Ok(ratio));
+    }
+
+    for sar in [
+      SampleAspectRatio::default(),
+      SampleAspectRatio::new(40, nz(33)),
+      SampleAspectRatio::new(16, nz(9)),
+    ] {
+      assert_eq!(std::format!("{sar}").parse(), Ok(sar));
+    }
+  }
+
+  /// The separators are part of each type's contract: a SAR is written
+  /// `a:b` and a bare ratio `a/b`, so neither accepts the other's form.
+  #[test]
+  fn geometry_separators_are_not_interchangeable() {
+    assert!("40/33".parse::<SampleAspectRatio>().is_err());
+    assert!("40:33".parse::<Rational>().is_err());
+    assert!("1920X1080".parse::<Dimensions>().is_err());
+  }
+
+  /// Parsing routes through `Rational::try_new`, so it cannot mint a
+  /// value the constructor rejects — the invariant has exactly one gate.
+  #[test]
+  fn geometry_parsing_cannot_bypass_the_constructor_invariant() {
+    // `num < 0` and `den <= 0` are what `Rational::try_new` refuses.
+    assert!("-5/4".parse::<Rational>().is_err());
+    assert!("5/-4".parse::<Rational>().is_err());
+    assert!("5/0".parse::<Rational>().is_err());
+    assert!("-1:1".parse::<SampleAspectRatio>().is_err());
+
+    assert_eq!(
+      "-5/4".parse::<Rational>().unwrap_err().type_name(),
+      "Rational"
+    );
+  }
+
+  #[test]
+  fn geometry_rejects_malformed_input() {
+    for bad in ["", "1920", "1920x", "x1080", "1920x1080x1", "axb", " 1x2"] {
+      assert!(
+        bad.parse::<Dimensions>().is_err(),
+        "{bad:?} should not parse as Dimensions"
+      );
+    }
+    for bad in ["", "30000", "30000/", "/1001", "a/b", "1/2/3"] {
+      assert!(
+        bad.parse::<Rational>().is_err(),
+        "{bad:?} should not parse as Rational"
+      );
+    }
   }
 }
 
