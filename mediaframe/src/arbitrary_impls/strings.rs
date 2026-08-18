@@ -39,9 +39,22 @@ super::arb_open_string_enum!(
   ["srt", "webvtt", "ass", "ssa", "mov_text", "ttml"]
 );
 
+// Both spellings of the 5.x pair are seeded on purpose — see the twin
+// list in `quickcheck_helpers::strings`. The unqualified `"5.0"` /
+// `"5.1"` are FFmpeg's names for the **back** layouts, so the short pair
+// alone leaves `N5Point0` / `N5Point1` unreachable.
 super::arb_open_string_enum!(
   crate::audio::ChannelLayout,
-  ["mono", "stereo", "5.1", "7.1", "quad", "5.0"]
+  [
+    "mono",
+    "stereo",
+    "5.1",
+    "5.1(side)",
+    "7.1",
+    "quad",
+    "5.0",
+    "5.0(side)"
+  ]
 );
 
 super::arb_open_string_enum!(

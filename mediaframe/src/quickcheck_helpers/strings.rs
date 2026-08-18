@@ -42,10 +42,24 @@ qc_open_string_enum!(
   ["srt", "webvtt", "ass", "ssa", "mov_text", "ttml"]
 );
 
+// Both spellings of the 5.x pair are seeded on purpose. FFmpeg gives the
+// unqualified `"5.0"` / `"5.1"` to the **back**-speaker layouts and
+// qualifies the side ones, so seeding only the short pair reaches
+// `N5Point0Back` / `N5Point1Back` and leaves `N5Point0` / `N5Point1`
+// unreachable — exactly the half whose slug moved in 0.4.0.
 qc_open_string_enum!(
   channel_layout,
   crate::audio::ChannelLayout,
-  ["mono", "stereo", "5.1", "7.1", "quad", "5.0"]
+  [
+    "mono",
+    "stereo",
+    "5.1",
+    "5.1(side)",
+    "7.1",
+    "quad",
+    "5.0",
+    "5.0(side)"
+  ]
 );
 
 qc_open_string_enum!(
