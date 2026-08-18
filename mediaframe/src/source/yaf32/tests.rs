@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::Yaf32Frame};
+use crate::{PixelSink, frame::Yaf32Frame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -31,12 +31,8 @@ impl Yaf32Sink<false> for CountingSink {}
 fn yaf32_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Yaf32Sink>() {
-    let _: fn(
-      &crate::frame::Yaf32LeFrame<'_>,
-      bool,
-      crate::color::KernelMatrix,
-      &mut S,
-    ) -> Result<(), S::Error> = yaf32_to::<S>;
+    let _: fn(&crate::frame::Yaf32LeFrame<'_>, bool, &mut S) -> Result<(), S::Error> =
+      yaf32_to::<S>;
   }
 }
 
@@ -50,7 +46,7 @@ fn yaf32_walker_visits_every_row_once() {
     last_packed_len: 0,
     last_row_idx: 0,
   };
-  yaf32_to(&frame, false, KernelMatrix::Bt709, &mut sink).unwrap();
+  yaf32_to(&frame, false, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_packed_len, 8); // width × 2 f32 elements per row
   assert_eq!(sink.last_row_idx, 3);

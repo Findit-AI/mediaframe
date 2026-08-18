@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::V410BeFrame, frame::V410Frame};
+use crate::{PixelSink, frame::V410BeFrame, frame::V410Frame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -32,7 +32,7 @@ fn v410_walker_visits_every_row_once() {
     last_width: 0,
     last_row_idx: 0,
   };
-  v410_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
+  v410_to(&frame, true, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_width, 4); // width u32 elements per row
   assert_eq!(sink.last_row_idx, 3);
@@ -52,7 +52,7 @@ fn v410_be_walker_visits_every_row_once() {
     last_width: 0,
     last_row_idx: 0,
   };
-  v410_to_endian::<_, true>(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
+  v410_to_endian::<_, true>(&frame, true, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_width, 4); // width u32 elements per row
   assert_eq!(sink.last_row_idx, 3);

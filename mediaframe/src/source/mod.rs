@@ -34,6 +34,38 @@ pub trait PixelSink {
     Ok(())
   }
 
+  /// The YUV/RGB conversion matrix this sink decodes with — the
+  /// **one** place a walk can learn it.
+  ///
+  /// The walkers used to take it as a positional parameter *and* the
+  /// sink usually already knew it, from whatever colour description it
+  /// had been built with. Two doors onto one fact is a bug generator:
+  /// pass one matrix, build the sink from another, and the picture is
+  /// quietly wrong with nothing to fail on. So the parameter is gone
+  /// and the sink is the source. A sink holding a colour description
+  /// projects it here; a sink that has none does not override.
+  ///
+  /// Called by the walker **once per walk**, after
+  /// [`begin_frame`](Self::begin_frame) and before the first
+  /// [`process`](Self::process) — so a sink may finish choosing during
+  /// `begin_frame`. The answer is then stamped on every row of that
+  /// frame: it is not re-read per row, and changing it mid-frame has no
+  /// effect.
+  ///
+  /// Default is [`KernelMatrix::Unspecified`], which the kernels
+  /// resolve as BT.709. That is the posture a sink naming no matrix has
+  /// always had; it is stated here rather than left to whatever the
+  /// caller happened to pass.
+  ///
+  /// Formats whose rows carry no matrix (paletted, 1-bit mono, the
+  /// float GBR planes) never call this.
+  ///
+  /// [`KernelMatrix::Unspecified`]: crate::color::KernelMatrix::Unspecified
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn kernel_matrix(&self) -> crate::color::KernelMatrix {
+    crate::color::KernelMatrix::Unspecified
+  }
+
   /// Consume one input unit. Called by the kernel once per unit (one
   /// row, for the row-granular kernels currently shipped). Input
   /// borrows may be invalidated after the call returns —

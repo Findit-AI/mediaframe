@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::AyuvFrame};
+use crate::{PixelSink, frame::AyuvFrame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -32,7 +32,7 @@ fn ayuv_walker_visits_every_row_once() {
     last_packed_len: 0,
     last_row_idx: 0,
   };
-  ayuv_to(&frame, false, KernelMatrix::Bt709, &mut sink).unwrap();
+  ayuv_to(&frame, false, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_packed_len, 16); // width × 4 bytes per row
   assert_eq!(sink.last_row_idx, 3);

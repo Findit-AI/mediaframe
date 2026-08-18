@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::Rgbf32LeFrame};
+use crate::{PixelSink, frame::Rgbf32LeFrame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -25,7 +25,7 @@ impl Rgbf32Sink for CountingSink {}
 #[test]
 fn rgbf32_sink_le_default_compiles_without_const_arg() {
   fn walks_le<S: Rgbf32Sink>(frame: &Rgbf32LeFrame<'_>, sink: &mut S) -> Result<(), S::Error> {
-    rgbf32_to(frame, true, KernelMatrix::Bt709, sink)
+    rgbf32_to(frame, true, sink)
   }
 
   let buf = std::vec![0.0_f32; 12 * 4];
@@ -46,11 +46,7 @@ fn rgbf32_sink_le_default_compiles_without_const_arg() {
 fn rgbf32_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Rgbf32Sink>() {
-    let _: fn(
-      &crate::frame::Rgbf32LeFrame<'_>,
-      bool,
-      KernelMatrix,
-      &mut S,
-    ) -> Result<(), S::Error> = rgbf32_to::<S>;
+    let _: fn(&crate::frame::Rgbf32LeFrame<'_>, bool, &mut S) -> Result<(), S::Error> =
+      rgbf32_to::<S>;
   }
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::Y210Frame};
+use crate::{PixelSink, frame::Y210Frame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -31,7 +31,7 @@ fn y210_walker_visits_every_row_once() {
     last_width: 0,
     last_row_idx: 0,
   };
-  y210_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
+  y210_to(&frame, true, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_width, 8);
   assert_eq!(sink.last_row_idx, 3);
@@ -49,11 +49,6 @@ fn y210_walker_visits_every_row_once() {
 fn y210_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Y210Sink>() {
-    let _: fn(
-      &crate::frame::Y210LeFrame<'_>,
-      bool,
-      crate::color::KernelMatrix,
-      &mut S,
-    ) -> Result<(), S::Error> = y210_to::<S>;
+    let _: fn(&crate::frame::Y210LeFrame<'_>, bool, &mut S) -> Result<(), S::Error> = y210_to::<S>;
   }
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::Rgbf16LeFrame};
+use crate::{PixelSink, frame::Rgbf16LeFrame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -25,7 +25,7 @@ impl Rgbf16Sink for CountingSink {}
 #[test]
 fn rgbf16_sink_le_default_compiles_without_const_arg() {
   fn walks_le<S: Rgbf16Sink>(frame: &Rgbf16LeFrame<'_>, sink: &mut S) -> Result<(), S::Error> {
-    rgbf16_to(frame, true, KernelMatrix::Bt709, sink)
+    rgbf16_to(frame, true, sink)
   }
 
   let buf = std::vec![half::f16::ZERO; 12 * 4];
@@ -46,11 +46,7 @@ fn rgbf16_sink_le_default_compiles_without_const_arg() {
 fn rgbf16_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Rgbf16Sink>() {
-    let _: fn(
-      &crate::frame::Rgbf16LeFrame<'_>,
-      bool,
-      KernelMatrix,
-      &mut S,
-    ) -> Result<(), S::Error> = rgbf16_to::<S>;
+    let _: fn(&crate::frame::Rgbf16LeFrame<'_>, bool, &mut S) -> Result<(), S::Error> =
+      rgbf16_to::<S>;
   }
 }

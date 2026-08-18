@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::V30XFrame};
+use crate::{PixelSink, frame::V30XFrame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -31,7 +31,7 @@ fn v30x_walker_visits_every_row_once() {
     last_width: 0,
     last_row_idx: 0,
   };
-  v30x_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
+  v30x_to(&frame, true, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_width, 4); // width u32 elements per row
   assert_eq!(sink.last_row_idx, 3);

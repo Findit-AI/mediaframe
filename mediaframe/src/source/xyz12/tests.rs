@@ -66,7 +66,58 @@ fn xyz12_to_walks_rows() {
     began: false,
     rows: 0,
   };
-  xyz12_to(&frame, KernelGamut::Rec709, &mut sink).unwrap();
+  xyz12_to(&frame, &mut sink).unwrap();
   assert!(sink.began);
   assert_eq!(sink.rows, 2);
+}
+
+/// The target gamut reaches the rows from the **sink**, not from a
+/// parameter — and the luma weights the walker derives follow it.
+///
+/// The gamut is an output axis and the sink is the output, so the sink
+/// is the only thing asked. A sink that says nothing gets DCI-P3, the
+/// theatrical decode a DCP master is mastered for.
+#[test]
+fn the_target_gamut_comes_from_the_sink() {
+  struct GamutSink {
+    declares: KernelGamut,
+    seen: std::vec::Vec<(KernelGamut, (i32, i32, i32))>,
+  }
+  impl PixelSink for GamutSink {
+    type Input<'r> = Xyz12Row<'r, false>;
+    type Error = Infallible;
+    fn process(&mut self, row: Xyz12Row<'_, false>) -> Result<(), Infallible> {
+      self.seen.push((row.target_gamut(), row.luma_q15()));
+      Ok(())
+    }
+  }
+  impl Xyz12Sink for GamutSink {
+    fn target_gamut(&self) -> KernelGamut {
+      self.declares
+    }
+  }
+
+  let plane = [0u16; 3 * 2];
+  let frame = Xyz12Frame::new(&plane, 1, 2, 3);
+
+  for declared in [
+    KernelGamut::Rec709,
+    KernelGamut::DciP3,
+    KernelGamut::Rec2020,
+  ] {
+    let mut sink = GamutSink {
+      declares: declared,
+      seen: std::vec::Vec::new(),
+    };
+    xyz12_to(&frame, &mut sink).unwrap();
+    let expected = (declared, luma_weights_q15_for_gamut(declared));
+    assert_eq!(sink.seen, std::vec![expected; 2]);
+  }
+
+  // `CountingSink` overrides nothing: the stated default is DCI-P3.
+  let silent = CountingSink {
+    began: false,
+    rows: 0,
+  };
+  assert_eq!(silent.target_gamut(), KernelGamut::DciP3);
 }
