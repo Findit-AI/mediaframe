@@ -158,7 +158,7 @@ speak to without agreeing on anything heavier.
 [dependencies]
 # Lean — codec + color + pixel_format + frame primitives.
 # Adds `mediatime` + `derive_more` + `smol_str` (codec `Other` arm).
-mediaframe = "0.2"
+mediaframe = "0.3"
 ```
 
 Opt into typed `*Frame<'a>` borrow views + the per-format

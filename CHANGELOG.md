@@ -4,7 +4,63 @@ All notable changes to this crate are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0]
+## [0.3.0]
+
+**Breaking**, on three counts: the numeric escape (`Unknown(u32)`) is struck
+from every coded vocabulary and `Other(SmolStr)` becomes the one extension
+idiom; the YUV/RGB kernel door takes a closed selector instead of the open
+`Matrix`; and the public dependency `mediatime` crosses 0.2 → 0.3 (its rescale
+ladder was renamed and its rounding corrected — see mediatime's own notes;
+`mediatime::Timestamp` is in this crate's public API).
+
+### Added
+
+- `FromStr` for the pixel-format, bayer, subtitle, audio and colour
+  vocabularies — eighteen parse twins, each generated from its own `as_str`
+  table and each with its **own** parse error type (the shared
+  `parse::ParseError` is gone).
+- The five RAW types (`BayerPattern`, `BayerDemosaic`, `WbChannel`,
+  `WhiteBalance`, `ColorCorrectionMatrix`) join serde, arbitrary and
+  quickcheck; the two float carriers deserialize through `try_new` and refuse
+  invalid values.
+- `Unwrap`/`TryUnwrap` reach `SampleFormat`, `ChannelLayout` and
+  `SubtitleCodec`; the size threshold that keeps the two 200-plus codec enums
+  out is now written down.
+- `KernelMatrix` — a closed `Copy` selector of the ten matrices the
+  conversion kernels actually have coefficients for — and `KernelGamut`
+  (which deletes `xyz12_to`'s documented panic). Kernel entries take them
+  directly; the other eight named matrices now refuse loudly
+  (`UnsupportedKernelMatrixError`) where they used to convert silently as
+  BT.709. `Unspecified` keeps its documented BT.709 default.
+- Geometry projections: `Dimensions::aspect_ratio`, `Rect::aspect_ratio`
+  (`Option<Rational>` — zero extents are ordinary), and
+  `Dimensions::display_size(SampleAspectRatio)` with FFmpeg's
+  `AV_ROUND_NEAR_INF` rounding; `Dimensions::contains(&Rect)` for crop
+  validation.
+- `FieldOrder::Unknown` and `PixelFormat::None` as **named** members (FFmpeg's
+  own `AV_FIELD_UNKNOWN` / `AV_PIX_FMT_NONE` code points — a file saying
+  "unknown" is a value, not an escape).
+
+### Changed
+
+- **Breaking:** `Unknown(u32)` struck from eleven types. `from_u32` returns
+  `Option<Self>` and `to_u32` returns `Option<u32>` (the FFmpeg-interop
+  boundary); serde **and** buffa wire shapes move from number to slug for the
+  coded enums; `Copy` leaves the ten enums, `color::Info` and
+  `frame::VideoFrame` (the per-row walker types get it back through
+  `KernelMatrix`); `as_str` returns `&str` and is no longer `const` on the
+  ten.
+- **Breaking:** the canonical text form is lowercase (`"Bilinear"` →
+  `"bilinear"`), every name door ASCII-case-folds its input (`FromStr` and the
+  `other()` constructors), and folding is allocation-free — the parse tables
+  compare bytes, which also made the biggest table ~2.5× faster.
+- **Breaking:** at the no-alloc tier the coded enums are closed vocabularies —
+  `Other` lives behind `any(feature = "alloc", feature = "std")`, and the tier
+  law is documented: no name available means an error at the boundary, never a
+  wrong value.
+- **Breaking:** public dependency `mediatime` 0.2 → 0.3.
+- Unit tests moved beside their modules (`foo/mod.rs` + `foo/tests.rs`) across
+  the crate; test counts verified identical by name. Internal only.
 
 **Breaking**, on two independent counts. `frame::Rational` widens to
 `i64`/`NonZeroI64` and its constructor becomes checked (see **Changed**
