@@ -2,7 +2,7 @@
 //! an `Other(SmolStr)` lossless escape for anything outside the
 //! closed set.
 //!
-//! The named variants cover the `AV_CH_LAYOUT_*` shapes FFmpeg n8.1
+//! The named variants cover the `AV_CH_LAYOUT_*` shapes FFmpeg n9.0
 //! exposes; layouts not enumerated here (custom orderings, ambisonic
 //! variants beyond first-order, etc.) round-trip through
 //! [`ChannelLayout::Other`] carrying the FFmpeg-canonical slug

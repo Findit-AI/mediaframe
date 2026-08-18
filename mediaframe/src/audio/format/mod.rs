@@ -9,7 +9,7 @@ use smol_str::SmolStr;
 
 /// Audio sample format — FFmpeg `AVSampleFormat`.
 ///
-/// One named variant per FFmpeg n8.1 sample format (the standard 12
+/// One named variant per FFmpeg n9.0 sample format (the standard 12
 /// — `u8`/`s16`/`s32`/`s64` × packed/planar plus `flt`/`dbl` ×
 /// packed/planar), with the planar variants suffixed `p` per FFmpeg
 /// convention.
