@@ -1,4 +1,28 @@
 #![doc = include_str!("../README.md")]
+//!
+//! # Feature tiers
+//!
+//! The crate builds at three tiers, and the tier decides how *open*
+//! its vocabularies are.
+//!
+//! | Tier | Features | Vocabularies |
+//! |---|---|---|
+//! | no-alloc | (none) | **closed** — an unrecognised slug is rejected |
+//! | alloc | `alloc` | open — an unrecognised slug rides `Other(SmolStr)` |
+//! | std | `std` (implies `alloc`) | as `alloc`, plus `std::error::Error` |
+//!
+//! `Other(SmolStr)` needs a heap, so it exists only at the `alloc` /
+//! `std` tier. At the no-alloc tier the same enums are closed and their
+//! [`FromStr`](core::str::FromStr) returns the vocabulary's own error
+//! instead: **an error beats a wrong value**, and collapsing an unknown
+//! name onto a named variant would be a wrong value. The *wire shape* is
+//! the same at every tier (a slug either way) — only the openness
+//! differs.
+//!
+//! Every gate on an alloc-tier item is spelled
+//! `any(feature = "std", feature = "alloc")` rather than bare
+//! `feature = "alloc"`, so the item cannot evaporate for a dependant
+//! that turns on `std` alone.
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, allow(unused_attributes))]
@@ -32,7 +56,15 @@ mod arbitrary_impls;
 /// embedded metadata tags + cover art. Requires the `alloc` feature
 /// (`std` includes it) for the `Other(SmolStr)` escape arms and the
 /// `Vec<u8>` payloads.
+///
+/// **Derive threshold.** Every open enum here carries `Unwrap` /
+/// `TryUnwrap` for its `Other(SmolStr)` arm. The pair generates three
+/// methods per variant, so an enum in the hundreds pays that in compile
+/// time for one reachable payload arm; the two 200-plus-variant codec
+/// enums in [`codec`] are the crate's only exemptions. The line is
+/// variant count, not principle.
 #[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod audio;
 #[cfg(feature = "buffa")]
 mod buffa;
@@ -47,12 +79,14 @@ pub mod capture;
 /// subtitle tracks. Requires the `alloc` feature (`std` includes it) for
 /// the `Other(SmolStr)` escape arms.
 #[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod codec;
 pub mod color;
 /// Top-level multimedia container-format vocabulary. Requires the
 /// `alloc` feature (`std` includes it) for the `Other(SmolStr)`
 /// escape arm.
 #[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod container;
 /// FFmpeg `AV_DISPOSITION_*` bitflags shared across all track types
 /// (video / audio / subtitle).
@@ -64,18 +98,19 @@ pub mod frame;
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod lang;
-/// The error the closed vocabulary and geometry types' `FromStr` impls
-/// return. The open enums (those with an `Other(SmolStr)` escape arm)
-/// parse infallibly and never reach it.
-pub mod parse;
+// The ASCII case-folding gate shared by every `FromStr` in the crate.
+// Private: the errors those parses return live with their vocabularies,
+// one per type.
+mod parse;
 pub mod pixel_format;
 /// `fn(&mut quickcheck::Gen) -> T` helpers consumed by the per-type
 /// `#[quickcheck(arbitrary = "…")]` attributes on each descriptor's
 /// `quickcheck-richderive::Arbitrary` derive. The derive emits the actual
 /// `impl quickcheck::Arbitrary for T` blocks; this module owns the bodies.
-/// Same surface as [`arbitrary_impls`] (39 descriptor-vocabulary types) but
+/// Same surface as [`arbitrary_impls`] (44 descriptor-vocabulary types) but
 /// the two are independent — quickcheck does **not** bridge through arbitrary.
 #[cfg(feature = "quickcheck")]
+#[cfg_attr(docsrs, doc(cfg(feature = "quickcheck")))]
 pub mod quickcheck_helpers;
 /// Centralised `serde` impls for the descriptor enums (the structs derive
 /// serde at their definition sites). Open codec/format enums serialize as

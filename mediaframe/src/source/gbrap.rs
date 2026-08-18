@@ -11,7 +11,9 @@
 //! (used by the walker function body) are `pub(crate)` only, so they do
 //! not appear in the public API surface.
 
-use crate::{PixelSink, SourceFormat, color::Matrix, frame::GbrapFrame, source::sealed::Sealed};
+use crate::{
+  PixelSink, SourceFormat, color::KernelMatrix, frame::GbrapFrame, source::sealed::Sealed,
+};
 
 /// Zero-sized marker for the planar GBRAP 8-bit source format
 /// (`AV_PIX_FMT_GBRAP`).
@@ -32,20 +34,20 @@ pub struct GbrapRow<'a> {
   v: &'a [u8],
   a: &'a [u8],
   row: usize,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   full_range: bool,
 }
 
 impl<'a> GbrapRow<'a> {
   #[cfg_attr(not(tarpaulin), inline(always))]
   #[allow(clippy::too_many_arguments)]
-  pub(crate) fn new(
+  pub(crate) const fn new(
     y: &'a [u8],
     u: &'a [u8],
     v: &'a [u8],
     a: &'a [u8],
     row: usize,
-    matrix: Matrix,
+    matrix: KernelMatrix,
     full_range: bool,
   ) -> Self {
     Self {
@@ -87,7 +89,7 @@ impl<'a> GbrapRow<'a> {
   }
   /// YUV/RGB conversion matrix carried through from the kernel call.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn matrix(&self) -> Matrix {
+  pub const fn matrix(&self) -> KernelMatrix {
     self.matrix
   }
   /// Full-range vs limited-range flag carried through from the kernel call.
@@ -104,7 +106,7 @@ pub trait GbrapSink: for<'a> PixelSink<Input<'a> = GbrapRow<'a>> {}
 pub fn gbrap_to<S: GbrapSink>(
   src: &GbrapFrame<'_>,
   full_range: bool,
-  matrix: Matrix,
+  matrix: KernelMatrix,
   sink: &mut S,
 ) -> Result<(), S::Error> {
   sink.begin_frame(src.width(), src.height())?;
