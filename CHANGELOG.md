@@ -42,8 +42,14 @@ through `VideoCodec::Other`.
   rule now holds at row grain for everything outside this crate. Covers all
   132 walker-generated row types plus `Pal8Row`, `BayerRow` and `BayerRow16`
   — 135 in all; the ten hand-written source rows that were already
-  `pub(crate)` are unchanged and get no door, because there was no public
-  promise there to replace.
+  `pub(crate)` are unchanged, because there was no public promise there to
+  replace. Nine of those ten also get no door for the same reason.
+  `Xyz12Row` is the tenth and does get one, for a different reason: `xyz`
+  was the only one of the fifteen format features with no door anywhere
+  behind it, so the format had no way in for a kernel-parity suite at all.
+  That is a hole in the coverage rather than a promise to replace, and it
+  is now closed — every format feature owns at least one door, which is
+  what the `row_test_door_doc` gate now says.
 
   The named exception is `#[doc(hidden)] *Row::for_tests`, emitted beside
   `new` with the identical parameter list — selector included — and

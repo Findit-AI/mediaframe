@@ -98,6 +98,18 @@ impl<'a, const BE: bool> Xyz12Row<'a, BE> {
     }
   }
 
+  #[doc = row_test_door_doc!()]
+  #[doc(hidden)]
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn for_tests(
+    xyz: &'a [u16],
+    row: usize,
+    target_gamut: KernelGamut,
+    luma_q15: (i32, i32, i32),
+  ) -> Self {
+    Self::new(xyz, row, target_gamut, luma_q15)
+  }
+
   /// Packed source row — `width * 3` u16 samples in `X, Y, Z` order.
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub fn xyz(&self) -> &'a [u16] {
@@ -272,5 +284,7 @@ pub fn xyz12_to<const BE: bool, S: Xyz12Sink<BE>>(
   Ok(())
 }
 
+#[cfg(all(test, feature = "std"))]
+mod door_tests;
 #[cfg(all(test, feature = "std"))]
 mod tests;
