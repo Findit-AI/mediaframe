@@ -31,6 +31,70 @@ fn every_named_variant_round_trips() {
   }
 }
 
+/// Every named variant's slug is the name FFmpeg's
+/// `channel_layout_map[]` gives the constant that variant is named
+/// after — transcribed from `libavutil/channel_layout.c` at the pinned
+/// n9.0 tag.
+///
+/// This exists because the 5.x arms *look* wrong: FFmpeg gives the
+/// unqualified `"5.0"` / `"5.1"` to the **back**-speaker layouts
+/// (`AV_CH_LAYOUT_5POINT0_BACK` = `SURROUND|BACK_LEFT|BACK_RIGHT`) and
+/// qualifies the side ones. mediaframe had them the other way round
+/// until 0.4.0, so an FFmpeg-sourced `"5.1"` landed on the variant whose
+/// documentation promised side speakers. Nothing but a transcribed table
+/// catches that, so here it is; `ambisonic*` are excluded because FFmpeg
+/// models ambisonics as a channel *order*, not a map entry.
+#[test]
+fn channel_layout_slugs_match_ffmpegs_map() {
+  // (variant, `AV_CH_LAYOUT_` suffix it is named after, FFmpeg's name)
+  const MAP: &[(ChannelLayout, &str, &str)] = &[
+    (ChannelLayout::Mono, "MONO", "mono"),
+    (ChannelLayout::Stereo, "STEREO", "stereo"),
+    (ChannelLayout::N2Point1, "2POINT1", "2.1"),
+    (ChannelLayout::N3Point0, "SURROUND", "3.0"),
+    (ChannelLayout::N3Point0Back, "2_1", "3.0(back)"),
+    (ChannelLayout::N3Point1, "3POINT1", "3.1"),
+    (ChannelLayout::Quad, "QUAD", "quad"),
+    (ChannelLayout::N5Point0, "5POINT0", "5.0(side)"),
+    (ChannelLayout::N5Point0Back, "5POINT0_BACK", "5.0"),
+    (ChannelLayout::N5Point1, "5POINT1", "5.1(side)"),
+    (ChannelLayout::N5Point1Back, "5POINT1_BACK", "5.1"),
+    (ChannelLayout::N6Point0, "6POINT0", "6.0"),
+    (ChannelLayout::N6Point1, "6POINT1", "6.1"),
+    (ChannelLayout::N7Point0, "7POINT0", "7.0"),
+    (ChannelLayout::N7Point1, "7POINT1", "7.1"),
+    (ChannelLayout::Hexagonal, "HEXAGONAL", "hexagonal"),
+    (ChannelLayout::Octagonal, "OCTAGONAL", "octagonal"),
+  ];
+  for (layout, constant, ffmpeg_name) in MAP {
+    assert_eq!(
+      layout.as_str(),
+      *ffmpeg_name,
+      "AV_CH_LAYOUT_{constant} is named {ffmpeg_name:?} by FFmpeg, not {:?}",
+      layout.as_str()
+    );
+    assert_eq!(
+      ffmpeg_name.parse::<ChannelLayout>().unwrap(),
+      *layout,
+      "FFmpeg's {ffmpeg_name:?} must read back as the AV_CH_LAYOUT_{constant} variant"
+    );
+  }
+}
+
+/// The four 5.x slugs were swapped in 0.4.0. Pin both readings so a
+/// well-meaning "fix" cannot quietly put them back.
+#[test]
+fn the_unqualified_five_point_slugs_are_the_back_layouts() {
+  assert_eq!("5.0".parse(), Ok(ChannelLayout::N5Point0Back));
+  assert_eq!("5.1".parse(), Ok(ChannelLayout::N5Point1Back));
+  assert_eq!("5.0(side)".parse(), Ok(ChannelLayout::N5Point0));
+  assert_eq!("5.1(side)".parse(), Ok(ChannelLayout::N5Point1));
+  assert_eq!(ChannelLayout::N5Point0Back.as_str(), "5.0");
+  assert_eq!(ChannelLayout::N5Point1Back.as_str(), "5.1");
+  assert_eq!(ChannelLayout::N5Point0.as_str(), "5.0(side)");
+  assert_eq!(ChannelLayout::N5Point1.as_str(), "5.1(side)");
+}
+
 #[test]
 fn unknown_layout_lands_in_other() {
   let v: ChannelLayout = "22.2".parse().unwrap();
@@ -42,7 +106,7 @@ fn unknown_layout_lands_in_other() {
 #[test]
 fn display_matches_as_str() {
   assert_eq!(ChannelLayout::Stereo.to_string(), "stereo");
-  assert_eq!(ChannelLayout::N5Point1.to_string(), "5.1");
+  assert_eq!(ChannelLayout::N5Point1.to_string(), "5.1(side)");
   assert_eq!(
     ChannelLayout::Other(SmolStr::new("custom_layout")).to_string(),
     "custom_layout"

@@ -14,7 +14,7 @@ use smol_str::SmolStr;
 ///
 /// - **H.273 / FFmpeg code points** use FFmpeg's own numbers (all
 ///   `< DOMAIN_EXT_BASE`, xtask-verified against the pinned FFmpeg
-///   n8.1 `libavutil/pixfmt.h`).
+///   n9.0 `libavutil/pixfmt.h`).
 /// - **mediaframe-domain concepts** FFmpeg does not enumerate (e.g.
 ///   the unified [`Matrix::Bt601`]; future RAW camera colour
 ///   science) get stable ids with **bit 31 set** (`>= DOMAIN_EXT_BASE`).
@@ -256,9 +256,18 @@ pub struct ParseMatrixError;
 impl core::str::FromStr for Matrix {
   type Err = ParseMatrixError;
 
-  /// Parses the canonical slug [`Self::as_str`] renders, the exact
-  /// inverse of [`Display`](core::fmt::Display) for every **named**
-  /// variant.
+  /// Reads a colour-matrix name: the canonical slug [`Self::as_str`]
+  /// renders, **or** FFmpeg's spelling of the same code point where the
+  /// two differ.
+  ///
+  /// Emission is injective and canonical — [`Self::as_str`],
+  /// [`Display`](core::fmt::Display) and serde render one slug per
+  /// variant and never a synonym — so `parse(display(x)) == x` holds for
+  /// every named variant. Parse is the wider side: it also takes
+  /// `av_color_space_name`'s spellings `gbr` ([`Self::Rgb`]) and
+  /// `unknown` ([`Self::Unspecified`]), so a value copied off `ffprobe`
+  /// keeps its H.273 code instead of riding [`Self::Other`], which has
+  /// no [`Self::to_u32`].
   ///
   /// # Errors
   ///
@@ -290,6 +299,12 @@ impl core::str::FromStr for Matrix {
       b"ipt-c2" => Self::IptC2,
       b"ycgco-re" => Self::YCgCoRe,
       b"ycgco-ro" => Self::YCgCoRo,
+
+      // FFmpeg's `av_color_space_name` spellings. Accepted, never
+      // emitted — keep in step with `MATRIX_FFMPEG_SYNONYMS`.
+      b"gbr" => Self::Rgb,
+      b"unknown" => Self::Unspecified,
+
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -297,6 +312,16 @@ impl core::str::FromStr for Matrix {
     })
   }
 }
+
+/// FFmpeg's spellings for [`Matrix`] code points whose canonical
+/// mediaframe slug differs, as `(ffmpeg_name, canonical_slug)`.
+///
+/// The crate-wide rule: emit one canonical slug per variant, parse that
+/// slug **plus** the documented FFmpeg name. `cfg(test)` because the one
+/// consumer is the nail test proving no synonym shadows a canonical
+/// slug.
+#[cfg(test)]
+const MATRIX_FFMPEG_SYNONYMS: &[(&str, &str)] = &[("gbr", "rgb"), ("unknown", "unspecified")];
 
 /// The **closed** set of colour matrices a conversion kernel has
 /// coefficients for — the `Copy` selector the row walkers carry.
@@ -760,9 +785,15 @@ pub struct ParsePrimariesError;
 impl core::str::FromStr for Primaries {
   type Err = ParsePrimariesError;
 
-  /// Parses the canonical slug [`Self::as_str`] renders, the exact
-  /// inverse of [`Display`](core::fmt::Display) for every **named**
-  /// variant.
+  /// Reads a primaries name: the canonical slug [`Self::as_str`]
+  /// renders, **or** FFmpeg's spelling of the same code point where the
+  /// two differ.
+  ///
+  /// Emission is injective and canonical — never a synonym — so
+  /// `parse(display(x)) == x` holds for every named variant. Parse also
+  /// takes `av_color_primaries_name`'s `unknown`
+  /// ([`Self::Unspecified`]); every other name in that table already
+  /// matches this vocabulary.
   ///
   /// # Errors
   ///
@@ -788,6 +819,11 @@ impl core::str::FromStr for Primaries {
       b"smpte431" => Self::SmpteRp431,
       b"smpte432" => Self::SmpteEg432,
       b"ebu3213" => Self::Ebu3213E,
+
+      // FFmpeg's `av_color_primaries_name` spelling. Accepted, never
+      // emitted — keep in step with `PRIMARIES_FFMPEG_SYNONYMS`.
+      b"unknown" => Self::Unspecified,
+
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -795,6 +831,12 @@ impl core::str::FromStr for Primaries {
     })
   }
 }
+
+/// FFmpeg's spelling for the one [`Primaries`] code point whose
+/// canonical mediaframe slug differs, as `(ffmpeg_name,
+/// canonical_slug)`. See [`MATRIX_FFMPEG_SYNONYMS`] for the rule.
+#[cfg(test)]
+const PRIMARIES_FFMPEG_SYNONYMS: &[(&str, &str)] = &[("unknown", "unspecified")];
 
 /// Transfer characteristics per ITU-T H.273 (Table 3).
 ///
@@ -992,9 +1034,18 @@ pub struct ParseTransferError;
 impl core::str::FromStr for Transfer {
   type Err = ParseTransferError;
 
-  /// Parses the canonical slug [`Self::as_str`] renders, the exact
-  /// inverse of [`Display`](core::fmt::Display) for every **named**
-  /// variant.
+  /// Reads a transfer-characteristics name: the canonical slug
+  /// [`Self::as_str`] renders, **or** FFmpeg's spelling of the same code
+  /// point where the two differ.
+  ///
+  /// Emission is injective and canonical — never a synonym — so
+  /// `parse(display(x)) == x` holds for every named variant. Parse also
+  /// takes `av_color_transfer_name`'s three divergent spellings:
+  /// `unknown` ([`Self::Unspecified`]), and `bt470m` / `bt470bg`, which
+  /// FFmpeg uses for the curves this vocabulary spells `gamma22`
+  /// ([`Self::Gamma22`]) and `gamma28` ([`Self::Gamma28`]). Neither
+  /// `bt470m` nor `bt470bg` names any [`Transfer`] variant of its own —
+  /// those spellings belong to [`Primaries`], a different type.
   ///
   /// # Errors
   ///
@@ -1025,6 +1076,13 @@ impl core::str::FromStr for Transfer {
       b"smpte2084" => Self::SmpteSt2084Pq,
       b"smpte428" => Self::SmpteSt428,
       b"arib-std-b67" => Self::AribStdB67Hlg,
+
+      // FFmpeg's `av_color_transfer_name` spellings. Accepted, never
+      // emitted — keep in step with `TRANSFER_FFMPEG_SYNONYMS`.
+      b"unknown" => Self::Unspecified,
+      b"bt470m" => Self::Gamma22,
+      b"bt470bg" => Self::Gamma28,
+
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -1032,6 +1090,16 @@ impl core::str::FromStr for Transfer {
     })
   }
 }
+
+/// FFmpeg's spellings for [`Transfer`] code points whose canonical
+/// mediaframe slug differs, as `(ffmpeg_name, canonical_slug)`. See
+/// [`MATRIX_FFMPEG_SYNONYMS`] for the rule.
+#[cfg(test)]
+const TRANSFER_FFMPEG_SYNONYMS: &[(&str, &str)] = &[
+  ("bt470bg", "gamma28"),
+  ("bt470m", "gamma22"),
+  ("unknown", "unspecified"),
+];
 
 /// Sample range — limited (TV / studio swing) vs. full (PC).
 ///
@@ -1153,9 +1221,14 @@ pub struct ParseDynamicRangeError;
 impl core::str::FromStr for DynamicRange {
   type Err = ParseDynamicRangeError;
 
-  /// Parses the canonical slug [`Self::as_str`] renders, the exact
-  /// inverse of [`Display`](core::fmt::Display) for every **named**
-  /// variant.
+  /// Reads a sample-range name: the canonical slug [`Self::as_str`]
+  /// renders, **or** FFmpeg's spelling of the same code point where the
+  /// two differ.
+  ///
+  /// Emission is injective and canonical — never a synonym — so
+  /// `parse(display(x)) == x` holds for every named variant. Parse also
+  /// takes `av_color_range_name`'s `unknown` ([`Self::Unspecified`]);
+  /// `tv` and `pc` are already FFmpeg's own spellings.
   ///
   /// # Errors
   ///
@@ -1172,6 +1245,11 @@ impl core::str::FromStr for DynamicRange {
       b"unspecified" => Self::Unspecified,
       b"tv" => Self::Limited,
       b"pc" => Self::Full,
+
+      // FFmpeg's `av_color_range_name` spelling. Accepted, never
+      // emitted — keep in step with `DYNAMIC_RANGE_FFMPEG_SYNONYMS`.
+      b"unknown" => Self::Unspecified,
+
       #[cfg(any(feature = "std", feature = "alloc"))]
       _ => Self::other(s),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -1179,6 +1257,12 @@ impl core::str::FromStr for DynamicRange {
     })
   }
 }
+
+/// FFmpeg's spelling for the one [`DynamicRange`] code point whose
+/// canonical mediaframe slug differs, as `(ffmpeg_name,
+/// canonical_slug)`. See [`MATRIX_FFMPEG_SYNONYMS`] for the rule.
+#[cfg(test)]
+const DYNAMIC_RANGE_FFMPEG_SYNONYMS: &[(&str, &str)] = &[("unknown", "unspecified")];
 
 /// Chroma sample location (for subsampled YUV formats).
 ///

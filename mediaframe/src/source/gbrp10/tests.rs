@@ -1,5 +1,4 @@
 use super::*;
-use crate::color::KernelMatrix;
 
 // Compile-pass regression for the codex round-1 finding on PR #109
 // (`planar3_bits_be` arm). Switching from `walker!(planar3_bits)` to
@@ -14,11 +13,7 @@ use crate::color::KernelMatrix;
 fn gbrp10_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Gbrp10Sink>() {
-    let _: fn(
-      &crate::frame::Gbrp10LeFrame<'_>,
-      bool,
-      KernelMatrix,
-      &mut S,
-    ) -> Result<(), S::Error> = gbrp10_to::<S>;
+    let _: fn(&crate::frame::Gbrp10LeFrame<'_>, bool, &mut S) -> Result<(), S::Error> =
+      gbrp10_to::<S>;
   }
 }

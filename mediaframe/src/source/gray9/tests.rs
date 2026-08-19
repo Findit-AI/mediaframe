@@ -1,5 +1,4 @@
 use super::*;
-use crate::color::KernelMatrix;
 
 // Compile-pass regression for the codex round-1 finding on PR #106
 // (`planar1_bits_be` arm). Switching the Gray9 walker macro from
@@ -13,7 +12,7 @@ use crate::color::KernelMatrix;
 fn gray9_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Gray9Sink>() {
-    let _: fn(&crate::frame::Gray9LeFrame<'_>, bool, KernelMatrix, &mut S) -> Result<(), S::Error> =
+    let _: fn(&crate::frame::Gray9LeFrame<'_>, bool, &mut S) -> Result<(), S::Error> =
       gray9_to::<S>;
   }
 }

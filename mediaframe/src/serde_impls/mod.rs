@@ -12,7 +12,11 @@
 //!   One extension idiom, one wire shape. Round-trip total wherever the
 //!   `Other(SmolStr)` arm exists (the `alloc` tier); at the no-alloc tier
 //!   the same enums are closed, so an unrecognised slug is a serde error
-//!   rather than a silently-invented value.
+//!   rather than a silently-invented value. Deserialization goes through
+//!   the type's `FromStr`, so it also reads the documented FFmpeg
+//!   synonyms (`"gray"` → `PixelFormat::Gray8`, `"unknown"` →
+//!   `color::Matrix::Unspecified`); serialization stays canonical, so a
+//!   synonym read off the wire is written back in the canonical spelling.
 //! - **`TrackDisposition`** is the one numeric wire left: it is a bit set,
 //!   not a name vocabulary, so it serializes as its `u32` bits.
 //! - **Strictly-closed coded enums (no `Other` arm)** —

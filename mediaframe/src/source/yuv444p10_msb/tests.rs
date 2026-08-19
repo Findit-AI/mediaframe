@@ -1,5 +1,4 @@
 use super::*;
-use crate::color::KernelMatrix;
 
 // Compile-pass regression mirroring the `planar3_bits_be` arm guarantee
 // (cf. `gbrp10_msb::tests`): the macro emits an LE-only `yuv444p10_msb_to`
@@ -10,11 +9,7 @@ use crate::color::KernelMatrix;
 fn yuv444p10_msb_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Yuv444p10MsbSink>() {
-    let _: fn(
-      &crate::frame::Yuv444p10MsbLeFrame<'_>,
-      bool,
-      KernelMatrix,
-      &mut S,
-    ) -> Result<(), S::Error> = yuv444p10_msb_to::<S>;
+    let _: fn(&crate::frame::Yuv444p10MsbLeFrame<'_>, bool, &mut S) -> Result<(), S::Error> =
+      yuv444p10_msb_to::<S>;
   }
 }

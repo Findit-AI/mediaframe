@@ -2,7 +2,7 @@
 //! across video, audio, and subtitle tracks.
 //!
 //! Direct mirror of FFmpeg's `libavformat/avformat.h` disposition
-//! constants as of n8.1. Bit values are **stable** — append-only, never
+//! constants as of n9.0. Bit values are **stable** — append-only, never
 //! renumbered — matching FFmpeg's contract; an unrecognised bit on the
 //! wire round-trips losslessly through [`Self::from_u32`] /
 //! [`Self::to_u32`] via the underlying [`bitflags`] storage, which
@@ -21,7 +21,7 @@ bitflags! {
     /// shared across video / audio / subtitle streams (e.g.
     /// `DEFAULT`, `FORCED`, `HEARING_IMPAIRED`).
     ///
-    /// Bit values mirror `libavformat/avformat.h` as of FFmpeg n8.1
+    /// Bit values mirror `libavformat/avformat.h` as of FFmpeg n9.0
     /// and are **append-only** (never renumber). Unknown bits
     /// passing through [`TrackDisposition::from_u32`] /
     /// [`TrackDisposition::to_u32`] are preserved verbatim

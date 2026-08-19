@@ -1,6 +1,6 @@
 # FFmpeg codec short names — vendored for `cargo xtask check`.
-# Source: FFmpeg n8.1 libavcodec/codec_desc.c
-# Fetched: 2026-05-20
+# Source: FFmpeg n9.0 libavcodec/codec_desc.c
+# Fetched: 2026-08-18
 #
 # Regenerate via `cargo xtask sync` after bumping the FFMPEG_TAG constant.
 # Format: `<media_type> <name> [<props>]` — one descriptor per line, sorted.
@@ -89,6 +89,7 @@ audio amr_wb INTRA_ONLY,LOSSY
 audio anull
 audio apac INTRA_ONLY,LOSSLESS
 audio ape INTRA_ONLY,LOSSLESS
+audio apple_apac LOSSY
 audio aptx INTRA_ONLY,LOSSY
 audio aptx_hd INTRA_ONLY,LOSSY
 audio atrac1 INTRA_ONLY,LOSSY
@@ -503,9 +504,6 @@ video ulti LOSSY
 video utvideo INTRA_ONLY,LOSSLESS
 video v210 INTRA_ONLY,LOSSLESS
 video v210x INTRA_ONLY,LOSSLESS
-video v308 INTRA_ONLY,LOSSLESS
-video v408 INTRA_ONLY,LOSSLESS
-video v410 INTRA_ONLY,LOSSLESS
 video vb LOSSY
 video vble INTRA_ONLY,LOSSLESS
 video vbn INTRA_ONLY,LOSSY
@@ -531,6 +529,7 @@ video vvc LOSSY,REORDER
 video wbmp INTRA_ONLY,LOSSLESS
 video wcmv LOSSLESS
 video webp INTRA_ONLY,LOSSLESS,LOSSY
+video webp_anim LOSSLESS,LOSSY
 video wmv1 LOSSY
 video wmv2 LOSSY
 video wmv3 LOSSY,REORDER

@@ -117,7 +117,7 @@ fn as_str_matches_display() {
 
 #[test]
 fn enum_u32_uses_ffmpeg_codes_and_round_trips() {
-  // `to_u32()` returns the real FFmpeg n8.1 code point for the
+  // `to_u32()` returns the real FFmpeg n9.0 code point for the
   // named variants (spot-checks against libavutil/pixfmt.h).
   assert_eq!(Primaries::Unspecified.to_u32(), Some(2));
   assert_eq!(Primaries::Bt709.to_u32(), Some(1));
@@ -643,24 +643,111 @@ fn every_named_colour_variant_round_trips_through_its_slug() {
   sweep!(DcpTargetGamut);
 }
 
-/// `"unknown"` is no longer a value any colour enum can hold: the arm
-/// that collapsed every payload onto that one string is gone, so the
-/// word is just another name the vocabulary does not enumerate and it
-/// rides `Other` like any other.
+/// `"unknown"` is still not a value any colour enum can **hold**: the
+/// arm that collapsed every payload onto that one string is gone and
+/// nothing renders the word.
+///
+/// The FFmpeg-synonym law changed only the reading. On the four enums
+/// whose FFmpeg name table spells `AVCOL_*_UNSPECIFIED` as `"unknown"`,
+/// the word is now recognised as that spelling and parses to
+/// `Unspecified` — which renders `"unspecified"`, so the word still
+/// never comes back out, and the H.273 code survives instead of being
+/// lost to a `to_u32`-less escape. `ChromaLocation` (FFmpeg spells that
+/// one `"unspecified"` as well) and the mediaframe-domain
+/// `DcpTargetGamut` have no such synonym, so there the word stays an
+/// ordinary unenumerated name on the escape.
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[test]
 fn unknown_is_no_longer_a_colour_value() {
-  assert_eq!("unknown".parse(), Ok(Matrix::other("unknown")));
-  assert_eq!("unknown".parse::<Matrix>().unwrap().as_str(), "unknown");
   for parsed in [
+    "unknown".parse::<Matrix>().unwrap().as_str(),
     "unknown".parse::<Primaries>().unwrap().as_str(),
     "unknown".parse::<Transfer>().unwrap().as_str(),
     "unknown".parse::<DynamicRange>().unwrap().as_str(),
+  ] {
+    assert_eq!(parsed, "unspecified");
+  }
+  assert_eq!("unknown".parse(), Ok(Matrix::Unspecified));
+  assert_eq!(Matrix::Unspecified.to_u32(), Some(2));
+
+  for parsed in [
     "unknown".parse::<ChromaLocation>().unwrap().as_str(),
     "unknown".parse::<DcpTargetGamut>().unwrap().as_str(),
   ] {
     assert_eq!(parsed, "unknown");
   }
+  assert!("unknown".parse::<ChromaLocation>().unwrap().is_other());
+}
+
+/// The FFmpeg synonyms are **accepted, never emitted**, and none of them
+/// shadows a canonical slug.
+///
+/// Paired with `every_named_colour_variant_round_trips_through_its_slug`
+/// (every canonical slug parses back to its own variant), the two
+/// directions make a collision impossible: a synonym that shadowed a
+/// canonical slug would break that sweep, and one that lost to a
+/// canonical arm would fail the `as_str() != synonym` assertion here.
+#[test]
+fn ffmpeg_synonyms_are_accepted_but_never_emitted() {
+  macro_rules! check {
+    ($ty:ty, $table:expr) => {{
+      for (synonym, canonical) in $table {
+        let from_synonym = synonym
+          .parse::<$ty>()
+          .expect("a documented FFmpeg synonym parses");
+        assert_eq!(
+          from_synonym.as_str(),
+          *canonical,
+          "{}: FFmpeg name {synonym:?} must parse to the variant spelled {canonical:?}",
+          stringify!($ty)
+        );
+        assert_ne!(
+          from_synonym.as_str(),
+          *synonym,
+          "{}: {synonym:?} is emitted by a variant — a canonical slug, not a synonym",
+          stringify!($ty)
+        );
+        assert_eq!(
+          canonical.parse::<$ty>(),
+          Ok(from_synonym.clone()),
+          "{}: the canonical slug and its FFmpeg synonym must name one value",
+          stringify!($ty)
+        );
+        // The fold gate applies to synonyms too — one name, one value.
+        let mut upper = [0u8; 64];
+        let n = synonym.len();
+        upper[..n].copy_from_slice(synonym.as_bytes());
+        upper[..n].make_ascii_uppercase();
+        let upper = core::str::from_utf8(&upper[..n]).unwrap();
+        assert_eq!(
+          upper.parse::<$ty>(),
+          Ok(from_synonym),
+          "{} does not fold the synonym {upper:?}",
+          stringify!($ty)
+        );
+      }
+    }};
+  }
+
+  check!(Matrix, MATRIX_FFMPEG_SYNONYMS);
+  check!(Primaries, PRIMARIES_FFMPEG_SYNONYMS);
+  check!(Transfer, TRANSFER_FFMPEG_SYNONYMS);
+  check!(DynamicRange, DYNAMIC_RANGE_FFMPEG_SYNONYMS);
+}
+
+/// A synonym is scoped to the type whose FFmpeg name table carries it.
+/// `bt470m` / `bt470bg` are canonical [`Primaries`] slugs *and* the
+/// FFmpeg spelling of two [`Transfer`] curves this crate calls
+/// `gamma22` / `gamma28`. FFmpeg overloads the words the same way; the
+/// types are what keep the two readings apart.
+#[test]
+fn a_synonym_is_scoped_to_its_type() {
+  assert_eq!("bt470m".parse(), Ok(Primaries::Bt470M));
+  assert_eq!("bt470bg".parse(), Ok(Primaries::Bt470Bg));
+  assert_eq!("bt470m".parse(), Ok(Transfer::Gamma22));
+  assert_eq!("bt470bg".parse(), Ok(Transfer::Gamma28));
+  assert_eq!(Primaries::Bt470M.as_str(), "bt470m");
+  assert_eq!(Transfer::Gamma22.as_str(), "gamma22");
 }
 
 /// The escape is total on the `alloc` tier: every name round-trips, and

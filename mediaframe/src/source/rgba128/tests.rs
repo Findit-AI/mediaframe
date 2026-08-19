@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::Rgba128Frame};
+use crate::{PixelSink, frame::Rgba128Frame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -32,7 +32,7 @@ fn rgba128_walker_visits_every_row_once() {
     last_width: 0,
     last_row_idx: 0,
   };
-  rgba128_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
+  rgba128_to(&frame, true, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_width, 16); // width * 4 u32 elements per row
   assert_eq!(sink.last_row_idx, 3);
@@ -47,11 +47,7 @@ fn rgba128_walker_visits_every_row_once() {
 fn rgba128_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Rgba128Sink>() {
-    let _: fn(
-      &crate::frame::Rgba128LeFrame<'_>,
-      bool,
-      KernelMatrix,
-      &mut S,
-    ) -> Result<(), S::Error> = rgba128_to::<S>;
+    let _: fn(&crate::frame::Rgba128LeFrame<'_>, bool, &mut S) -> Result<(), S::Error> =
+      rgba128_to::<S>;
   }
 }

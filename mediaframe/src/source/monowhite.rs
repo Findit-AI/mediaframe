@@ -59,7 +59,7 @@ impl<'a> MonowhiteRow<'a> {
     self.row
   }
 
-  /// Color matrix carried through from the kernel call.
+  /// Color matrix, read once from the sink.
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn matrix(&self) -> KernelMatrix {
     self.matrix
@@ -90,10 +90,10 @@ pub trait MonowhiteSink: for<'a> PixelSink<Input<'a> = MonowhiteRow<'a>> {}
 pub fn monowhite_to<S: MonowhiteSink>(
   src: &MonowhiteFrame<'_>,
   full_range: bool,
-  matrix: KernelMatrix,
   sink: &mut S,
 ) -> Result<(), S::Error> {
   sink.begin_frame(src.width(), src.height())?;
+  let matrix = sink.kernel_matrix();
 
   let w = src.width();
   let h = src.height() as usize;

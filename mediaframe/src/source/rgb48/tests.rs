@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::Rgb48Frame};
+use crate::{PixelSink, frame::Rgb48Frame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -32,7 +32,7 @@ fn rgb48_walker_visits_every_row_once() {
     last_width: 0,
     last_row_idx: 0,
   };
-  rgb48_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
+  rgb48_to(&frame, true, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_width, 12); // width * 3 u16 elements per row
   assert_eq!(sink.last_row_idx, 3);
@@ -50,7 +50,7 @@ fn rgb48_sink_le_default_compiles_without_const_arg() {
   // the bare-bound form `S: Rgb48Sink` and confirms it monomorphizes
   // to the LE walker.
   fn walks_le<S: Rgb48Sink>(frame: &Rgb48Frame<'_>, sink: &mut S) -> Result<(), S::Error> {
-    rgb48_to(frame, true, KernelMatrix::Bt709, sink)
+    rgb48_to(frame, true, sink)
   }
 
   let buf = std::vec![0u16; 12 * 4];
@@ -75,7 +75,7 @@ fn rgb48_sink_le_default_compiles_without_const_arg() {
 fn rgb48_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Rgb48Sink>() {
-    let _: fn(&crate::frame::Rgb48LeFrame<'_>, bool, KernelMatrix, &mut S) -> Result<(), S::Error> =
+    let _: fn(&crate::frame::Rgb48LeFrame<'_>, bool, &mut S) -> Result<(), S::Error> =
       rgb48_to::<S>;
   }
 }

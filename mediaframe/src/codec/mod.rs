@@ -1,7 +1,7 @@
 //! Stream-descriptor **codec** vocabulary for video, audio, and subtitle
 //! tracks.
 //!
-//! **Generated** from `xtask/vendor/ffmpeg-codecs.txt` (FFmpeg n8.1
+//! **Generated** from `xtask/vendor/ffmpeg-codecs.txt` (FFmpeg n9.0
 //! `libavcodec/codec_desc.c`) by `cargo xtask gen-codec`. Every codec
 //! FFmpeg knows under media types `video` / `audio` / `subtitle` has
 //! a named variant here; the `Other(SmolStr)` arm remains a lossless
@@ -18,13 +18,13 @@
 //! **Derive threshold.** `Unwrap` / `TryUnwrap` generate three methods
 //! per variant, so an enum in the hundreds pays that in compile time for
 //! one reachable payload arm. [`SubtitleCodec`] (27 variants) carries the
-//! pair; [`VideoCodec`] (281) and [`AudioCodec`] (221) do not. The line is
+//! pair; [`VideoCodec`] (279) and [`AudioCodec`] (222) do not. The line is
 //! variant count, not principle — reach for `Other(_)` on the large two
 //! with a `match` or [`IsVariant`](derive_more::IsVariant)'s `is_other`.
 use core::str::FromStr;
 use derive_more::{Display, IsVariant, TryUnwrap, Unwrap};
 use smol_str::SmolStr;
-/** Video codec family — every codec FFmpeg n8.1 knows under media type `video`.
+/** Video codec family — every codec FFmpeg n9.0 knows under media type `video`.
 
 `#[non_exhaustive]` keeps future additions non-breaking; the `Other(SmolStr)` arm is the lossless escape for codecs added upstream before this file is regenerated.*/
 #[cfg_attr(
@@ -500,12 +500,6 @@ pub enum VideoCodec {
   V210,
   /// FFmpeg `"v210x"`.
   V210x,
-  /// FFmpeg `"v308"`.
-  V308,
-  /// FFmpeg `"v408"`.
-  V408,
-  /// FFmpeg `"v410"`.
-  V410,
   /// FFmpeg `"vb"`.
   Vb,
   /// FFmpeg `"vble"`.
@@ -556,6 +550,8 @@ pub enum VideoCodec {
   Wcmv,
   /// FFmpeg `"webp"`.
   Webp,
+  /// FFmpeg `"webp_anim"`.
+  WebpAnim,
   /// FFmpeg `"wmv1"`.
   Wmv1,
   /// FFmpeg `"wmv2"`.
@@ -838,9 +834,6 @@ impl VideoCodec {
       Self::Utvideo => "utvideo",
       Self::V210 => "v210",
       Self::V210x => "v210x",
-      Self::V308 => "v308",
-      Self::V408 => "v408",
-      Self::V410 => "v410",
       Self::Vb => "vb",
       Self::Vble => "vble",
       Self::Vbn => "vbn",
@@ -866,6 +859,7 @@ impl VideoCodec {
       Self::Wbmp => "wbmp",
       Self::Wcmv => "wcmv",
       Self::Webp => "webp",
+      Self::WebpAnim => "webp_anim",
       Self::Wmv1 => "wmv1",
       Self::Wmv2 => "wmv2",
       Self::Wmv3 => "wmv3",
@@ -890,7 +884,7 @@ impl VideoCodec {
       Self::Other(s) => s.as_str(),
     }
   }
-  /// The open escape for a codec name FFmpeg n8.1 does not carry,
+  /// The open escape for a codec name FFmpeg n9.0 does not carry,
   /// ASCII-folded to the crate's lowercase canon.
   ///
   /// The **one** construction path for [`Self::Other`]: folding here is
@@ -1142,9 +1136,6 @@ impl FromStr for VideoCodec {
       b"utvideo" => Self::Utvideo,
       b"v210" => Self::V210,
       b"v210x" => Self::V210x,
-      b"v308" => Self::V308,
-      b"v408" => Self::V408,
-      b"v410" => Self::V410,
       b"vb" => Self::Vb,
       b"vble" => Self::Vble,
       b"vbn" => Self::Vbn,
@@ -1170,6 +1161,7 @@ impl FromStr for VideoCodec {
       b"wbmp" => Self::Wbmp,
       b"wcmv" => Self::Wcmv,
       b"webp" => Self::Webp,
+      b"webp_anim" => Self::WebpAnim,
       b"wmv1" => Self::Wmv1,
       b"wmv2" => Self::Wmv2,
       b"wmv3" => Self::Wmv3,
@@ -1195,7 +1187,7 @@ impl FromStr for VideoCodec {
     })
   }
 }
-/** Audio codec family — every codec FFmpeg n8.1 knows under media type `audio`.
+/** Audio codec family — every codec FFmpeg n9.0 knows under media type `audio`.
 
 `#[non_exhaustive]` keeps future additions non-breaking; the `Other(SmolStr)` arm is the lossless escape for codecs added upstream before this file is regenerated.*/
 #[cfg_attr(
@@ -1361,6 +1353,8 @@ pub enum AudioCodec {
   Apac,
   /// FFmpeg `"ape"`.
   Ape,
+  /// FFmpeg `"apple_apac"`.
+  AppleApac,
   /// FFmpeg `"aptx"`.
   Aptx,
   /// FFmpeg `"aptx_hd"`.
@@ -1734,6 +1728,7 @@ impl AudioCodec {
       Self::Anull => "anull",
       Self::Apac => "apac",
       Self::Ape => "ape",
+      Self::AppleApac => "apple_apac",
       Self::Aptx => "aptx",
       Self::AptxHd => "aptx_hd",
       Self::Atrac1 => "atrac1",
@@ -1881,7 +1876,7 @@ impl AudioCodec {
       Self::Other(s) => s.as_str(),
     }
   }
-  /// The open escape for a codec name FFmpeg n8.1 does not carry,
+  /// The open escape for a codec name FFmpeg n9.0 does not carry,
   /// ASCII-folded to the crate's lowercase canon.
   ///
   /// The **one** construction path for [`Self::Other`]: folding here is
@@ -1978,6 +1973,7 @@ impl FromStr for AudioCodec {
       b"anull" => Self::Anull,
       b"apac" => Self::Apac,
       b"ape" => Self::Ape,
+      b"apple_apac" => Self::AppleApac,
       b"aptx" => Self::Aptx,
       b"aptx_hd" => Self::AptxHd,
       b"atrac1" => Self::Atrac1,
@@ -2126,7 +2122,7 @@ impl FromStr for AudioCodec {
     })
   }
 }
-/** Subtitle codec family — every codec FFmpeg n8.1 knows under media type `subtitle`.
+/** Subtitle codec family — every codec FFmpeg n9.0 knows under media type `subtitle`.
 
 `#[non_exhaustive]` keeps future additions non-breaking; the `Other(SmolStr)` arm is the lossless escape for codecs added upstream before this file is regenerated.*/
 #[cfg_attr(
@@ -2232,7 +2228,7 @@ impl SubtitleCodec {
       Self::Other(s) => s.as_str(),
     }
   }
-  /// The open escape for a codec name FFmpeg n8.1 does not carry,
+  /// The open escape for a codec name FFmpeg n9.0 does not carry,
   /// ASCII-folded to the crate's lowercase canon.
   ///
   /// The **one** construction path for [`Self::Other`]: folding here is
@@ -2249,11 +2245,11 @@ impl SubtitleCodec {
   /// - `Some(true)`: matches FFmpeg's `AV_CODEC_PROP_BITMAP_SUB` flag.
   /// - `Some(false)`: a known FFmpeg subtitle codec without
   ///   `AV_CODEC_PROP_BITMAP_SUB` (text codecs and teletext/VBI-style
-  ///   codecs that carry no `.props` at all in FFmpeg n8.1).
+  ///   codecs that carry no `.props` at all in FFmpeg n9.0).
   /// - `None`: [`Self::Other`] — the codec name is not in the vendored
   ///   FFmpeg table, so we cannot consult `.props`.
   ///
-  /// (4 bitmap / 23 non-bitmap variant(s) per FFmpeg n8.1).
+  /// (4 bitmap / 23 non-bitmap variant(s) per FFmpeg n9.0).
   pub fn is_image_based(&self) -> Option<bool> {
     match self {
       Self::DvbSubtitle | Self::DvdSubtitle | Self::HdmvPgsSubtitle | Self::Xsub => Some(true),
