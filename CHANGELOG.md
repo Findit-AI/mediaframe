@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-19
+
 The FFmpeg pin moves `n8.1` → `n9.0` and every provenance label in the crate
 is re-verified against it rather than re-typed.
 
