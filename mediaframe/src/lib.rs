@@ -48,6 +48,32 @@ extern crate std;
 /// hold row types and `macro_rules!` is textually scoped. One text in
 /// one place — the same rule the row door itself enforces on colour
 /// intent.
+///
+/// Gated on exactly the features that own a row door, because the text
+/// is reachable only from one: the `walker!` arms under [`source`],
+/// plus `source::pal8` (`mono`) and `frame::bayer` (`bayer`). Without
+/// the gate the lean build defines a macro nothing expands, which
+/// `unused_macros` rejects. `xyz` is absent from the list because
+/// `Xyz12Row` carries no door; give it one and this list grows with it.
+/// The umbrella `frame` feature cannot stand in for the disjunction —
+/// it implies the format features, not the reverse, so `--features rgb`
+/// alone would leave the macro undefined at an expansion site.
+#[cfg(any(
+  feature = "yuv-planar",
+  feature = "yuv-semi-planar",
+  feature = "yuva",
+  feature = "yuv-packed",
+  feature = "yuv-444-packed",
+  feature = "y2xx",
+  feature = "v210",
+  feature = "rgb",
+  feature = "rgb-float",
+  feature = "rgb-legacy",
+  feature = "gbr",
+  feature = "gray",
+  feature = "bayer",
+  feature = "mono",
+))]
 macro_rules! row_test_door_doc {
   () => {
     " Builds a row directly — **kernel-parity test scaffolding, not API.**\n\
