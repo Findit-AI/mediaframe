@@ -45,7 +45,7 @@ use std::{
 
 /// FFmpeg release tag pinned for the check. Bump deliberately when you
 /// want to sync against a newer FFmpeg.
-const FFMPEG_TAG: &str = "n8.1";
+const FFMPEG_TAG: &str = "n9.0";
 
 /// Path (relative to the mediaframe workspace root) of the vendored
 /// slug list.
@@ -586,7 +586,7 @@ fn check_codec(root: &Path) -> bool {
   ok
 }
 
-/// Every `AV_CODEC_PROP_*` token FFmpeg n8.1
+/// Every `AV_CODEC_PROP_*` token FFmpeg n9.0
 /// `libavcodec/codec_desc.h` defines (prefix stripped). Listed in
 /// definition order. Bump this in lockstep with [`FFMPEG_TAG`].
 const KNOWN_CODEC_PROPS: &[&str] = &[
@@ -986,11 +986,39 @@ fn sync() -> ExitCode {
     }
   };
 
-  let slugs = extract_avpixfmt_names(&header);
+  let PixFmtCensus { slugs, hw_seen } = extract_avpixfmt_names(&header);
   if slugs.is_empty() {
     eprintln!("error: parsed 0 AV_PIX_FMT_* identifiers from the fetched header — parse bug?");
     return ExitCode::FAILURE;
   }
+  // Prove the exclusion roster before writing anything: a roster entry
+  // the pinned header does not declare excludes nothing, so it is a
+  // claim about FFmpeg that FFmpeg no longer backs.
+  let dead_roster: Vec<&str> = HW_FORMAT_SLUGS
+    .iter()
+    .copied()
+    .filter(|s| !hw_seen.contains(s))
+    .collect();
+  if !dead_roster.is_empty() {
+    eprintln!(
+      "error: HW_FORMAT_SLUGS names {} format(s) FFmpeg {FFMPEG_TAG} does not declare:",
+      dead_roster.len()
+    );
+    for s in &dead_roster {
+      eprintln!("    {s}");
+    }
+    eprintln!(
+      "Action: drop the stale entry (upstream removed the format) or fix the \
+       spelling — the roster is the documented exclusion list, so a dead entry \
+       makes it lie."
+    );
+    return ExitCode::FAILURE;
+  }
+  println!(
+    "Exclusion roster: {}/{} hardware-surface format(s) present in {FFMPEG_TAG}",
+    hw_seen.len(),
+    HW_FORMAT_SLUGS.len()
+  );
 
   let out_path = workspace_root().join(VENDOR_PATH);
   if let Some(p) = out_path.parent()
@@ -1157,6 +1185,13 @@ fn sync() -> ExitCode {
 /// `pixel_format` module docs: a frame carrying GPU-resident buffers
 /// must be transferred to a CPU format before reaching a mediaframe
 /// consumer.
+///
+/// Every entry must name a format the pinned header actually declares
+/// — [`sync`] proves that and refuses to write a table built from a
+/// roster with a dead entry. A slug FFmpeg has dropped filters nothing,
+/// so leaving it here would quietly turn the exclusion list into a
+/// claim about a header that no longer says it (`xvmc` sat here for
+/// exactly that reason until the n9.0 bump).
 const HW_FORMAT_SLUGS: &[&str] = &[
   "amf_surface",
   "cuda",
@@ -1174,11 +1209,23 @@ const HW_FORMAT_SLUGS: &[&str] = &[
   "vdpau",
   "videotoolbox",
   "vulkan",
-  "xvmc",
 ];
 
-fn extract_avpixfmt_names(header: &str) -> BTreeSet<String> {
+/// What one pass over the pinned `pixfmt.h` `AVPixelFormat` enum found:
+/// the CPU-side slugs to vendor, and which [`HW_FORMAT_SLUGS`] entries
+/// actually fired.
+struct PixFmtCensus {
+  /// Lowercased `AV_PIX_FMT_<NAME>` suffixes, hardware surfaces and the
+  /// `NONE` / `NB` sentinels removed.
+  slugs: BTreeSet<String>,
+  /// The roster entries the header declared. Compared against the full
+  /// roster this is what makes a stale exclusion visible.
+  hw_seen: BTreeSet<&'static str>,
+}
+
+fn extract_avpixfmt_names(header: &str) -> PixFmtCensus {
   let mut out = BTreeSet::new();
+  let mut hw_seen = BTreeSet::new();
   let mut in_enum = false;
   for raw in header.lines() {
     let line = raw.trim();
@@ -1204,13 +1251,17 @@ fn extract_avpixfmt_names(header: &str) -> BTreeSet<String> {
         continue;
       }
       let slug = name.to_ascii_lowercase();
-      if HW_FORMAT_SLUGS.contains(&slug.as_str()) {
+      if let Some(hw) = HW_FORMAT_SLUGS.iter().find(|h| **h == slug) {
+        hw_seen.insert(*hw);
         continue;
       }
       out.insert(slug);
     }
   }
-  out
+  PixFmtCensus {
+    slugs: out,
+    hw_seen,
+  }
 }
 
 /// Parse the five colour C enums from `pixfmt.h`, applying C
@@ -1672,12 +1723,26 @@ fn build_codec_module(
   let subtitle_enum = build_codec_enum("SubtitleCodec", "subtitle", subtitle, true);
 
   // Module-level docs (inner-doc attributes — `prettyplease` renders them
-  // as `//!` lines on output).
+  // as `//!` lines on output). The pinned tag and the three variant counts
+  // are interpolated rather than spelled out: a hand-written "n8.1" or a
+  // hand-written "(281)" is a fact about the vendored table that no longer
+  // regenerates with it, and both had gone stale by the n9.0 bump.
+  let generated_from =
+    format!(" **Generated** from `xtask/vendor/ffmpeg-codecs.txt` (FFmpeg {FFMPEG_TAG}");
+  let derive_threshold = format!(
+    " pair; [`VideoCodec`] ({}) and [`AudioCodec`] ({}) do not. The line is",
+    video.len(),
+    audio.len()
+  );
+  let subtitle_pair = format!(
+    " one reachable payload arm. [`SubtitleCodec`] ({} variants) carries the",
+    subtitle.len()
+  );
   let module_doc: Vec<TokenStream> = [
     " Stream-descriptor **codec** vocabulary for video, audio, and subtitle",
     " tracks.",
     "",
-    " **Generated** from `xtask/vendor/ffmpeg-codecs.txt` (FFmpeg n8.1",
+    generated_from.as_str(),
     " `libavcodec/codec_desc.c`) by `cargo xtask gen-codec`. Every codec",
     " FFmpeg knows under media types `video` / `audio` / `subtitle` has",
     " a named variant here; the `Other(SmolStr)` arm remains a lossless",
@@ -1693,8 +1758,8 @@ fn build_codec_module(
     "",
     " **Derive threshold.** `Unwrap` / `TryUnwrap` generate three methods",
     " per variant, so an enum in the hundreds pays that in compile time for",
-    " one reachable payload arm. [`SubtitleCodec`] (27 variants) carries the",
-    " pair; [`VideoCodec`] (281) and [`AudioCodec`] (221) do not. The line is",
+    subtitle_pair.as_str(),
+    derive_threshold.as_str(),
     " variant count, not principle — reach for `Other(_)` on the large two",
     " with a `match` or [`IsVariant`](derive_more::IsVariant)'s `is_other`.",
   ]
@@ -1761,8 +1826,10 @@ fn build_codec_enum(
     quote! { #name => Self::#ident, }
   });
 
+  let other_doc = format!(" The open escape for a codec name FFmpeg {FFMPEG_TAG} does not carry,");
+
   let enum_doc = format!(
-    " {} codec family — every codec FFmpeg n8.1 knows under media type `{}`.\n\n \
+    " {} codec family — every codec FFmpeg {FFMPEG_TAG} knows under media type `{}`.\n\n \
      `#[non_exhaustive]` keeps future additions non-breaking; the `Other(SmolStr)` \
      arm is the lossless escape for codecs added upstream before this file is \
      regenerated.",
@@ -1771,16 +1838,16 @@ fn build_codec_enum(
   );
 
   // Subtitle `is_image_based()` is sourced from the vendored `.props` set
-  // (FFmpeg n8.1's `AV_CODEC_PROP_BITMAP_SUB` flag), not a hand-maintained
+  // (FFmpeg's `AV_CODEC_PROP_BITMAP_SUB` flag), not a hand-maintained
   // constant. Returns `Option<bool>`: `Some(true)` for bitmap subtitles,
   // `Some(false)` for known-text subtitles, `None` for `Other(_)` because
   // an unknown codec name has no FFmpeg `.props` record we can consult.
   // `Unwrap` / `TryUnwrap` generate three methods per variant, so the two
   // 200-plus-variant codec enums would pay ~1500 generated methods in
-  // compile time for one reachable payload arm. `SubtitleCodec` has 27
-  // variants and carries the same single `Other(SmolStr)`, so it gets the
-  // pair; `VideoCodec` (281) and `AudioCodec` (221) are exempt. The rule
-  // is written on the module, not left implicit here.
+  // compile time for one reachable payload arm. `SubtitleCodec` has a few
+  // dozen variants and carries the same single `Other(SmolStr)`, so it gets
+  // the pair; `VideoCodec` and `AudioCodec` are exempt. The rule is written
+  // on the module (with the live counts), not left implicit here.
   let unwrap_derives = if is_subtitle {
     quote! {
       #[derive(Unwrap, TryUnwrap)]
@@ -1816,8 +1883,9 @@ fn build_codec_enum(
     // indent reads as a malformed sub-item).
     let counts_blank = String::new();
     let counts_doc = format!(
-      " ({bitmap_count} bitmap / {non_bitmap_count} non-bitmap variant(s) per FFmpeg n8.1)."
+      " ({bitmap_count} bitmap / {non_bitmap_count} non-bitmap variant(s) per FFmpeg {FFMPEG_TAG})."
     );
+    let no_props_doc = format!("   codecs that carry no `.props` at all in FFmpeg {FFMPEG_TAG}).");
     quote! {
       /// Is this a **bitmap** (image-based) subtitle codec, requiring an
       /// OCR pipeline stage to extract searchable text?
@@ -1825,7 +1893,7 @@ fn build_codec_enum(
       /// - `Some(true)`: matches FFmpeg's `AV_CODEC_PROP_BITMAP_SUB` flag.
       /// - `Some(false)`: a known FFmpeg subtitle codec without
       ///   `AV_CODEC_PROP_BITMAP_SUB` (text codecs and teletext/VBI-style
-      ///   codecs that carry no `.props` at all in FFmpeg n8.1).
+      #[doc = #no_props_doc]
       /// - `None`: [`Self::Other`] — the codec name is not in the vendored
       ///   FFmpeg table, so we cannot consult `.props`.
       #[doc = #counts_blank]
@@ -1869,7 +1937,7 @@ fn build_codec_enum(
         }
       }
 
-      /// The open escape for a codec name FFmpeg n8.1 does not carry,
+      #[doc = #other_doc]
       /// ASCII-folded to the crate's lowercase canon.
       ///
       /// The **one** construction path for [`Self::Other`]: folding here is

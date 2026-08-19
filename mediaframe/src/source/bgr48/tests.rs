@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::Bgr48Frame};
+use crate::{PixelSink, frame::Bgr48Frame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -31,7 +31,7 @@ fn bgr48_walker_visits_every_row_once() {
     last_width: 0,
     last_row_idx: 0,
   };
-  bgr48_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
+  bgr48_to(&frame, true, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_width, 12);
   assert_eq!(sink.last_row_idx, 3);

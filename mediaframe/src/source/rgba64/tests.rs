@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::Rgba64Frame};
+use crate::{PixelSink, frame::Rgba64Frame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -32,7 +32,7 @@ fn rgba64_walker_visits_every_row_once() {
     last_width: 0,
     last_row_idx: 0,
   };
-  rgba64_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
+  rgba64_to(&frame, true, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_width, 16); // width * 4 u16 elements per row
   assert_eq!(sink.last_row_idx, 3);

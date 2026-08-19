@@ -2,11 +2,20 @@
 //! an `Other(SmolStr)` lossless escape for anything outside the
 //! closed set.
 //!
-//! The named variants cover the `AV_CH_LAYOUT_*` shapes FFmpeg n8.1
+//! The named variants cover the `AV_CH_LAYOUT_*` shapes FFmpeg n9.0
 //! exposes; layouts not enumerated here (custom orderings, ambisonic
 //! variants beyond first-order, etc.) round-trip through
 //! [`ChannelLayout::Other`] carrying the FFmpeg-canonical slug
 //! verbatim.
+//!
+//! **Two namings, and they do not line up.** A variant's *ident* follows
+//! the FFmpeg constant (`N5Point0Back` ⇒ `AV_CH_LAYOUT_5POINT0_BACK`);
+//! its *slug* follows the name FFmpeg's `channel_layout_map[]` gives
+//! that constant. For the 5.x family those disagree — FFmpeg hands the
+//! unqualified `"5.0"` / `"5.1"` to the **back**-speaker layouts and
+//! qualifies the side ones `"5.0(side)"` / `"5.1(side)"` — so four arms
+//! read crossed. They are right; the map is the authority, and
+//! `channel_layout_slugs_match_ffmpegs_map` pins every one of them.
 
 use core::str::FromStr;
 
@@ -50,18 +59,39 @@ pub enum ChannelLayout {
   N3Point0Back,
   /// L+R+C+LFE: `"3.1"` (FFmpeg `AV_CH_LAYOUT_3POINT1`).
   N3Point1,
-  /// L+R+SL+SR or L+R+BL+BR: `"quad"` (FFmpeg `AV_CH_LAYOUT_QUAD`).
+  /// L+R+BL+BR: `"quad"` (FFmpeg `AV_CH_LAYOUT_QUAD` =
+  /// `STEREO|BACK_LEFT|BACK_RIGHT`). The **side** four-channel layout
+  /// is FFmpeg's `AV_CH_LAYOUT_2_2`, named `"quad(side)"`, which this
+  /// vocabulary does not enumerate — it rides [`Self::Other`].
   Quad,
-  /// L+R+C+SL+SR: `"5.0"` (FFmpeg `AV_CH_LAYOUT_5POINT0`).
+  /// L+R+C+SL+SR: `"5.0(side)"` (FFmpeg `AV_CH_LAYOUT_5POINT0` =
+  /// `SURROUND|SIDE_LEFT|SIDE_RIGHT`).
+  ///
+  /// FFmpeg's plain `"5.0"` is the **back** layout, not this one — see
+  /// [`Self::N5Point0Back`]. The two spellings look inverted against the
+  /// variant idents and are not: the ident follows the FFmpeg constant,
+  /// the slug follows FFmpeg's name for it, and FFmpeg gave the
+  /// unqualified name to the back-speaker layout.
   N5Point0,
-  /// L+R+C+BL+BR variant (back instead of side): `"5.0(side)"` —
-  /// here named for the FFmpeg-side `AV_CH_LAYOUT_5POINT0_BACK`.
+  /// L+R+C+BL+BR: `"5.0"` (FFmpeg `AV_CH_LAYOUT_5POINT0_BACK` =
+  /// `SURROUND|BACK_LEFT|BACK_RIGHT`).
+  ///
+  /// The unqualified `"5.0"` is FFmpeg's name for the back-speaker
+  /// layout; the side-speaker one is [`Self::N5Point0`], spelled
+  /// `"5.0(side)"`.
   N5Point0Back,
-  /// L+R+C+LFE+SL+SR: `"5.1"` (FFmpeg `AV_CH_LAYOUT_5POINT1`).
+  /// L+R+C+LFE+SL+SR: `"5.1(side)"` (FFmpeg `AV_CH_LAYOUT_5POINT1` =
+  /// `5POINT0|LOW_FREQUENCY`).
+  ///
+  /// FFmpeg's plain `"5.1"` is the **back** layout — see
+  /// [`Self::N5Point1Back`].
   N5Point1,
-  /// L+R+C+LFE+BL+BR variant: `"5.1(side)"` — corresponds to FFmpeg
-  /// `AV_CH_LAYOUT_5POINT1_BACK` (which FFmpeg labels the
-  /// historically-backwards-named layout).
+  /// L+R+C+LFE+BL+BR: `"5.1"` (FFmpeg `AV_CH_LAYOUT_5POINT1_BACK` =
+  /// `5POINT0_BACK|LOW_FREQUENCY`).
+  ///
+  /// This is what an FFmpeg-sourced `"5.1"` means — the historically
+  /// unqualified spelling belongs to the back-speaker layout, and the
+  /// side-speaker one is [`Self::N5Point1`], spelled `"5.1(side)"`.
   N5Point1Back,
   /// 6.0: `"6.0"` (FFmpeg `AV_CH_LAYOUT_6POINT0`).
   N6Point0,
@@ -115,10 +145,14 @@ impl ChannelLayout {
       Self::N3Point0Back => "3.0(back)",
       Self::N3Point1 => "3.1",
       Self::Quad => "quad",
-      Self::N5Point0 => "5.0",
-      Self::N5Point0Back => "5.0(side)",
-      Self::N5Point1 => "5.1",
-      Self::N5Point1Back => "5.1(side)",
+      // FFmpeg gives the unqualified name to the BACK layout and
+      // qualifies the side one — see `channel_layout_map[]`. The idents
+      // follow the constants, the slugs follow FFmpeg's names, so these
+      // four read crossed and are exactly right.
+      Self::N5Point0 => "5.0(side)",
+      Self::N5Point0Back => "5.0",
+      Self::N5Point1 => "5.1(side)",
+      Self::N5Point1Back => "5.1",
       Self::N6Point0 => "6.0",
       Self::N6Point1 => "6.1",
       Self::N7Point0 => "7.0",
@@ -160,10 +194,10 @@ impl FromStr for ChannelLayout {
       b"3.0(back)" => Self::N3Point0Back,
       b"3.1" => Self::N3Point1,
       b"quad" => Self::Quad,
-      b"5.0" => Self::N5Point0,
-      b"5.0(side)" => Self::N5Point0Back,
-      b"5.1" => Self::N5Point1,
-      b"5.1(side)" => Self::N5Point1Back,
+      b"5.0(side)" => Self::N5Point0,
+      b"5.0" => Self::N5Point0Back,
+      b"5.1(side)" => Self::N5Point1,
+      b"5.1" => Self::N5Point1Back,
       b"6.0" => Self::N6Point0,
       b"6.1" => Self::N6Point1,
       b"7.0" => Self::N7Point0,

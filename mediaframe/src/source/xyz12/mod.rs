@@ -25,9 +25,12 @@
 //! - Step 4 (range scale + integer narrow): `clamp(rgb_gamma, 0, 1) ×
 //!   255` (or 65535) + round-half-up.
 //!
-//! The walker takes the target gamut as a value parameter (not a const
-//! generic) — DCP-delivery target choice is a runtime decision, and
-//! the 3×3 matrix is a small per-frame constant.
+//! The walker reads the target gamut off the sink
+//! (`Xyz12Sink::target_gamut`), once per frame — the gamut is an
+//! *output* axis and the sink is the output, so it is the only thing
+//! asked. It stays a runtime value rather than a const generic because
+//! DCP-delivery target choice is a runtime decision, and the 3×3 matrix
+//! is a small per-frame constant.
 //!
 //! ## Endianness
 //!
@@ -65,7 +68,7 @@ pub type Xyz12Be = Xyz12<true>;
 /// Carries the per-frame [`KernelGamut`] choice so downstream row
 /// kernels can apply the correct XYZ → RGB matrix without a separate
 /// dispatch parameter. Per-target Q15 luma weights `(k_r, k_g, k_b)`
-/// are also derived once at the walker call site (see
+/// are also derived once by the walker from that gamut (see
 /// `luma_weights_q15_for_gamut`) so the `with_luma` /
 /// `with_luma_u16` sinker accessors can apply the gamut-matched
 /// coefficients without going through the YUV-leaning
@@ -95,6 +98,18 @@ impl<'a, const BE: bool> Xyz12Row<'a, BE> {
     }
   }
 
+  #[doc = row_test_door_doc!()]
+  #[doc(hidden)]
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn for_tests(
+    xyz: &'a [u16],
+    row: usize,
+    target_gamut: KernelGamut,
+    luma_q15: (i32, i32, i32),
+  ) -> Self {
+    Self::new(xyz, row, target_gamut, luma_q15)
+  }
+
   /// Packed source row — `width * 3` u16 samples in `X, Y, Z` order.
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub fn xyz(&self) -> &'a [u16] {
@@ -107,7 +122,7 @@ impl<'a, const BE: bool> Xyz12Row<'a, BE> {
     self.row
   }
 
-  /// Target RGB gamut chosen at the walker call site.
+  /// Target RGB gamut, read once from the sink.
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn target_gamut(&self) -> KernelGamut {
     self.target_gamut
@@ -187,35 +202,73 @@ pub(crate) const fn luma_weights_q15_for_gamut(g: KernelGamut) -> (i32, i32, i32
 pub trait Xyz12Sink<const BE: bool = false>:
   for<'a> PixelSink<Input<'a> = Xyz12Row<'a, BE>>
 {
+  /// The RGB gamut this sink wants XYZ decoded **into** — the one
+  /// place a walk can learn it.
+  ///
+  /// [`xyz12_to`] used to take it positionally. It lives here for a
+  /// different reason than [`PixelSink::kernel_matrix`] does: a matrix
+  /// describes the *source* a sink was built to read, while a gamut
+  /// describes the *output* it is about to write. The sink **is** the
+  /// output. Nothing else in the walk is entitled to an opinion about
+  /// which primaries come out of it, so nothing else is asked.
+  ///
+  /// That is also why the gamut is not on [`PixelSink`]: XYZ12 is the
+  /// only source whose decode has a gamut choice at all, and a knob
+  /// every other sink carries but no walker ever reads would be the
+  /// second door all over again.
+  ///
+  /// Read once per walk, after
+  /// [`begin_frame`](PixelSink::begin_frame) and before the first
+  /// [`process`](PixelSink::process); the answer is stamped on every
+  /// row of the frame, together with the luma weights derived from it.
+  ///
+  /// Default is [`KernelGamut::DciP3`] — the theatrical DCI-white
+  /// decode a DCP distribution master is mastered for, and what
+  /// [`DcpTargetGamut`](crate::color::DcpTargetGamut) already documents
+  /// as the target for a caller who does not opt into a re-target. A
+  /// sink delivering sRGB or Rec.2020 overrides.
+  ///
+  /// The return type is the **closed** [`KernelGamut`], not the open
+  /// `DcpTargetGamut`: a gamut this build cannot name has no luma
+  /// basis, so it is refused at `KernelGamut::try_from` inside the
+  /// sink's own constructor rather than reaching a matmul that would
+  /// have to guess.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn target_gamut(&self) -> KernelGamut {
+    KernelGamut::DciP3
+  }
 }
 
 /// Walks an [`Xyz12Frame`](crate::frame::Xyz12Frame) row by row, dispatching each row to the
-/// sink along with the chosen target RGB gamut.
+/// sink along with the target RGB gamut the sink asked for.
 ///
-/// The `target_gamut` parameter selects the XYZ → RGB matrix used at
-/// every per-pixel matmul. It is a runtime value (not a const generic)
-/// because the DCP delivery target is a per-frame decision; the cost
-/// of the 3×3 `[[f32; 3]; 3]` indirection is amortised over the
-/// per-pixel matmul + 6 `powf` calls and is unmeasurable.
+/// The gamut selects the XYZ → RGB matrix used at every per-pixel
+/// matmul. It comes from [`Xyz12Sink::target_gamut`], read once here —
+/// not from a parameter beside the sink, which would have let a caller
+/// name one gamut while the sink wrote another. It stays a runtime
+/// value rather than a const generic because the DCP delivery target is
+/// a per-frame decision; the cost of the 3×3 `[[f32; 3]; 3]`
+/// indirection is amortised over the per-pixel matmul + 6 `powf` calls
+/// and is unmeasurable.
 ///
 /// The const-generic `BE: bool` parameter is taken from the frame's
 /// own const generic and forwarded to the row marker so kernels can
 /// const-branch on byte-swap; no runtime overhead.
 ///
-/// Takes a [`KernelGamut`], not the open
+/// The sink returns a [`KernelGamut`], not the open
 /// [`DcpTargetGamut`](crate::color::DcpTargetGamut): a gamut this build
 /// does not name has no luma basis, so it is refused by
-/// `KernelGamut::try_from` at the caller's door rather than panicking
+/// `KernelGamut::try_from` where the sink is built rather than panicking
 /// here. This function has no failure mode of its own beyond the sink's
 /// (Codex adversarial-review F4 / F7, previously a documented panic).
 pub fn xyz12_to<const BE: bool, S: Xyz12Sink<BE>>(
   src: &Xyz12Frame<'_, BE>,
-  target_gamut: KernelGamut,
   sink: &mut S,
 ) -> Result<(), S::Error> {
-  let luma_q15 = luma_weights_q15_for_gamut(target_gamut);
-
   sink.begin_frame(src.width(), src.height())?;
+
+  let target_gamut = sink.target_gamut();
+  let luma_q15 = luma_weights_q15_for_gamut(target_gamut);
 
   let w = src.width() as usize;
   let h = src.height() as usize;
@@ -231,5 +284,7 @@ pub fn xyz12_to<const BE: bool, S: Xyz12Sink<BE>>(
   Ok(())
 }
 
+#[cfg(all(test, feature = "std"))]
+mod door_tests;
 #[cfg(all(test, feature = "std"))]
 mod tests;

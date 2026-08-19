@@ -14,6 +14,26 @@
 //! The structural sameness was ~85% of every module; this macro
 //! consolidates it into ~10 LOC of spec per format.
 //!
+//! # Where the matrix comes from
+//!
+//! The `KernelMatrix` a row carries is **not** a walker parameter. Each
+//! walker asks its sink once — `PixelSink::kernel_matrix`, right after
+//! `begin_frame` and before the row loop — and stamps that one answer
+//! on every row of the frame. The sink is the single source, because it
+//! is the thing that already holds a colour description; taking the
+//! matrix beside it invited two answers to one question with nothing to
+//! fail on when they disagreed. `full_range` stays a parameter: it is a
+//! quantisation fact about the *frame*, not a colour intent the sink
+//! owns.
+//!
+//! The generated `Row::new` is `pub(crate)` for the same reason, which
+//! carries the rule down to row grain: nothing outside this crate can
+//! build a row beside the description that chose its matrix. Each arm
+//! also emits a `#[doc(hidden)] pub const fn for_tests` with the
+//! identical parameter list — the one named exception, for out-of-tree
+//! kernel-parity suites that drive a row kernel without a frame. It
+//! forwards to `new`, so the two cannot drift.
+//!
 //! # Forms
 //!
 //! The macro has one entry rule per *plane topology*. Pick the one
@@ -101,13 +121,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         $buf: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { $buf, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        $buf: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new($buf, row, matrix, full_range)
       }
       /// Packed source row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -119,7 +151,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV/RGB conversion matrix carried through from the kernel call.
+      /// YUV/RGB conversion matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -140,10 +172,10 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let $w = src.width() as usize;
       let h = src.height() as usize;
@@ -228,13 +260,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         $buf: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { $buf, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        $buf: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new($buf, row, matrix, full_range)
       }
       /// Packed source row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -246,7 +290,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV/RGB conversion matrix carried through from the kernel call.
+      /// YUV/RGB conversion matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -278,13 +322,13 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame<'_, BE>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let $w = src.width() as usize;
       let h = src.height() as usize;
@@ -314,13 +358,12 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame<'_, false>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
   };
 
@@ -390,13 +433,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         $buf: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { $buf, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        $buf: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new($buf, row, matrix, full_range)
       }
       /// Packed source row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -408,7 +463,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV/RGB conversion matrix carried through from the kernel call.
+      /// YUV/RGB conversion matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -435,13 +490,13 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$crate::frame::$frame_inner<'_, $bits, BE>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let $w = src.width() as usize;
       let h = src.height() as usize;
@@ -470,13 +525,12 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$crate::frame::$frame_inner<'_, $bits, false>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
   };
 
@@ -543,7 +597,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -552,6 +606,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, row, matrix, full_range)
       }
       /// Full-width Y row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -573,7 +641,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// Conversion matrix carried through from the kernel call.
+      /// Conversion matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -598,13 +666,12 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame<'_, BE>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
-      $walker_inner::<{ $bits }, BE, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, BE, S>(src, full_range, sink)
     }
 
     /// LE-only back-compat wrapper preserving the pre-Phase-4 walker
@@ -621,26 +688,25 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame<'_, false>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, const BE: bool, S>(
       src: &$gframe<'_, BITS, BE>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -723,7 +789,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -733,6 +799,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, a, row, matrix, full_range)
       }
       /// Full-width Y row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -759,7 +840,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// Conversion matrix carried through from the kernel call.
+      /// Conversion matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -782,13 +863,12 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame<'_, BE>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
-      $walker_inner::<{ $bits }, BE, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, BE, S>(src, full_range, sink)
     }
 
     /// LE-only back-compat wrapper preserving the pre-Phase-4 walker
@@ -805,26 +885,25 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame<'_, false>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, const BE: bool, S>(
       src: &$gframe<'_, BITS, BE>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -919,7 +998,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         $chroma_field: &'a [$elem],
         row: usize,
@@ -927,6 +1006,19 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, $chroma_field, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        $chroma_field: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, $chroma_field, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -943,7 +1035,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -963,10 +1055,10 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let $w = src.width() as usize;
       let h = src.height() as usize;
@@ -1199,7 +1291,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -1208,6 +1300,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1229,7 +1335,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -1249,10 +1355,10 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -1326,7 +1432,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_quarter: &'a [$elem],
         v_quarter: &'a [$elem],
@@ -1335,6 +1441,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_quarter, v_quarter, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_quarter: &'a [$elem],
+        v_quarter: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_quarter, v_quarter, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1364,7 +1484,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -1384,10 +1504,10 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -1458,7 +1578,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -1467,6 +1587,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1488,7 +1622,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -1508,10 +1642,10 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -1577,7 +1711,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -1586,6 +1720,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1607,7 +1755,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -1627,20 +1775,19 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
-      $walker_inner::<{ $bits }, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, S>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, S: $sink>(
       src: &$gframe,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -1707,7 +1854,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -1716,6 +1863,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1737,7 +1898,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -1757,20 +1918,19 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
-      $walker_inner::<{ $bits }, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, S>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, S: $sink>(
       src: &$gframe,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -1835,7 +1995,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -1845,6 +2005,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1871,7 +2046,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -1891,10 +2066,10 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -1967,7 +2142,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -1977,6 +2152,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2003,7 +2193,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -2023,10 +2213,10 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -2100,7 +2290,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -2110,6 +2300,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2136,7 +2341,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -2156,20 +2361,19 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
-      $walker_inner::<{ $bits }, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, S>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, S: $sink>(
       src: &$gframe,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -2446,7 +2650,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         $chroma_field: &'a [$elem],
         row: usize,
@@ -2454,6 +2658,19 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, $chroma_field, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        $chroma_field: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, $chroma_field, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2470,7 +2687,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -2501,13 +2718,13 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let $w = src.width() as usize;
       let h = src.height() as usize;
@@ -2536,13 +2753,12 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame_le,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
   };
 
@@ -2584,7 +2800,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -2593,6 +2809,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2614,7 +2844,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -2637,13 +2867,13 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -2681,13 +2911,12 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame_le,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
   };
 
@@ -2729,7 +2958,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -2738,6 +2967,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2759,7 +3002,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -2782,13 +3025,13 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -2821,13 +3064,12 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame_le,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
   };
 
@@ -2870,7 +3112,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -2880,6 +3122,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -2906,7 +3163,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -2929,13 +3186,13 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -2974,13 +3231,12 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame_le,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
   };
 
@@ -3025,7 +3281,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -3034,6 +3290,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3055,7 +3325,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -3078,13 +3348,12 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
-      $walker_inner::<{ $bits }, BE, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, BE, S>(src, full_range, sink)
     }
 
     /// LE-only back-compat wrapper. See `@p3_emit_be half` for rationale.
@@ -3092,26 +3361,25 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame_le,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, const BE: bool, S>(
       src: &$gframe,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -3180,7 +3448,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -3189,6 +3457,20 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3210,7 +3492,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -3233,13 +3515,12 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
-      $walker_inner::<{ $bits }, BE, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, BE, S>(src, full_range, sink)
     }
 
     /// LE-only back-compat wrapper. See `@p3_emit_be half` for rationale.
@@ -3247,26 +3528,25 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame_le,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, const BE: bool, S>(
       src: &$gframe,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -3336,7 +3616,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u_half: &'a [$elem],
         v_half: &'a [$elem],
@@ -3346,6 +3626,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u_half, v_half, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u_half: &'a [$elem],
+        v_half: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u_half, v_half, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3372,7 +3667,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -3395,13 +3690,12 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
-      $walker_inner::<{ $bits }, BE, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, BE, S>(src, full_range, sink)
     }
 
     /// LE-only back-compat wrapper. See `@p3_emit_be half` for rationale.
@@ -3409,26 +3703,25 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame_le,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, const BE: bool, S>(
       src: &$gframe,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -3506,7 +3799,7 @@ macro_rules! walker {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -3516,6 +3809,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3542,7 +3850,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -3565,13 +3873,12 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
-      $walker_inner::<{ $bits }, BE, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, BE, S>(src, full_range, sink)
     }
 
     /// LE-only back-compat wrapper. See `@p3_emit_be half` for rationale.
@@ -3579,26 +3886,25 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame_le,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, const BE: bool, S>(
       src: &$gframe,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -3670,13 +3976,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { y, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3688,7 +4006,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// Color matrix carried through from the kernel call.
+      /// Colour matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -3708,10 +4026,10 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -3767,13 +4085,25 @@ macro_rules! walker {
 
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { y, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3785,7 +4115,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// Color matrix carried through from the kernel call.
+      /// Colour matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -3805,20 +4135,19 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
-      $walker_inner::<{ $bits }, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, S>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, S: $sink>(
       src: &$gframe,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -3887,13 +4216,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { y, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -3905,7 +4246,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// Color matrix carried through from the kernel call.
+      /// Colour matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -3934,13 +4275,13 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame<'_, BE>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -3968,13 +4309,12 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame<'_, false>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
   };
 
@@ -4033,13 +4373,25 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       /// Creates a new row.
       #[cfg_attr(not(tarpaulin), inline(always))]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         row: usize,
         matrix: $crate::color::KernelMatrix,
         full_range: bool,
       ) -> Self {
         Self { y, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -4051,7 +4403,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// Color matrix carried through from the kernel call.
+      /// Colour matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -4080,13 +4432,12 @@ macro_rules! walker {
     pub fn $walker_endian<S, const BE: bool>(
       src: &$frame<'_, BE>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<BE>,
     {
-      $walker_inner::<{ $bits }, BE, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, BE, S>(src, full_range, sink)
     }
 
     /// LE-only back-compat wrapper preserving the pre-Phase-4 walker
@@ -4103,23 +4454,22 @@ macro_rules! walker {
     pub fn $walker<S>(
       src: &$frame<'_, false>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error>
     where
       S: $sink<false>,
     {
-      $walker_endian::<S, false>(src, full_range, matrix, sink)
+      $walker_endian::<S, false>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, const BE: bool, S: $sink<BE>>(
       src: &$gframe<'_, BITS, BE>,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;
@@ -4174,7 +4524,7 @@ macro_rules! walker {
     impl<'a> $row<'a> {
       #[cfg_attr(not(tarpaulin), inline(always))]
       #[allow(clippy::too_many_arguments)]
-      pub const fn new(
+      pub(crate) const fn new(
         y: &'a [$elem],
         u: &'a [$elem],
         v: &'a [$elem],
@@ -4184,6 +4534,21 @@ macro_rules! walker {
         full_range: bool,
       ) -> Self {
         Self { y, u, v, a, row, matrix, full_range }
+      }
+
+      #[doc = row_test_door_doc!()]
+      #[doc(hidden)]
+      #[cfg_attr(not(tarpaulin), inline(always))]
+      pub const fn for_tests(
+        y: &'a [$elem],
+        u: &'a [$elem],
+        v: &'a [$elem],
+        a: &'a [$elem],
+        row: usize,
+        matrix: $crate::color::KernelMatrix,
+        full_range: bool,
+      ) -> Self {
+        Self::new(y, u, v, a, row, matrix, full_range)
       }
       /// Full-width Y (luma) row.
       #[cfg_attr(not(tarpaulin), inline(always))]
@@ -4210,7 +4575,7 @@ macro_rules! walker {
       pub const fn row(&self) -> usize {
         self.row
       }
-      /// YUV → RGB matrix carried through from the kernel call.
+      /// YUV → RGB matrix, read once from the sink.
       #[cfg_attr(not(tarpaulin), inline(always))]
       pub const fn matrix(&self) -> $crate::color::KernelMatrix {
         self.matrix
@@ -4230,20 +4595,19 @@ macro_rules! walker {
     pub fn $walker<S: $sink>(
       src: &$frame,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
-      $walker_inner::<{ $bits }, S>(src, full_range, matrix, sink)
+      $walker_inner::<{ $bits }, S>(src, full_range, sink)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn $walker_inner<const BITS: u32, S: $sink>(
       src: &$gframe,
       full_range: bool,
-      matrix: $crate::color::KernelMatrix,
       sink: &mut S,
     ) -> Result<(), S::Error> {
       sink.begin_frame(src.width(), src.height())?;
+      let matrix = sink.kernel_matrix();
 
       let w = src.width() as usize;
       let h = src.height() as usize;

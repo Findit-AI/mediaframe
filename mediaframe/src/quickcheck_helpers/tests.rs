@@ -312,3 +312,35 @@ fn one_name_is_one_value_whatever_its_case() {
     folds!(crate::frame::StereoMode, s);
   });
 }
+
+/// Both halves of the 5.x pair are reachable from the curated seeds.
+///
+/// FFmpeg hands the unqualified `"5.0"` / `"5.1"` to the **back**-speaker
+/// layouts, so a seed list carrying only the short spellings generates
+/// `N5Point0Back` / `N5Point1Back` and never their side siblings —
+/// which is the state 0.4.0's slug swap left behind until the two
+/// qualified spellings were seeded alongside. Assert all four, so
+/// trimming the list silently narrows nothing.
+#[test]
+fn reachability_channel_layout_reaches_both_five_point_pairs() {
+  use crate::audio::ChannelLayout;
+  use ::std::collections::HashSet;
+
+  let mut seen: HashSet<ChannelLayout> = HashSet::new();
+  drive(64, 4096, |g| {
+    seen.insert(ChannelLayout::arbitrary(g));
+  });
+
+  for wanted in [
+    ChannelLayout::N5Point0,
+    ChannelLayout::N5Point0Back,
+    ChannelLayout::N5Point1,
+    ChannelLayout::N5Point1Back,
+  ] {
+    assert!(
+      seen.contains(&wanted),
+      "{wanted:?} ({:?}) is unreachable from the curated ChannelLayout seeds",
+      wanted.as_str()
+    );
+  }
+}

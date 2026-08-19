@@ -87,7 +87,7 @@ impl<'a> GbrapRow<'a> {
   pub const fn row(&self) -> usize {
     self.row
   }
-  /// YUV/RGB conversion matrix carried through from the kernel call.
+  /// YUV/RGB conversion matrix, read once from the sink.
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn matrix(&self) -> KernelMatrix {
     self.matrix
@@ -106,10 +106,10 @@ pub trait GbrapSink: for<'a> PixelSink<Input<'a> = GbrapRow<'a>> {}
 pub fn gbrap_to<S: GbrapSink>(
   src: &GbrapFrame<'_>,
   full_range: bool,
-  matrix: KernelMatrix,
   sink: &mut S,
 ) -> Result<(), S::Error> {
   sink.begin_frame(src.width(), src.height())?;
+  let matrix = sink.kernel_matrix();
 
   let w = src.width() as usize;
   let h = src.height() as usize;

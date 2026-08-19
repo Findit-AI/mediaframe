@@ -4,6 +4,140 @@ All notable changes to this crate are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The FFmpeg pin moves `n8.1` → `n9.0` and every provenance label in the crate
+is re-verified against it rather than re-typed.
+
+**Breaking**: FFmpeg 9 drops the three `FF_API_V408_CODECID` codecs, so
+`VideoCodec::{V308, V408, V410}` go with them — the strings still round-trip
+through `VideoCodec::Other`.
+
+### Added
+
+- **FFmpeg synonyms on the parse side.** Where mediaframe's canonical slug
+  and FFmpeg's own name for the same thing differ, `FromStr` now accepts
+  both. Emission is unchanged and still injective: `as_str` / `Display` /
+  serde render one canonical slug per variant and never a synonym, so
+  `parse(display(x)) == x` and the `display ∘ parse` idempotence both still
+  hold. The ten pairs, all read off FFmpeg's own name tables:
+  `PixelFormat` — `gray` → `gray8`, `monob` → `monoblack`, `monow` →
+  `monowhite` (the descriptor names `ffprobe` prints, against the
+  `AV_PIX_FMT_<NAME>` identifiers this vocabulary is spelled after);
+  `color::Matrix` — `gbr` → `rgb`, `unknown` → `unspecified`;
+  `color::Primaries` and `color::DynamicRange` — `unknown` → `unspecified`;
+  `color::Transfer` — `unknown` → `unspecified`, `bt470m` → `gamma22`,
+  `bt470bg` → `gamma28`. A name copied off `ffprobe` now lands on the named
+  variant and keeps its H.273 code instead of riding the `to_u32`-less
+  escape. Nail tests prove no synonym shadows a canonical slug.
+- `VideoCodec::WebpAnim` (`webp_anim`) and `AudioCodec::AppleApac`
+  (`apple_apac`), both new in FFmpeg 9.
+
+### Changed
+
+- **`*Row::new` is `pub(crate)`; a hidden test door replaces the public
+  promise.** Breaking. With the walkers no longer taking a selector, a public
+  row constructor was the last way to build a row beside the description that
+  chose its matrix — so it is gone from the public surface, and the one-source
+  rule now holds at row grain for everything outside this crate. Covers all
+  132 walker-generated row types plus `Pal8Row`, `BayerRow` and `BayerRow16`
+  — 135 in all; the ten hand-written source rows that were already
+  `pub(crate)` are unchanged, because there was no public promise there to
+  replace. Nine of those ten also get no door for the same reason.
+  `Xyz12Row` is the tenth and does get one, for a different reason: `xyz`
+  was the only one of the fifteen format features with no door anywhere
+  behind it, so the format had no way in for a kernel-parity suite at all.
+  That is a hole in the coverage rather than a promise to replace, and it
+  is now closed — every format feature owns at least one door, which is
+  what the `row_test_door_doc` gate now says.
+
+  The named exception is `#[doc(hidden)] *Row::for_tests`, emitted beside
+  `new` with the identical parameter list — selector included — and
+  forwarding to it, so the two cannot drift. It exists for one reason: a
+  kernel-parity suite drives a single row kernel without materialising a
+  frame, and there is no other way to reach one from outside. That is
+  measured, not assumed — a census on 2026-08-19 found **493 such
+  constructions across 85 files and 52 row types** in `pixon` alone, all of
+  them test code, and every one of those 52 types has a door. It carries no
+  stability promise and its doc says so.
+
+  Nothing in this crate needed migrating: every in-tree row already came from
+  a walker, which is why the door is exercised by a test of its own rather
+  than by existing callers. **pixon's suites are the breakage**, and their
+  migration (`Row::new` → `Row::for_tests`) rides pixon's own 0.4 bump.
+- **The walkers stop taking a colour selector; the sink supplies it.**
+  Breaking, across every `{fmt}_to` / `{fmt}_to_endian` entry point. The
+  `matrix: KernelMatrix` parameter is **gone** — no deprecation — and
+  `xyz12_to`'s `target_gamut: KernelGamut` with it. The value now travels on
+  the sink contract:
+  - `PixelSink::kernel_matrix(&self) -> KernelMatrix`, defaulting to
+    `Unspecified` (the kernels' documented BT.709 posture).
+  - `Xyz12Sink::target_gamut(&self) -> KernelGamut`, defaulting to `DciP3`
+    (what `DcpTargetGamut` already documents for a caller who does not
+    re-target). It sits on the XYZ12 subtrait rather than `PixelSink`
+    because a gamut is an **output** axis with exactly one consumer, and a
+    knob every other sink carries but no walker reads would be the same
+    second door in a new place.
+
+  Each walker asks once, after `begin_frame` and before the row loop, and
+  stamps the answer on every row of that frame. Why: the sink already held a
+  colour description, so passing a selector beside it meant two doors onto
+  one fact — name one matrix, build the sink from another, and the picture
+  is quietly wrong with nothing to fail on. Migration is deleting the
+  argument; a sink that wants a specific matrix or gamut overrides the
+  method. `full_range` stays a parameter — it is a quantisation fact about
+  the frame, not a colour intent the sink owns.
+
+  The kernels are untouched: rows still carry `matrix()` / `target_gamut()`,
+  and the closed `KernelMatrix` / `KernelGamut` selectors are unchanged. Only
+  *where the value enters* moved.
+- **FFmpeg pin `n8.1` → `n9.0`** (`xtask/src/main.rs`), vendored tables
+  regenerated by `cargo xtask sync` and `mediaframe::codec` by
+  `cargo xtask gen-codec`. `AVPixelFormat` did not move between the two
+  releases — `libavutil/pixfmt.h` is byte-identical — so the 254 vendored
+  slugs, the 56 colour code points and `PixelFormat` itself need **no new
+  variants**; the same holds for `AV_DISPOSITION_*` (19 flags),
+  `AVSampleFormat` (12) and `AV_CODEC_PROP_*` (8). Only `codec_desc.c` moved.
+- Provenance labels across the crate now read `n9.0`, each re-verified
+  against the n9.0 headers rather than relabelled on faith. The generated
+  codec module interpolates the pin and its own variant counts instead of
+  carrying them as hand-typed strings — both had gone stale (`(281)` /
+  `(221)` for enums that are now 279 / 222). Historical `CHANGELOG` entries
+  and the "new in n8.1" note on the 96/128-bit packed RGB formats keep their
+  tags: those are statements about the past, and still true.
+- `"unknown"` still names nothing any colour enum renders, but on the four
+  enums whose FFmpeg table spells `UNSPECIFIED` that way it now parses to
+  `Unspecified` instead of riding the escape. `ChromaLocation` and
+  `DcpTargetGamut` are unaffected — FFmpeg already agrees with them.
+
+### Fixed
+
+- **`ChannelLayout`'s 5.x slugs were inverted against FFmpeg** — breaking, and
+  the wire form moves with them. FFmpeg's `channel_layout_map[]` gives the
+  unqualified name to the **back**-speaker layouts (`"5.0"` →
+  `AV_CH_LAYOUT_5POINT0_BACK` = `SURROUND|BACK_LEFT|BACK_RIGHT`, `"5.1"` →
+  `AV_CH_LAYOUT_5POINT1_BACK`) and qualifies the side ones (`"5.0(side)"` →
+  `AV_CH_LAYOUT_5POINT0` = `SURROUND|SIDE_LEFT|SIDE_RIGHT`, `"5.1(side)"` →
+  `AV_CH_LAYOUT_5POINT1`). This crate had the four the other way round, so an
+  FFmpeg- or `ffprobe`-sourced `"5.1"` parsed to `N5Point1`, whose docs promise
+  side speakers, when FFmpeg meant back. The strings round-tripped, so nothing
+  caught it; anything keying off the variant's documented speaker set was
+  quietly wrong. The four slugs are swapped to match:
+  `N5Point0` → `"5.0(side)"`, `N5Point0Back` → `"5.0"`,
+  `N5Point1` → `"5.1(side)"`, `N5Point1Back` → `"5.1"`. `as_str`, `Display`,
+  `FromStr` and the serde wire form move together. A transcribed
+  `channel_layout_map[]` table now pins every named layout, so the next
+  inversion fails a test instead of shipping.
+- `ChannelLayout::Quad`'s doc claimed it was "L+R+SL+SR **or** L+R+BL+BR". It
+  is `AV_CH_LAYOUT_QUAD` = `STEREO|BACK_LEFT|BACK_RIGHT` — back only. The side
+  four-channel layout is FFmpeg's `AV_CH_LAYOUT_2_2`, named `"quad(side)"`,
+  which this vocabulary does not enumerate and which rides `Other`. Doc only;
+  the slug was already right.
+- The hardware-exclusion roster no longer lies: `xvmc` had outlived
+  `AV_PIX_FMT_XVMC` (already gone at n8.1) and excluded nothing.
+  `cargo xtask sync` now proves every roster entry against the pinned header
+  and refuses to write a table built from a stale one.
+
 ## [0.3.0]
 
 **Breaking**, on three counts: the numeric escape (`Unknown(u32)`) is struck

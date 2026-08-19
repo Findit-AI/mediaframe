@@ -42,6 +42,65 @@ extern crate alloc as std;
 #[allow(unused_extern_crates)]
 extern crate std;
 
+/// The doc text every `*Row::for_tests` carries, written once.
+///
+/// Declared here, ahead of `mod frame` and `mod source`, because both
+/// hold row types and `macro_rules!` is textually scoped. One text in
+/// one place — the same rule the row door itself enforces on colour
+/// intent.
+///
+/// Gated on exactly the features that own a row door, because the text
+/// is reachable only from one: the `walker!` arms under [`source`],
+/// plus `source::pal8` (`mono`), `source::xyz12` (`xyz`) and
+/// `frame::bayer` (`bayer`). Without the gate the lean build defines a
+/// macro nothing expands, which `unused_macros` rejects.
+///
+/// All fifteen format features are on the list, which is a fact about
+/// today's doors and not a synonym for "every format": it is written
+/// out feature by feature so a format that loses its last door leaves
+/// the list and the gate stays honest. The umbrella `frame` feature
+/// cannot stand in for the disjunction either — it implies the format
+/// features, not the reverse, so `--features rgb` alone would leave the
+/// macro undefined at an expansion site.
+#[cfg(any(
+  feature = "yuv-planar",
+  feature = "yuv-semi-planar",
+  feature = "yuva",
+  feature = "yuv-packed",
+  feature = "yuv-444-packed",
+  feature = "y2xx",
+  feature = "v210",
+  feature = "rgb",
+  feature = "rgb-float",
+  feature = "rgb-legacy",
+  feature = "gbr",
+  feature = "gray",
+  feature = "bayer",
+  feature = "xyz",
+  feature = "mono",
+))]
+macro_rules! row_test_door_doc {
+  () => {
+    " Builds a row directly — **kernel-parity test scaffolding, not API.**\n\
+      \n\
+      [`Self::new`] is `pub(crate)`. Production rows come from the walkers,\n\
+      which read the colour selector off the sink, so on the public surface\n\
+      a row cannot be conjured beside the description that chose it. This\n\
+      door is the one named exception to that.\n\
+      \n\
+      It exists because a kernel-parity suite drives a single row kernel\n\
+      without materialising a frame, and there is no other way to reach one\n\
+      from outside this crate. Not hypothetical: a census on 2026-08-19\n\
+      found **493 such constructions across 85 files and 52 row types** in\n\
+      `pixon` alone, every one of them test code.\n\
+      \n\
+      Takes exactly what `new` takes, colour selector included, so the two\n\
+      cannot drift. **No stability promise** — it is `#[doc(hidden)]` and\n\
+      may change or vanish in any release. If you are not testing a row\n\
+      kernel, walk a frame instead."
+  };
+}
+
 /// Hand-written [`arbitrary::Arbitrary`] impls for the descriptor vocabulary
 /// (codecs, container/subtitle/audio formats, capture, language, colour, pixel
 /// format, frame geometry/orientation, disposition). All generation goes through

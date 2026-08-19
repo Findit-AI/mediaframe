@@ -1408,7 +1408,7 @@ impl<'a> BayerRow<'a> {
   /// Bundles one row of an 8-bit Bayer source for a [`BayerSink`].
   #[cfg_attr(not(tarpaulin), inline(always))]
   #[allow(clippy::too_many_arguments)]
-  pub const fn new(
+  pub(crate) const fn new(
     above: &'a [u8],
     mid: &'a [u8],
     below: &'a [u8],
@@ -1426,6 +1426,22 @@ impl<'a> BayerRow<'a> {
       demosaic,
       m,
     }
+  }
+
+  #[doc = row_test_door_doc!()]
+  #[doc(hidden)]
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  #[allow(clippy::too_many_arguments)]
+  pub const fn for_tests(
+    above: &'a [u8],
+    mid: &'a [u8],
+    below: &'a [u8],
+    row: usize,
+    pattern: BayerPattern,
+    demosaic: BayerDemosaic,
+    m: [[f32; 3]; 3],
+  ) -> Self {
+    Self::new(above, mid, below, row, pattern, demosaic, m)
   }
 
   /// Row above `mid` per the **mirror-by-2** boundary contract:
@@ -1588,7 +1604,7 @@ impl<'a, const BITS: u32> BayerRow16<'a, BITS> {
   /// [`BayerSink16<BITS>`].
   #[cfg_attr(not(tarpaulin), inline(always))]
   #[allow(clippy::too_many_arguments)]
-  pub const fn new(
+  pub(crate) const fn new(
     above: &'a [u16],
     mid: &'a [u16],
     below: &'a [u16],
@@ -1606,6 +1622,22 @@ impl<'a, const BITS: u32> BayerRow16<'a, BITS> {
       demosaic,
       m,
     }
+  }
+
+  #[doc = row_test_door_doc!()]
+  #[doc(hidden)]
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  #[allow(clippy::too_many_arguments)]
+  pub const fn for_tests(
+    above: &'a [u16],
+    mid: &'a [u16],
+    below: &'a [u16],
+    row: usize,
+    pattern: BayerPattern,
+    demosaic: BayerDemosaic,
+    m: [[f32; 3]; 3],
+  ) -> Self {
+    Self::new(above, mid, below, row, pattern, demosaic, m)
   }
 
   /// Row above `mid` per the **mirror-by-2** boundary contract:

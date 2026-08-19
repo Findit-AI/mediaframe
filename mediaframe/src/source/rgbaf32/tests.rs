@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::Rgbaf32LeFrame};
+use crate::{PixelSink, frame::Rgbaf32LeFrame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -27,12 +27,8 @@ impl Rgbaf32Sink<false> for CountingSink {}
 fn rgbaf32_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Rgbaf32Sink>() {
-    let _: fn(
-      &crate::frame::Rgbaf32LeFrame<'_>,
-      bool,
-      KernelMatrix,
-      &mut S,
-    ) -> Result<(), S::Error> = rgbaf32_to::<S>;
+    let _: fn(&crate::frame::Rgbaf32LeFrame<'_>, bool, &mut S) -> Result<(), S::Error> =
+      rgbaf32_to::<S>;
   }
 }
 
@@ -42,6 +38,6 @@ fn rgbaf32_walker_visits_every_row_once() {
   let buf = std::vec![0.0_f32; 16 * 4];
   let frame = Rgbaf32LeFrame::new(&buf, 4, 4, 16);
   let mut sink = CountingSink { rows_seen: 0 };
-  rgbaf32_to(&frame, true, KernelMatrix::Bt709, &mut sink).unwrap();
+  rgbaf32_to(&frame, true, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{PixelSink, color::KernelMatrix, frame::Grayf32Frame};
+use crate::{PixelSink, frame::Grayf32Frame};
 use core::convert::Infallible;
 
 struct CountingSink {
@@ -32,7 +32,7 @@ fn grayf32_walker_visits_every_row_once() {
     last_y_len: 0,
     last_row_idx: 0,
   };
-  grayf32_to(&frame, false, KernelMatrix::Bt709, &mut sink).unwrap();
+  grayf32_to(&frame, false, &mut sink).unwrap();
   assert_eq!(sink.rows_seen, 4);
   assert_eq!(sink.last_y_len, 4); // width f32 elements per row
   assert_eq!(sink.last_row_idx, 3);
@@ -50,11 +50,7 @@ fn grayf32_walker_visits_every_row_once() {
 fn grayf32_to_explicit_turbofish_one_generic_compiles() {
   #[allow(clippy::type_complexity)]
   fn _check<S: Grayf32Sink>() {
-    let _: fn(
-      &crate::frame::Grayf32LeFrame<'_>,
-      bool,
-      KernelMatrix,
-      &mut S,
-    ) -> Result<(), S::Error> = grayf32_to::<S>;
+    let _: fn(&crate::frame::Grayf32LeFrame<'_>, bool, &mut S) -> Result<(), S::Error> =
+      grayf32_to::<S>;
   }
 }
