@@ -6,6 +6,112 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+A vocabulary window: two closed enums stop pretending they might grow, one
+closed enum opens, every open vocabulary publishes its roster, and the nine
+that are compiled at every tier stop declaring an error their `alloc` build
+cannot return.
+
+**Breaking**, on three counts.
+
+1. **`FromStr::Err` is now `Infallible` at the `alloc` / `std` tier** for
+   `color::Matrix`, `color::Primaries`, `color::Transfer`,
+   `color::DynamicRange`, `color::ChromaLocation`,
+   `pixel_format::PixelFormat`, `frame::Rotation`, `frame::FieldOrder` and
+   `frame::StereoMode`. Behaviour does not change at any tier — these
+   parses have always been total wherever `Other` exists, and their docs
+   have said so for releases. What changes is that the type now says it
+   too. The `Parse*Error` types are untouched and still exported; the
+   no-alloc tier still returns them.
+
+   Downstream breaks are the places that *name* the old error: a `match`
+   arm on it, a `From` impl or `?` conversion into a local error enum, and
+   annotated or turbofished bindings that spell it. Code that merely
+   propagated the error usually just deletes the arm. Where a value is
+   wanted, the impossible error is discharged by an irrefutable binding —
+   `let Ok(m) = s.parse::<Matrix>();` — which is stable today and is what
+   this crate uses internally (`Result::into_ok` is the same thing once it
+   stabilises).
+
+2. **`subtitle::TrackOrigin` gained an `Other(SmolStr)` escape**, which
+   moves it onto the crate-wide open-vocabulary shape and changes three
+   surfaces: it is no longer `Copy`, `as_str` is no longer
+   `const fn -> &'static str`, and `to_u32` returns `Option<u32>`.
+
+   **Both of its wire forms change**, so persisted 0.4.x values do not
+   read back: `serde` moves from an integer code to the canonical slug
+   string (so `0` no longer deserializes), and `buffa` field 1 moves from
+   `Varint` to `LengthDelimited` (so a 0.4.x payload fails to decode
+   rather than decoding wrongly). This is the same wire every other name
+   vocabulary in the crate already uses.
+
+3. **`subtitle::Format::PgsSub` is removed**, merged into
+   `subtitle::Format::HdmvPgs`. **Stored data is unaffected** — the slug
+   on disk is unchanged and parses to the surviving variant. Rust code
+   naming `PgsSub` renames to `HdmvPgs`, which is the same value it
+   already meant.
+
+### Added
+
+- **`ROSTER` on all eighteen open vocabularies.** `pub const ROSTER:
+  &'static [Self]` lists the named variants in declaration order:
+  `VideoCodec`, `AudioCodec`, `SubtitleCodec`, `audio::SampleFormat`,
+  `audio::ContainerFormat`, `audio::ChannelLayout`, `container::Format`,
+  `subtitle::Format`, the five `color` enums, `pixel_format::PixelFormat`,
+  the three `frame` orientation enums, and `subtitle::TrackOrigin`.
+
+  `#[non_exhaustive]` denies a downstream the `match` it would need to
+  enumerate these itself, so every consumer that mirrors one of these
+  vocabularies was going to hand-copy a list that silently rots at the
+  next release. This publishes the list instead. It is a **slice**, not an
+  array, so the count stays out of the type and a later addition remains a
+  minor change, and it excludes the `Other` escape — the roster answers
+  which names a build knows, and the escape is the arm carrying one it
+  does not.
+
+  Completeness is proved here rather than promised: an exhaustive `match`
+  sits beside each type (`#[non_exhaustive]` does not bind the defining
+  crate), so adding a variant without rostering it is `E0004` with the
+  compiler naming it. Roster and witness are generated from one list per
+  type, so there is no second list to drift.
+- `subtitle::TrackOrigin::Derived` (slug `"derived"`, wire id `3`) — a
+  track produced by a pass over the media (ASR transcript, machine
+  translation, OCR) rather than obtained as subtitle text. `External` had
+  been carrying that case in its doc while also meaning "downloaded";
+  the two are now separate. Ids stay append-only.
+
+### Changed
+
+- **`frame::BayerPattern` is closed** — `#[non_exhaustive]` removed. The
+  four standard arrangements are a geometric closure, not a snapshot of
+  today's cameras: a 2×2 tile with one red, one blue and two greens admits
+  exactly four top-left phases. Every CFA family that would want a fifth
+  (Quad Bayer, X-Trans, RGBW, Foveon, monochrome) is a different tile shape
+  and already leaves via a different type, as the type's own scope note has
+  always said. Downstream matches keep compiling and gain a completeness
+  proof.
+- **`audio::BitRateMode` is closed** — `#[non_exhaustive]` removed. CBR /
+  VBR / ABR is the whole of the *reporting* domain and has been stable for
+  twenty-five years. The near misses are not members: CVBR is a shape of
+  VBR, and CRF / CQP are encoder knobs describing how a file was produced,
+  not a property the stream reports.
+- **`subtitle::TrackOrigin` is an open vocabulary.** See breaking note 2.
+  mediaframe is a shared library, not one pipeline's private enum: the set
+  of provenances worth distinguishing belongs to whoever does the
+  classifying, so a downstream tracking an origin this crate has not heard
+  of now keeps its *name* rather than losing it to a nearby variant.
+  `#[non_exhaustive]` is retained, so promoting a slug that rides `Other`
+  today into a named variant tomorrow stays minor.
+- **The nine all-tier vocabularies tell the truth about their parse.** See
+  breaking note 1. The `cfg` predicate on the split is the same one that
+  gates each type's `Other` arm, so the error type and the escape cannot
+  drift apart, and each type carries an irrefutable-`let` proof that stops
+  compiling if the error is narrowed back.
+- **`subtitle::Format::PgsSub` merged into `HdmvPgs`.** See breaking note
+  3. One format wore two variant names rendering the same slug, so
+  `FromStr` could return only one of them and `Display` was not invertible
+  for the other. The survivor is the one whose name matches the canonical
+  slug — the name the type's doc already crowned as FFmpeg-canonical.
+
 ## [0.4.0] - 2026-08-19
 
 The FFmpeg pin moves `n8.1` → `n9.0` and every provenance label in the crate
