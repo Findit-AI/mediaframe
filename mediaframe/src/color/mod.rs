@@ -252,19 +252,35 @@ roster!(
   alloc_escape: Other
 );
 
-/// The error [`Matrix`]'s [`FromStr`](core::str::FromStr) returns.
+/// The error [`Matrix`]'s [`FromStr`](core::str::FromStr) returns **at the
+/// no-alloc tier**.
 ///
-/// Opaque and sealed: the input is deliberately not retained (these types
-/// are available at the crate's no-alloc tier, where there is nowhere to
-/// put an owned copy, and the input is attacker-controlled on the
-/// deserialization path). `#[non_exhaustive]` keeps it constructible only
-/// here, so it can grow structure later without breaking callers.
+/// Since 0.5.0 this is no longer `FromStr::Err` at the `alloc` / `std`
+/// tier. There the vocabulary is open and the parse is total, so the
+/// associated type is [`Infallible`](core::convert::Infallible) and the
+/// signature says what the behaviour always was. The type itself is
+/// unchanged and still exported: the lean build returns it, and code that
+/// names it keeps compiling.
+///
+/// Opaque and sealed: the input is deliberately not retained (this type is
+/// reachable only at the no-alloc tier, where there is nowhere to put an
+/// owned copy, and the input is attacker-controlled on the deserialization
+/// path). `#[non_exhaustive]` keeps it constructible only here, so it can
+/// grow structure later without breaking callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("not a colour-matrix name")]
 #[non_exhaustive]
 pub struct ParseMatrixError;
 
 impl core::str::FromStr for Matrix {
+  /// [`Infallible`](core::convert::Infallible) wherever the escape arm
+  /// exists, which is exactly where the parse is total; the vocabulary's
+  /// own refusal at the no-alloc tier, where it is closed. The predicate
+  /// is the one that gates [`Self::Other`], so the two cannot drift.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  type Err = core::convert::Infallible;
+  /// See the `alloc`-tier arm above.
+  #[cfg(not(any(feature = "std", feature = "alloc")))]
   type Err = ParseMatrixError;
 
   /// Reads a colour-matrix name: the canonical slug [`Self::as_str`]
@@ -282,10 +298,12 @@ impl core::str::FromStr for Matrix {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseMatrixError`] only at the
-  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
-  /// parse is **total**: a slug this type does not name rides
-  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
+  /// Returns [`ParseMatrixError`] only at the no-alloc tier, where the vocabulary is
+  /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
+  /// this type does not name rides [`Self::Other`], ASCII-folded to
+  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// [`Infallible`](core::convert::Infallible) there, so the totality is
+  /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
@@ -791,19 +809,35 @@ roster!(
   alloc_escape: Other
 );
 
-/// The error [`Primaries`]'s [`FromStr`](core::str::FromStr) returns.
+/// The error [`Primaries`]'s [`FromStr`](core::str::FromStr) returns **at the
+/// no-alloc tier**.
 ///
-/// Opaque and sealed: the input is deliberately not retained (these types
-/// are available at the crate's no-alloc tier, where there is nowhere to
-/// put an owned copy, and the input is attacker-controlled on the
-/// deserialization path). `#[non_exhaustive]` keeps it constructible only
-/// here, so it can grow structure later without breaking callers.
+/// Since 0.5.0 this is no longer `FromStr::Err` at the `alloc` / `std`
+/// tier. There the vocabulary is open and the parse is total, so the
+/// associated type is [`Infallible`](core::convert::Infallible) and the
+/// signature says what the behaviour always was. The type itself is
+/// unchanged and still exported: the lean build returns it, and code that
+/// names it keeps compiling.
+///
+/// Opaque and sealed: the input is deliberately not retained (this type is
+/// reachable only at the no-alloc tier, where there is nowhere to put an
+/// owned copy, and the input is attacker-controlled on the deserialization
+/// path). `#[non_exhaustive]` keeps it constructible only here, so it can
+/// grow structure later without breaking callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("not a colour-primaries name")]
 #[non_exhaustive]
 pub struct ParsePrimariesError;
 
 impl core::str::FromStr for Primaries {
+  /// [`Infallible`](core::convert::Infallible) wherever the escape arm
+  /// exists, which is exactly where the parse is total; the vocabulary's
+  /// own refusal at the no-alloc tier, where it is closed. The predicate
+  /// is the one that gates [`Self::Other`], so the two cannot drift.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  type Err = core::convert::Infallible;
+  /// See the `alloc`-tier arm above.
+  #[cfg(not(any(feature = "std", feature = "alloc")))]
   type Err = ParsePrimariesError;
 
   /// Reads a primaries name: the canonical slug [`Self::as_str`]
@@ -818,10 +852,12 @@ impl core::str::FromStr for Primaries {
   ///
   /// # Errors
   ///
-  /// Returns [`ParsePrimariesError`] only at the
-  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
-  /// parse is **total**: a slug this type does not name rides
-  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
+  /// Returns [`ParsePrimariesError`] only at the no-alloc tier, where the vocabulary is
+  /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
+  /// this type does not name rides [`Self::Other`], ASCII-folded to
+  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// [`Infallible`](core::convert::Infallible) there, so the totality is
+  /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
@@ -1051,19 +1087,35 @@ roster!(
   alloc_escape: Other
 );
 
-/// The error [`Transfer`]'s [`FromStr`](core::str::FromStr) returns.
+/// The error [`Transfer`]'s [`FromStr`](core::str::FromStr) returns **at the
+/// no-alloc tier**.
 ///
-/// Opaque and sealed: the input is deliberately not retained (these types
-/// are available at the crate's no-alloc tier, where there is nowhere to
-/// put an owned copy, and the input is attacker-controlled on the
-/// deserialization path). `#[non_exhaustive]` keeps it constructible only
-/// here, so it can grow structure later without breaking callers.
+/// Since 0.5.0 this is no longer `FromStr::Err` at the `alloc` / `std`
+/// tier. There the vocabulary is open and the parse is total, so the
+/// associated type is [`Infallible`](core::convert::Infallible) and the
+/// signature says what the behaviour always was. The type itself is
+/// unchanged and still exported: the lean build returns it, and code that
+/// names it keeps compiling.
+///
+/// Opaque and sealed: the input is deliberately not retained (this type is
+/// reachable only at the no-alloc tier, where there is nowhere to put an
+/// owned copy, and the input is attacker-controlled on the deserialization
+/// path). `#[non_exhaustive]` keeps it constructible only here, so it can
+/// grow structure later without breaking callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("not a transfer-characteristics name")]
 #[non_exhaustive]
 pub struct ParseTransferError;
 
 impl core::str::FromStr for Transfer {
+  /// [`Infallible`](core::convert::Infallible) wherever the escape arm
+  /// exists, which is exactly where the parse is total; the vocabulary's
+  /// own refusal at the no-alloc tier, where it is closed. The predicate
+  /// is the one that gates [`Self::Other`], so the two cannot drift.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  type Err = core::convert::Infallible;
+  /// See the `alloc`-tier arm above.
+  #[cfg(not(any(feature = "std", feature = "alloc")))]
   type Err = ParseTransferError;
 
   /// Reads a transfer-characteristics name: the canonical slug
@@ -1081,10 +1133,12 @@ impl core::str::FromStr for Transfer {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseTransferError`] only at the
-  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
-  /// parse is **total**: a slug this type does not name rides
-  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
+  /// Returns [`ParseTransferError`] only at the no-alloc tier, where the vocabulary is
+  /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
+  /// this type does not name rides [`Self::Other`], ASCII-folded to
+  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// [`Infallible`](core::convert::Infallible) there, so the totality is
+  /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
@@ -1240,19 +1294,35 @@ impl DynamicRange {
 
 roster!(DynamicRange, "dynamic range", [Unspecified, Limited, Full], alloc_escape: Other);
 
-/// The error [`DynamicRange`]'s [`FromStr`](core::str::FromStr) returns.
+/// The error [`DynamicRange`]'s [`FromStr`](core::str::FromStr) returns **at the
+/// no-alloc tier**.
 ///
-/// Opaque and sealed: the input is deliberately not retained (these types
-/// are available at the crate's no-alloc tier, where there is nowhere to
-/// put an owned copy, and the input is attacker-controlled on the
-/// deserialization path). `#[non_exhaustive]` keeps it constructible only
-/// here, so it can grow structure later without breaking callers.
+/// Since 0.5.0 this is no longer `FromStr::Err` at the `alloc` / `std`
+/// tier. There the vocabulary is open and the parse is total, so the
+/// associated type is [`Infallible`](core::convert::Infallible) and the
+/// signature says what the behaviour always was. The type itself is
+/// unchanged and still exported: the lean build returns it, and code that
+/// names it keeps compiling.
+///
+/// Opaque and sealed: the input is deliberately not retained (this type is
+/// reachable only at the no-alloc tier, where there is nowhere to put an
+/// owned copy, and the input is attacker-controlled on the deserialization
+/// path). `#[non_exhaustive]` keeps it constructible only here, so it can
+/// grow structure later without breaking callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("not a sample-range name")]
 #[non_exhaustive]
 pub struct ParseDynamicRangeError;
 
 impl core::str::FromStr for DynamicRange {
+  /// [`Infallible`](core::convert::Infallible) wherever the escape arm
+  /// exists, which is exactly where the parse is total; the vocabulary's
+  /// own refusal at the no-alloc tier, where it is closed. The predicate
+  /// is the one that gates [`Self::Other`], so the two cannot drift.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  type Err = core::convert::Infallible;
+  /// See the `alloc`-tier arm above.
+  #[cfg(not(any(feature = "std", feature = "alloc")))]
   type Err = ParseDynamicRangeError;
 
   /// Reads a sample-range name: the canonical slug [`Self::as_str`]
@@ -1266,10 +1336,12 @@ impl core::str::FromStr for DynamicRange {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseDynamicRangeError`] only at the
-  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
-  /// parse is **total**: a slug this type does not name rides
-  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
+  /// Returns [`ParseDynamicRangeError`] only at the no-alloc tier, where the vocabulary is
+  /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
+  /// this type does not name rides [`Self::Other`], ASCII-folded to
+  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// [`Infallible`](core::convert::Infallible) there, so the totality is
+  /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
@@ -1433,19 +1505,35 @@ roster!(
   alloc_escape: Other
 );
 
-/// The error [`ChromaLocation`]'s [`FromStr`](core::str::FromStr) returns.
+/// The error [`ChromaLocation`]'s [`FromStr`](core::str::FromStr) returns **at the
+/// no-alloc tier**.
 ///
-/// Opaque and sealed: the input is deliberately not retained (these types
-/// are available at the crate's no-alloc tier, where there is nowhere to
-/// put an owned copy, and the input is attacker-controlled on the
-/// deserialization path). `#[non_exhaustive]` keeps it constructible only
-/// here, so it can grow structure later without breaking callers.
+/// Since 0.5.0 this is no longer `FromStr::Err` at the `alloc` / `std`
+/// tier. There the vocabulary is open and the parse is total, so the
+/// associated type is [`Infallible`](core::convert::Infallible) and the
+/// signature says what the behaviour always was. The type itself is
+/// unchanged and still exported: the lean build returns it, and code that
+/// names it keeps compiling.
+///
+/// Opaque and sealed: the input is deliberately not retained (this type is
+/// reachable only at the no-alloc tier, where there is nowhere to put an
+/// owned copy, and the input is attacker-controlled on the deserialization
+/// path). `#[non_exhaustive]` keeps it constructible only here, so it can
+/// grow structure later without breaking callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("not a chroma-location name")]
 #[non_exhaustive]
 pub struct ParseChromaLocationError;
 
 impl core::str::FromStr for ChromaLocation {
+  /// [`Infallible`](core::convert::Infallible) wherever the escape arm
+  /// exists, which is exactly where the parse is total; the vocabulary's
+  /// own refusal at the no-alloc tier, where it is closed. The predicate
+  /// is the one that gates [`Self::Other`], so the two cannot drift.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  type Err = core::convert::Infallible;
+  /// See the `alloc`-tier arm above.
+  #[cfg(not(any(feature = "std", feature = "alloc")))]
   type Err = ParseChromaLocationError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
@@ -1454,10 +1542,12 @@ impl core::str::FromStr for ChromaLocation {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseChromaLocationError`] only at the
-  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
-  /// parse is **total**: a slug this type does not name rides
-  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
+  /// Returns [`ParseChromaLocationError`] only at the no-alloc tier, where the vocabulary is
+  /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
+  /// this type does not name rides [`Self::Other`], ASCII-folded to
+  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// [`Infallible`](core::convert::Infallible) there, so the totality is
+  /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the

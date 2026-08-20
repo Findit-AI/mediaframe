@@ -787,19 +787,35 @@ impl Rotation {
 
 roster!(Rotation, "rotation", [D0, D90, D180, D270], alloc_escape: Other);
 
-/// The error [`Rotation`]'s [`FromStr`](core::str::FromStr) returns.
+/// The error [`Rotation`]'s [`FromStr`](core::str::FromStr) returns **at the
+/// no-alloc tier**.
 ///
-/// Opaque and sealed: the input is deliberately not retained (these types
-/// are available at the crate's no-alloc tier, where there is nowhere to
-/// put an owned copy, and the input is attacker-controlled on the
-/// deserialization path). `#[non_exhaustive]` keeps it constructible only
-/// here, so it can grow structure later without breaking callers.
+/// Since 0.5.0 this is no longer `FromStr::Err` at the `alloc` / `std`
+/// tier. There the vocabulary is open and the parse is total, so the
+/// associated type is [`Infallible`](core::convert::Infallible) and the
+/// signature says what the behaviour always was. The type itself is
+/// unchanged and still exported: the lean build returns it, and code that
+/// names it keeps compiling.
+///
+/// Opaque and sealed: the input is deliberately not retained (this type is
+/// reachable only at the no-alloc tier, where there is nowhere to put an
+/// owned copy, and the input is attacker-controlled on the deserialization
+/// path). `#[non_exhaustive]` keeps it constructible only here, so it can
+/// grow structure later without breaking callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("not a rotation")]
 #[non_exhaustive]
 pub struct ParseRotationError;
 
 impl core::str::FromStr for Rotation {
+  /// [`Infallible`](core::convert::Infallible) wherever the escape arm
+  /// exists, which is exactly where the parse is total; the vocabulary's
+  /// own refusal at the no-alloc tier, where it is closed. The predicate
+  /// is the one that gates [`Self::Other`], so the two cannot drift.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  type Err = core::convert::Infallible;
+  /// See the `alloc`-tier arm above.
+  #[cfg(not(any(feature = "std", feature = "alloc")))]
   type Err = ParseRotationError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
@@ -808,10 +824,12 @@ impl core::str::FromStr for Rotation {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseRotationError`] only at the
-  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
-  /// parse is **total**: a slug this type does not name rides
-  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
+  /// Returns [`ParseRotationError`] only at the no-alloc tier, where the vocabulary is
+  /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
+  /// this type does not name rides [`Self::Other`], ASCII-folded to
+  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// [`Infallible`](core::convert::Infallible) there, so the totality is
+  /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
@@ -1546,19 +1564,35 @@ impl FieldOrder {
 
 roster!(FieldOrder, "field order", [Unknown, Progressive, Tt, Bb, Tb, Bt], alloc_escape: Other);
 
-/// The error [`FieldOrder`]'s [`FromStr`](core::str::FromStr) returns.
+/// The error [`FieldOrder`]'s [`FromStr`](core::str::FromStr) returns **at the
+/// no-alloc tier**.
 ///
-/// Opaque and sealed: the input is deliberately not retained (these types
-/// are available at the crate's no-alloc tier, where there is nowhere to
-/// put an owned copy, and the input is attacker-controlled on the
-/// deserialization path). `#[non_exhaustive]` keeps it constructible only
-/// here, so it can grow structure later without breaking callers.
+/// Since 0.5.0 this is no longer `FromStr::Err` at the `alloc` / `std`
+/// tier. There the vocabulary is open and the parse is total, so the
+/// associated type is [`Infallible`](core::convert::Infallible) and the
+/// signature says what the behaviour always was. The type itself is
+/// unchanged and still exported: the lean build returns it, and code that
+/// names it keeps compiling.
+///
+/// Opaque and sealed: the input is deliberately not retained (this type is
+/// reachable only at the no-alloc tier, where there is nowhere to put an
+/// owned copy, and the input is attacker-controlled on the deserialization
+/// path). `#[non_exhaustive]` keeps it constructible only here, so it can
+/// grow structure later without breaking callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("not a field-order name")]
 #[non_exhaustive]
 pub struct ParseFieldOrderError;
 
 impl core::str::FromStr for FieldOrder {
+  /// [`Infallible`](core::convert::Infallible) wherever the escape arm
+  /// exists, which is exactly where the parse is total; the vocabulary's
+  /// own refusal at the no-alloc tier, where it is closed. The predicate
+  /// is the one that gates [`Self::Other`], so the two cannot drift.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  type Err = core::convert::Infallible;
+  /// See the `alloc`-tier arm above.
+  #[cfg(not(any(feature = "std", feature = "alloc")))]
   type Err = ParseFieldOrderError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
@@ -1567,10 +1601,12 @@ impl core::str::FromStr for FieldOrder {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseFieldOrderError`] only at the
-  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
-  /// parse is **total**: a slug this type does not name rides
-  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
+  /// Returns [`ParseFieldOrderError`] only at the no-alloc tier, where the vocabulary is
+  /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
+  /// this type does not name rides [`Self::Other`], ASCII-folded to
+  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// [`Infallible`](core::convert::Infallible) there, so the totality is
+  /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
@@ -1745,19 +1781,35 @@ roster!(
   alloc_escape: Other
 );
 
-/// The error [`StereoMode`]'s [`FromStr`](core::str::FromStr) returns.
+/// The error [`StereoMode`]'s [`FromStr`](core::str::FromStr) returns **at the
+/// no-alloc tier**.
 ///
-/// Opaque and sealed: the input is deliberately not retained (these types
-/// are available at the crate's no-alloc tier, where there is nowhere to
-/// put an owned copy, and the input is attacker-controlled on the
-/// deserialization path). `#[non_exhaustive]` keeps it constructible only
-/// here, so it can grow structure later without breaking callers.
+/// Since 0.5.0 this is no longer `FromStr::Err` at the `alloc` / `std`
+/// tier. There the vocabulary is open and the parse is total, so the
+/// associated type is [`Infallible`](core::convert::Infallible) and the
+/// signature says what the behaviour always was. The type itself is
+/// unchanged and still exported: the lean build returns it, and code that
+/// names it keeps compiling.
+///
+/// Opaque and sealed: the input is deliberately not retained (this type is
+/// reachable only at the no-alloc tier, where there is nowhere to put an
+/// owned copy, and the input is attacker-controlled on the deserialization
+/// path). `#[non_exhaustive]` keeps it constructible only here, so it can
+/// grow structure later without breaking callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("not a stereo-mode name")]
 #[non_exhaustive]
 pub struct ParseStereoModeError;
 
 impl core::str::FromStr for StereoMode {
+  /// [`Infallible`](core::convert::Infallible) wherever the escape arm
+  /// exists, which is exactly where the parse is total; the vocabulary's
+  /// own refusal at the no-alloc tier, where it is closed. The predicate
+  /// is the one that gates [`Self::Other`], so the two cannot drift.
+  #[cfg(any(feature = "std", feature = "alloc"))]
+  type Err = core::convert::Infallible;
+  /// See the `alloc`-tier arm above.
+  #[cfg(not(any(feature = "std", feature = "alloc")))]
   type Err = ParseStereoModeError;
 
   /// Parses the canonical slug [`Self::as_str`] renders, the exact
@@ -1766,10 +1818,12 @@ impl core::str::FromStr for StereoMode {
   ///
   /// # Errors
   ///
-  /// Returns [`ParseStereoModeError`] only at the
-  /// no-alloc tier, where the vocabulary is closed. With `alloc` this
-  /// parse is **total**: a slug this type does not name rides
-  /// [`Self::Other`], ASCII-folded to lowercase by [`Self::other`].
+  /// Returns [`ParseStereoModeError`] only at the no-alloc tier, where the vocabulary is
+  /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
+  /// this type does not name rides [`Self::Other`], ASCII-folded to
+  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// [`Infallible`](core::convert::Infallible) there, so the totality is
+  /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
