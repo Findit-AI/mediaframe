@@ -70,7 +70,7 @@ fn reachability_small_coded_enums_hit_all_named() {
     to.insert(crate::subtitle::TrackOrigin::arbitrary(g));
   });
   assert_eq!(br.len(), 3, "BitRateMode coverage: {br:?}");
-  assert_eq!(to.len(), 3, "TrackOrigin coverage: {to:?}");
+  assert_eq!(to.len(), 4, "TrackOrigin coverage: {to:?}");
 }
 
 #[test]
