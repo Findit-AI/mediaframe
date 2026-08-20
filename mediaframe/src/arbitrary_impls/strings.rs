@@ -39,6 +39,15 @@ super::arb_open_string_enum!(
   ["srt", "webvtt", "ass", "ssa", "mov_text", "ttml"]
 );
 
+// `TrackOrigin`'s `FromStr::Err` is `ParseTrackOriginError`, not
+// `Infallible` — but this module is alloc-gated, and at that tier the
+// parse is total (every miss rides `Other`), so the macro's `unwrap` is
+// unreachable. See the note on `ParseTrackOriginError`.
+super::arb_open_string_enum!(
+  crate::subtitle::TrackOrigin,
+  ["embedded", "sidecar", "external", "derived"]
+);
+
 // Both spellings of the 5.x pair are seeded on purpose — see the twin
 // list in `quickcheck_helpers::strings`. The unqualified `"5.0"` /
 // `"5.1"` are FFmpeg's names for the **back** layouts, so the short pair

@@ -134,25 +134,44 @@ fn sample_format_rides_the_slug_wire() {
 /// looked like valid data on the consumer side.
 #[test]
 fn closed_coded_enums_reject_unknown_codes() {
-  use crate::{audio::BitRateMode, subtitle::TrackOrigin};
+  use crate::audio::BitRateMode;
+
+  for m in [BitRateMode::Cbr, BitRateMode::Vbr, BitRateMode::Abr] {
+    round_trip(&m);
+  }
+
+  // Out-of-range codes are rejected — not canonicalised to the default.
+  assert!(serde_json::from_str::<BitRateMode>("999").is_err());
+  assert!(serde_json::from_str::<BitRateMode>("3").is_err());
+}
+
+/// `TrackOrigin` left the coded wire in 0.5.0: it is an open vocabulary
+/// now, so it rides the same slug wire as every other name enum and an
+/// unnamed slug survives the round trip instead of being refused.
+#[test]
+fn track_origin_rides_the_slug_wire() {
+  use crate::subtitle::TrackOrigin;
 
   for o in [
     TrackOrigin::Embedded,
     TrackOrigin::Sidecar,
     TrackOrigin::External,
     TrackOrigin::Derived,
+    TrackOrigin::other("broadcast"),
   ] {
     round_trip(&o);
   }
-  for m in [BitRateMode::Cbr, BitRateMode::Vbr, BitRateMode::Abr] {
-    round_trip(&m);
-  }
 
-  // Out-of-range codes are rejected — not canonicalised to the default.
-  assert!(serde_json::from_str::<TrackOrigin>("999").is_err());
-  assert!(serde_json::from_str::<TrackOrigin>("4").is_err());
-  assert!(serde_json::from_str::<BitRateMode>("999").is_err());
-  assert!(serde_json::from_str::<BitRateMode>("3").is_err());
+  assert_eq!(
+    serde_json::to_string(&TrackOrigin::Derived).unwrap(),
+    "\"derived\""
+  );
+  assert_eq!(
+    serde_json::from_str::<TrackOrigin>("\"broadcast\"").unwrap(),
+    TrackOrigin::other("broadcast")
+  );
+  // The old numeric wire is not silently accepted.
+  assert!(serde_json::from_str::<TrackOrigin>("0").is_err());
 }
 
 // ── Codex round 2 findings ──

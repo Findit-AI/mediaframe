@@ -193,7 +193,7 @@
 //!
 //! ```text
 //! Format      { string value = 1; }   // FFmpeg-style slug from `as_str()`
-//! TrackOrigin { uint32 value = 1; }   // value = to_u32()
+//! TrackOrigin { string value = 1; }   // value = as_str()
 //! TrackDisposition    { uint32 bits  = 1; }   // bits = to_u32() (= raw bitflags bits)
 //! ```
 //!
@@ -208,10 +208,13 @@
 //!   always-encode the slug so an empty string can never be conflated
 //!   with `Srt`; on decode an empty string maps to `Other("")`,
 //!   matching `FromStr`.
-//! - **`TrackOrigin`** — closed unit enum with stable ids
-//!   `Embedded=0` / `Sidecar=1` / `External=2` / `Derived=3`.
-//!   Default-elision is sound: the default `Embedded` maps to `0`
-//!   (proto-zero), so an absent field decodes back to `Embedded`.
+//! - **`TrackOrigin`** — an open enum since 0.5.0 (`Other(SmolStr)`),
+//!   so its stable ids no longer span the value space and it encodes
+//!   the slug as a `string`, like `Format` above. Always-encoded for
+//!   the same reason: the empty string is `Other("")` on decode, a
+//!   distinct legal value that eliding would conflate with an absent
+//!   field. **Wire-incompatible with 0.4.x**, which wrote a varint id
+//!   in this field.
 //! - **`TrackDisposition`** — bitflags. Encoded as the raw `u32`
 //!   bits at field #1, decoded via [`TrackDisposition::from_u32`]
 //!   (`from_bits_retain` semantics — unknown bits round-trip
@@ -2193,9 +2196,12 @@ mod subtitle_impls {
   use crate::subtitle::{Format, TrackOrigin};
 
   // ----------------------------------------------------------------------------
-  // TrackOrigin — { uint32 value = 1; }
-  // Default is `Embedded` (to_u32() == 0), so proto3 zero-elision is sound —
-  // identical pattern to the colour / `PixelFormat` enum codec.
+  // TrackOrigin — { string value = 1; }
+  // Open since 0.5.0 (`Other(SmolStr)`), so there is no total numeric id;
+  // encodes the slug from `as_str()`, exactly like `Format` below.
+  // Always-encoded (NOT default-elision): the empty string decodes to
+  // `Other("")`, a distinct legal value, so eliding would conflate it with
+  // an absent field.
   // ----------------------------------------------------------------------------
 
   impl DefaultInstance for TrackOrigin {
@@ -2207,23 +2213,13 @@ mod subtitle_impls {
 
   impl Message for TrackOrigin {
     fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
-      // Default-elision (= proto3 zero-elision here since `Embedded`'s
-      // id is `0`). An absent field decodes back to `Embedded`; a
-      // present field always carries the exact id.
-      if *self != TrackOrigin::default() {
-        let v: u32 = self.to_u32();
-        1 + uint32_encoded_len(v) as u32
-      } else {
-        0
-      }
+      // Always-encode the slug — see the wire-format note above.
+      1 + string_encoded_len(self.as_str()) as u32
     }
 
     fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
-      if *self != TrackOrigin::default() {
-        let v: u32 = self.to_u32();
-        Tag::new(1, WireType::Varint).encode(buf);
-        encode_uint32(v, buf);
-      }
+      Tag::new(1, WireType::LengthDelimited).encode(buf);
+      encode_string(self.as_str(), buf);
     }
 
     fn merge_field(
@@ -2234,15 +2230,20 @@ mod subtitle_impls {
     ) -> Result<(), DecodeError> {
       match tag.field_number() {
         1 => {
-          if tag.wire_type() != WireType::Varint {
+          if tag.wire_type() != WireType::LengthDelimited {
             return Err(DecodeError::WireTypeMismatch {
               field_number: 1,
-              expected: VARINT,
+              expected: LEN,
               actual: tag.wire_type() as u8,
             });
           }
-          let v = decode_uint32(buf)?;
-          *self = TrackOrigin::from_u32(v);
+          let s = decode_string(buf)?;
+          // `FromStr for TrackOrigin` names a refusal type but cannot
+          // reach it at this (alloc-gated) tier — every miss rides
+          // `Other`. Route the unreachable arm through the escape
+          // rather than a silent default, so the name survives even if
+          // that tier assumption ever changes.
+          *self = TrackOrigin::from_str(&s).unwrap_or_else(|_| TrackOrigin::other(&s));
         }
         _ => skip_field_depth(tag, buf, ctx.depth())?,
       }

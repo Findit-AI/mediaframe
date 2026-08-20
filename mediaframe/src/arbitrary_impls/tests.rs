@@ -104,13 +104,31 @@ fn reachability_small_closed_coded_enums_hit_all_named() {
   // needs no hasher.
   use ::std::collections::BTreeSet;
   let mut br: BTreeSet<u32> = BTreeSet::new();
-  let mut to: BTreeSet<u32> = BTreeSet::new();
   drive_per_round(0x12C0DE5_u64, 2048, |u| {
     br.insert(crate::audio::BitRateMode::arbitrary(u).unwrap().to_u32());
-    to.insert(crate::subtitle::TrackOrigin::arbitrary(u).unwrap().to_u32());
   });
   assert_eq!(br.len(), 3, "BitRateMode coverage: {br:?}");
-  assert_eq!(to.len(), 4, "TrackOrigin coverage: {to:?}");
+}
+
+/// `TrackOrigin` became an open string enum in 0.5.0, so it generates
+/// the way the other name vocabularies do: every named variant plus the
+/// `Other(_)` escape must be reachable.
+#[test]
+fn reachability_track_origin_hits_all_named_and_escape() {
+  use crate::subtitle::TrackOrigin;
+  use ::std::collections::BTreeSet;
+  let mut named: BTreeSet<u32> = BTreeSet::new();
+  let mut saw_other = false;
+  drive_per_round(0x7401C1_u64, 2048, |u| {
+    match TrackOrigin::arbitrary(u).unwrap().to_u32() {
+      Some(code) => {
+        named.insert(code);
+      }
+      None => saw_other = true,
+    }
+  });
+  assert_eq!(named.len(), 4, "TrackOrigin named coverage: {named:?}");
+  assert!(saw_other, "TrackOrigin `Other` arm never generated");
 }
 
 // Reachability — a small name vocabulary with an `Other(SmolStr)` arm
