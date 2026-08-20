@@ -155,15 +155,22 @@ roster!(
   escape: Other
 );
 
-/// The error [`TrackOrigin`]'s [`FromStr`](core::str::FromStr) declares.
+/// The error [`TrackOrigin`] would return if its vocabulary were closed.
 ///
-/// **Never returned as of 0.5.0.** [`TrackOrigin`] gained its
-/// [`Other`](TrackOrigin::Other) escape in that release, and this module
-/// exists only at the `alloc` tier, so every slug now parses. The type is
-/// kept — exported and named by `FromStr::Err` — because narrowing the
-/// associated type is itself a breaking change, and keeping it leaves the
-/// door open to a future no-alloc tier for this module where the
-/// vocabulary would close again and the refusal become real.
+/// **Not reachable, and no longer `FromStr::Err`.** [`TrackOrigin`] gained
+/// its [`Other`](TrackOrigin::Other) escape in 0.5.0, and this module is
+/// compiled only at the `alloc` tier, so there is no tier at which the
+/// parse can refuse — `FromStr::Err` is
+/// [`Infallible`](core::convert::Infallible) unconditionally.
+///
+/// It is kept, exported and unchanged, on the same policy as the nine
+/// all-tier vocabularies that split their `Err` by tier in 0.5.0: removing
+/// an exported type is itself a breaking change, and the type is the
+/// vocabulary's refusal *name*, which becomes real again the day this
+/// module grows a no-alloc tier. Unlike those nine — whose lean build
+/// still returns theirs — nothing constructs this one today. That is the
+/// honest statement, and it is why the type is documented rather than
+/// quietly left looking live.
 ///
 /// Opaque and sealed: the input is deliberately not retained (the input is
 /// attacker-controlled on the deserialization path). `#[non_exhaustive]`
@@ -175,17 +182,21 @@ roster!(
 pub struct ParseTrackOriginError;
 
 impl core::str::FromStr for TrackOrigin {
-  type Err = ParseTrackOriginError;
+  /// Unconditionally [`Infallible`](core::convert::Infallible) — unlike
+  /// the all-tier vocabularies, this one needs no `cfg` split, because
+  /// the module itself exists only where the escape does. There is no
+  /// tier at which the parse can refuse, so there is nothing to fork.
+  type Err = core::convert::Infallible;
 
   /// Parses the canonical slug [`Self::as_str`] renders — the exact
   /// inverse of [`Display`](core::fmt::Display).
   ///
   /// # Errors
   ///
-  /// Never — this parse is **total**: a slug this type does not name
-  /// rides [`Self::Other`], ASCII-folded to lowercase by
-  /// [`Self::other`]. The [`ParseTrackOriginError`] in the signature
-  /// is retained for the reason given on that type.
+  /// Never, and the type says so: a slug this vocabulary does not name
+  /// rides [`Self::Other`], ASCII-folded to lowercase by [`Self::other`],
+  /// so `Self::Err` is uninhabited and a caller can discharge it with an
+  /// irrefutable `let Ok(o) = s.parse::<TrackOrigin>();`.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the

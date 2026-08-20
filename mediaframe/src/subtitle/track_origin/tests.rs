@@ -71,11 +71,28 @@ fn every_origin_round_trips_through_its_slug() {
   assert_eq!("broadcast".parse::<TrackOrigin>().unwrap(), o);
 }
 
-/// The parse is total at this tier: every slug — including the empty
-/// one — lands on a value rather than a refusal.
+/// **Type-level** totality, the same proof the nine all-tier
+/// vocabularies carry: each `let Ok(..) = ..` is an *irrefutable*
+/// pattern, which it can only be because `FromStr::Err` is uninhabited.
+/// Give `TrackOrigin` a refusing `Err` again and this stops compiling
+/// (`E0005`) rather than merely going untested.
+///
+/// `TrackOrigin` needs no `cfg` on the proof: its module exists only at
+/// the `alloc` tier, so unlike the nine there is no lean build in which
+/// the vocabulary closes.
 #[test]
-fn parse_is_total_and_empty_slug_is_the_escape() {
-  assert_eq!("".parse::<TrackOrigin>().unwrap(), TrackOrigin::other(""));
+fn parse_is_total_at_every_tier_this_type_exists_at() {
+  // The empty slug is a value, not a refusal.
+  let Ok(empty) = "".parse::<TrackOrigin>();
+  assert_eq!(empty, TrackOrigin::other(""));
+
+  // So is a word from nobody's vocabulary.
+  let Ok(unknown) = "not-a-track-origin".parse::<TrackOrigin>();
+  assert_eq!(unknown, TrackOrigin::other("not-a-track-origin"));
+
+  // And a named one still lands on its variant.
+  let Ok(named) = "derived".parse::<TrackOrigin>();
+  assert_eq!(named, TrackOrigin::Derived);
 }
 
 /// The `Other` arm is reachable through the borrowed unwrap views, the

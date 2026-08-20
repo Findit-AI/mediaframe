@@ -42,8 +42,6 @@ qc_open_string_enum!(
   ["srt", "webvtt", "ass", "ssa", "mov_text", "ttml"]
 );
 
-// See the twin note in `arbitrary_impls::strings`: `TrackOrigin` parses
-// totally at this (alloc-gated) tier despite naming a refusal type.
 qc_open_string_enum!(
   track_origin,
   crate::subtitle::TrackOrigin,
