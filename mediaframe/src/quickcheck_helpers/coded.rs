@@ -140,7 +140,7 @@ qc_open_string_enum!(
 // Strictly-closed (no `Unknown` arm) — pick uniformly from named variants.
 qc_via_named_variants! {
   bit_rate_mode => crate::audio::BitRateMode,        [Cbr, Vbr, Abr];
-  track_origin  => crate::subtitle::TrackOrigin,     [Embedded, Sidecar, External];
+  track_origin  => crate::subtitle::TrackOrigin,     [Embedded, Sidecar, External, Derived];
 }
 
 // ─── colour structs ──────────────────────────────────────────────────────────

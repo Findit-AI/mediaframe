@@ -9,8 +9,10 @@
 //!   are encoded.
 //! - [`TrackOrigin`] — where the bytes came from
 //!   ([`TrackOrigin::Embedded`] inside the container,
-//!   [`TrackOrigin::Sidecar`] file next to it, or
-//!   [`TrackOrigin::External`] download / OCR / ASR).
+//!   [`TrackOrigin::Sidecar`] file next to it,
+//!   [`TrackOrigin::External`] obtained ready-made from elsewhere, or
+//!   [`TrackOrigin::Derived`] produced by a pipeline pass over the
+//!   media — ASR, translation, OCR).
 //!
 //! Both types are pure media-stream descriptor vocabulary; they have
 //! no per-cue / per-event content. The corresponding wire impls live
