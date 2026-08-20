@@ -42,6 +42,14 @@ qc_open_string_enum!(
   ["srt", "webvtt", "ass", "ssa", "mov_text", "ttml"]
 );
 
+// See the twin note in `arbitrary_impls::strings`: `TrackOrigin` parses
+// totally at this (alloc-gated) tier despite naming a refusal type.
+qc_open_string_enum!(
+  track_origin,
+  crate::subtitle::TrackOrigin,
+  ["embedded", "sidecar", "external", "derived"]
+);
+
 // Both spellings of the 5.x pair are seeded on purpose. FFmpeg gives the
 // unqualified `"5.0"` / `"5.1"` to the **back**-speaker layouts and
 // qualifies the side ones, so seeding only the short pair reaches

@@ -64,13 +64,28 @@ fn smoke_yields_values_for_representative_types() {
 fn reachability_small_coded_enums_hit_all_named() {
   use ::std::collections::HashSet;
   let mut br: HashSet<crate::audio::BitRateMode> = HashSet::new();
-  let mut to: HashSet<crate::subtitle::TrackOrigin> = HashSet::new();
   drive(64, 2048, |g| {
     br.insert(crate::audio::BitRateMode::arbitrary(g));
-    to.insert(crate::subtitle::TrackOrigin::arbitrary(g));
   });
   assert_eq!(br.len(), 3, "BitRateMode coverage: {br:?}");
-  assert_eq!(to.len(), 4, "TrackOrigin coverage: {to:?}");
+}
+
+/// `TrackOrigin` became an open string enum in 0.5.0 — named variants
+/// and the escape must both be reachable.
+#[test]
+fn reachability_track_origin_hits_named_and_escape() {
+  use crate::subtitle::TrackOrigin;
+  use ::std::collections::HashSet;
+  let mut named: HashSet<TrackOrigin> = HashSet::new();
+  let mut saw_other = false;
+  drive(64, 2048, |g| match TrackOrigin::arbitrary(g) {
+    TrackOrigin::Other(_) => saw_other = true,
+    other => {
+      named.insert(other);
+    }
+  });
+  assert_eq!(named.len(), 4, "TrackOrigin named coverage: {named:?}");
+  assert!(saw_other, "TrackOrigin `Other` arm never generated");
 }
 
 #[test]

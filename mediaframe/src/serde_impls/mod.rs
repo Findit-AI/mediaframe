@@ -20,13 +20,15 @@
 //! - **`TrackDisposition`** is the one numeric wire left: it is a bit set,
 //!   not a name vocabulary, so it serializes as its `u32` bits.
 //! - **Strictly-closed coded enums (no `Other` arm)** —
-//!   [`crate::subtitle::TrackOrigin`] and [`crate::audio::BitRateMode`] —
-//!   serialize as their `u32` code but **reject** unknown wire codes as
-//!   serde errors instead of silently collapsing them to the default
-//!   variant (which `from_u32` would do). This is intentional: a corrupt
-//!   or out-of-range value on the wire must fail loudly rather than
-//!   masquerade as `Embedded` / `Cbr`. The check is backed by each type's
-//!   `try_from_u32(v: u32) -> Option<Self>` method.
+//!   [`crate::audio::BitRateMode`] — serialize as their `u32` code but
+//!   **reject** unknown wire codes as serde errors instead of silently
+//!   collapsing them to the default variant (which `from_u32` would do).
+//!   This is intentional: a corrupt or out-of-range value on the wire
+//!   must fail loudly rather than masquerade as `Cbr`. The check is
+//!   backed by the type's `try_from_u32(v: u32) -> Option<Self>` method.
+//!   [`crate::subtitle::TrackOrigin`] left this group in 0.5.0 when it
+//!   gained an `Other` arm: an open vocabulary has no closed code space
+//!   to police, so it moved to the slug wire above.
 //!
 //! The plain data structs (`color::Info`, `frame::Dimensions`,
 //! `audio::Tags`, …) derive serde at their definition site; the
@@ -100,7 +102,7 @@ macro_rules! serde_via_code {
 /// `to_u32()` / `try_from_u32()` pair. Adversarial / corrupt codes outside
 /// the enumerated set are rejected as serde errors instead of silently
 /// canonicalising to the default variant (which `from_u32` would do).
-// Both invocations (`TrackOrigin` / `BitRateMode`) are heap-tier — gated on
+// The one invocation (`BitRateMode`) is heap-tier — gated on
 // `any(feature = "std", feature = "alloc")`. Under bare `--features serde`
 // (no-alloc tier) they are cfg'd out and the macro is unused; the `allow`
 // silences the resulting `unused_macros` lint, exactly as for `serde_via_str!`.
@@ -171,6 +173,8 @@ serde_via_str!(crate::container::Format);
 #[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_str!(crate::subtitle::Format);
 #[cfg(any(feature = "std", feature = "alloc"))]
+serde_via_str!(crate::subtitle::TrackOrigin);
+#[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_str!(crate::audio::ChannelLayout);
 #[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_str!(crate::audio::SampleFormat);
@@ -180,9 +184,7 @@ serde_via_str!(crate::audio::ContainerFormat);
 // ── Strictly-closed coded enums (no `Unknown` escape) ──
 // Use `serde_via_code_strict!` — adversarial / unknown wire codes are
 // rejected as serde errors, not silently canonicalised to the default
-// (which `from_u32` would do for `TrackOrigin::from_u32(999) == Embedded`).
-#[cfg(any(feature = "std", feature = "alloc"))]
-serde_via_code_strict!(crate::subtitle::TrackOrigin);
+// (which `from_u32` would do for `BitRateMode::from_u32(999) == Cbr`).
 #[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_code_strict!(crate::audio::BitRateMode);
 
