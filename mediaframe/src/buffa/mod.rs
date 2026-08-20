@@ -1425,7 +1425,16 @@ macro_rules! impl_string_enum_message {
               });
             }
             let s = decode_string(buf)?;
-            *self = <$ty as core::str::FromStr>::from_str(&s).unwrap_or_else(|_| unreachable!());
+            // Every vocabulary routed through this macro parses totally at
+            // the `buffa` tier (`buffa` implies `alloc`, which is exactly
+            // where each one's `Other` arm lives), so `FromStr::Err` is
+            // `Infallible` and this binding is irrefutable. That is the
+            // point of spelling it this way: add a type here whose parse
+            // can refuse and this line stops compiling (`E0005`) instead
+            // of silently acquiring an `unreachable!()` that is only
+            // unreachable by argument.
+            let Ok(parsed) = <$ty as core::str::FromStr>::from_str(&s);
+            *self = parsed;
           }
           _ => skip_field_depth(tag, buf, ctx.depth())?,
         }
