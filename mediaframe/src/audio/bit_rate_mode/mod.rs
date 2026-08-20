@@ -11,10 +11,17 @@ use derive_more::{Display, IsVariant};
 /// unless explicitly told otherwise; this mirrors the conservative
 /// default downstream encoders pick when no mode tag is present.
 ///
-/// `#[non_exhaustive]` keeps future additions non-breaking.
+/// **Closed** — deliberately *not* `#[non_exhaustive]`. The
+/// trichotomy is the whole of the *reporting* domain and has been
+/// stable for twenty-five years: a container states that its audio
+/// bit rate is fixed, varies freely, or varies around a target, and
+/// there is no fourth thing to state. The near misses are not
+/// members: CVBR is a shape of [`Self::Vbr`], and CRF / CQP are
+/// *encoder* knobs, describing how a file was produced rather than a
+/// property the stream reports. A downstream `match` is therefore
+/// exhaustive and the compiler proves it handles every mode.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Display, IsVariant)]
 #[display("{}", self.as_str())]
-#[non_exhaustive]
 #[cfg_attr(
   feature = "quickcheck",
   derive(::quickcheck_richderive::Arbitrary),
