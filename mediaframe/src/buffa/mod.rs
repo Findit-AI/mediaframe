@@ -209,9 +209,9 @@
 //!   with `Srt`; on decode an empty string maps to `Other("")`,
 //!   matching `FromStr`.
 //! - **`TrackOrigin`** — closed unit enum with stable ids
-//!   `Embedded=0` / `Sidecar=1` / `External=2`. Default-elision is
-//!   sound: the default `Embedded` maps to `0` (proto-zero), so an
-//!   absent field decodes back to `Embedded`.
+//!   `Embedded=0` / `Sidecar=1` / `External=2` / `Derived=3`.
+//!   Default-elision is sound: the default `Embedded` maps to `0`
+//!   (proto-zero), so an absent field decodes back to `Embedded`.
 //! - **`TrackDisposition`** — bitflags. Encoded as the raw `u32`
 //!   bits at field #1, decoded via [`TrackDisposition::from_u32`]
 //!   (`from_bits_retain` semantics — unknown bits round-trip

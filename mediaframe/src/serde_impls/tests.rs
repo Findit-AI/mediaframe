@@ -140,6 +140,7 @@ fn closed_coded_enums_reject_unknown_codes() {
     TrackOrigin::Embedded,
     TrackOrigin::Sidecar,
     TrackOrigin::External,
+    TrackOrigin::Derived,
   ] {
     round_trip(&o);
   }
@@ -149,7 +150,7 @@ fn closed_coded_enums_reject_unknown_codes() {
 
   // Out-of-range codes are rejected — not canonicalised to the default.
   assert!(serde_json::from_str::<TrackOrigin>("999").is_err());
-  assert!(serde_json::from_str::<TrackOrigin>("3").is_err());
+  assert!(serde_json::from_str::<TrackOrigin>("4").is_err());
   assert!(serde_json::from_str::<BitRateMode>("999").is_err());
   assert!(serde_json::from_str::<BitRateMode>("3").is_err());
 }

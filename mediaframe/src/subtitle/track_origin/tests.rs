@@ -5,6 +5,7 @@ const ALL: &[TrackOrigin] = &[
   TrackOrigin::Embedded,
   TrackOrigin::Sidecar,
   TrackOrigin::External,
+  TrackOrigin::Derived,
 ];
 
 #[test]
@@ -24,6 +25,7 @@ fn as_str_matches_spec() {
   assert_eq!(TrackOrigin::Embedded.as_str(), "embedded");
   assert_eq!(TrackOrigin::Sidecar.as_str(), "sidecar");
   assert_eq!(TrackOrigin::External.as_str(), "external");
+  assert_eq!(TrackOrigin::Derived.as_str(), "derived");
 }
 
 #[test]
@@ -44,6 +46,7 @@ fn is_variant_predicates() {
   assert!(!TrackOrigin::Embedded.is_sidecar());
   assert!(TrackOrigin::Sidecar.is_sidecar());
   assert!(TrackOrigin::External.is_external());
+  assert!(TrackOrigin::Derived.is_derived());
 }
 
 /// `TrackOrigin` is a closed unit vocabulary — the slug round-trips for
@@ -53,7 +56,10 @@ fn is_variant_predicates() {
 fn every_origin_round_trips_through_its_slug() {
   const fn _is_exhaustive(o: TrackOrigin) {
     match o {
-      TrackOrigin::Embedded | TrackOrigin::Sidecar | TrackOrigin::External => (),
+      TrackOrigin::Embedded
+      | TrackOrigin::Sidecar
+      | TrackOrigin::External
+      | TrackOrigin::Derived => (),
     }
   }
 
