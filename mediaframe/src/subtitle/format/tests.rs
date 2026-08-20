@@ -2,9 +2,7 @@ use super::*;
 use ::std::string::ToString;
 
 /// Every named variant's slug round-trips through `as_str` →
-/// `FromStr`. [`Format::HdmvPgs`] shares its slug with
-/// [`Format::PgsSub`] so the round-trip canonicalises to
-/// `PgsSub`; that pair is verified separately.
+/// `FromStr`.
 const NAMED_SLUGS: &[(&str, Format)] = &[
   ("srt", Format::Srt),
   ("webvtt", Format::WebVtt),
@@ -19,7 +17,7 @@ const NAMED_SLUGS: &[(&str, Format)] = &[
   ("ttml", Format::Ttml),
   ("mov_text", Format::MovText),
   ("dvd_subtitle", Format::DvdSub),
-  ("hdmv_pgs_subtitle", Format::PgsSub),
+  ("hdmv_pgs_subtitle", Format::HdmvPgs),
   ("dvb_subtitle", Format::DvbSub),
   ("xsub", Format::XSub),
 ];
@@ -33,16 +31,14 @@ fn as_str_round_trips_for_every_named_variant() {
   }
 }
 
+/// One format, one variant, one slug. The pair `PgsSub` / `HdmvPgs`
+/// was merged in 0.5.0; what remains is a plain round trip with no
+/// canonicalisation step to explain.
 #[test]
-fn hdmv_pgs_slug_canonicalises_to_pgs_sub() {
-  // `HdmvPgs` and `PgsSub` share the FFmpeg `"hdmv_pgs_subtitle"`
-  // slug. Both render to it; parsing the slug picks the first
-  // arm — `PgsSub`. `HdmvPgs` is kept as an alias for callers
-  // that prefer the FFmpeg-canonical name.
+fn hdmv_pgs_round_trips() {
   assert_eq!(Format::HdmvPgs.as_str(), "hdmv_pgs_subtitle");
-  assert_eq!(Format::PgsSub.as_str(), "hdmv_pgs_subtitle");
   let parsed: Format = "hdmv_pgs_subtitle".parse().unwrap();
-  assert_eq!(parsed, Format::PgsSub);
+  assert_eq!(parsed, Format::HdmvPgs);
 }
 
 #[test]
@@ -56,7 +52,6 @@ fn from_str_is_total_for_unknown_slug() {
 fn is_image_based_classifies_known_variants() {
   // Image-based.
   assert_eq!(Format::DvdSub.is_image_based(), Some(true));
-  assert_eq!(Format::PgsSub.is_image_based(), Some(true));
   assert_eq!(Format::HdmvPgs.is_image_based(), Some(true));
   assert_eq!(Format::DvbSub.is_image_based(), Some(true));
   assert_eq!(Format::XSub.is_image_based(), Some(true));
@@ -110,7 +105,6 @@ fn as_extension_matches_disk_form() {
   for variant in [
     Format::MovText,
     Format::DvdSub,
-    Format::PgsSub,
     Format::HdmvPgs,
     Format::DvbSub,
     Format::XSub,
@@ -158,16 +152,5 @@ fn format_slugs_are_lowercase_canonical_and_fold() {
 /// variant is added without being rostered.
 #[test]
 fn rosters_are_well_formed() {
-  // `PgsSub` and `HdmvPgs` are one format under two variant names, both
-  // rendering `hdmv_pgs_subtitle`. `FromStr` can return only one of them
-  // — today it returns `PgsSub` — so the render/parse round trip cannot
-  // hold for the other, whichever way that arm is pointed. The pair is
-  // being merged; until that lands the roster is checked without the
-  // half the parse does not reach. Drop this filter with the merge.
-  let survivors: ::std::vec::Vec<Format> = Format::ROSTER
-    .iter()
-    .filter(|f| !matches!(f, Format::HdmvPgs))
-    .cloned()
-    .collect();
-  crate::roster_tests::check(&survivors, "Format", Format::as_str);
+  crate::roster_tests::check(Format::ROSTER, "Format", Format::as_str);
 }
