@@ -896,6 +896,585 @@ impl VideoCodec {
     Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
+impl VideoCodec {
+  /// Every video codec this vocabulary names, in declaration order.
+  ///
+  /// A slice rather than an array: how many codecs this build carries
+  /// is a fact about the vendored FFmpeg table, not part of the type,
+  /// so a regeneration that adds one stays a minor change.
+  ///
+  /// [`Self::Other`] is not a member. The roster answers "which names
+  /// does this build know", and the escape is precisely the arm that
+  /// carries a name it does not.
+  pub const ROSTER: &'static [Self] = &[
+    Self::N012v,
+    Self::N4xm,
+    Self::N8bps,
+    Self::A64Multi,
+    Self::A64Multi5,
+    Self::Aasc,
+    Self::Agm,
+    Self::Aic,
+    Self::AliasPix,
+    Self::Amv,
+    Self::Anm,
+    Self::Ansi,
+    Self::Apng,
+    Self::Apv,
+    Self::Arbc,
+    Self::Argo,
+    Self::Asv1,
+    Self::Asv2,
+    Self::Aura,
+    Self::Aura2,
+    Self::Av1,
+    Self::Avrn,
+    Self::Avrp,
+    Self::Avs,
+    Self::Avs2,
+    Self::Avs3,
+    Self::Avui,
+    Self::Bethsoftvid,
+    Self::Bfi,
+    Self::Binkvideo,
+    Self::Bintext,
+    Self::Bitpacked,
+    Self::Bmp,
+    Self::BmvVideo,
+    Self::BrenderPix,
+    Self::C93,
+    Self::Cavs,
+    Self::Cdgraphics,
+    Self::Cdtoons,
+    Self::Cdxl,
+    Self::Cfhd,
+    Self::Cinepak,
+    Self::Clearvideo,
+    Self::Cljr,
+    Self::Cllc,
+    Self::Cmv,
+    Self::Cpia,
+    Self::Cri,
+    Self::Cscd,
+    Self::Cyuv,
+    Self::Daala,
+    Self::Dds,
+    Self::Dfa,
+    Self::Dirac,
+    Self::Dnxhd,
+    Self::Dnxuc,
+    Self::Dpx,
+    Self::Dsicinvideo,
+    Self::Dvvideo,
+    Self::Dxa,
+    Self::Dxtory,
+    Self::Dxv,
+    Self::Escape124,
+    Self::Escape130,
+    Self::Evc,
+    Self::Exr,
+    Self::Ffv1,
+    Self::Ffvhuff,
+    Self::Fic,
+    Self::Fits,
+    Self::Flashsv,
+    Self::Flashsv2,
+    Self::Flic,
+    Self::Flv1,
+    Self::Fmvc,
+    Self::Fraps,
+    Self::Frwu,
+    Self::G2m,
+    Self::Gdv,
+    Self::Gem,
+    Self::Gif,
+    Self::H261,
+    Self::H263,
+    Self::H263i,
+    Self::H263p,
+    Self::H264,
+    Self::Hap,
+    Self::Hdr,
+    Self::Hevc,
+    Self::Hnm4video,
+    Self::HqHqa,
+    Self::Hqx,
+    Self::Huffyuv,
+    Self::Hymt,
+    Self::Idcin,
+    Self::Idf,
+    Self::IffIlbm,
+    Self::Imm4,
+    Self::Imm5,
+    Self::Indeo2,
+    Self::Indeo3,
+    Self::Indeo4,
+    Self::Indeo5,
+    Self::Interplayvideo,
+    Self::Ipu,
+    Self::Jpeg2000,
+    Self::Jpegls,
+    Self::Jpegxl,
+    Self::JpegxlAnim,
+    Self::Jpegxs,
+    Self::Jv,
+    Self::Kgv1,
+    Self::Kmvc,
+    Self::Lagarith,
+    Self::Lcevc,
+    Self::Lead,
+    Self::Ljpeg,
+    Self::Loco,
+    Self::Lscr,
+    Self::M101,
+    Self::Mad,
+    Self::Magicyuv,
+    Self::Mdec,
+    Self::Media100,
+    Self::Mimic,
+    Self::Mjpeg,
+    Self::Mjpegb,
+    Self::Mmvideo,
+    Self::Mobiclip,
+    Self::Motionpixels,
+    Self::Mpeg1video,
+    Self::Mpeg2video,
+    Self::Mpeg4,
+    Self::Msa1,
+    Self::Mscc,
+    Self::Msmpeg4v1,
+    Self::Msmpeg4v2,
+    Self::Msmpeg4v3,
+    Self::Msp2,
+    Self::Msrle,
+    Self::Mss1,
+    Self::Mss2,
+    Self::Msvideo1,
+    Self::Mszh,
+    Self::Mts2,
+    Self::Mv30,
+    Self::Mvc1,
+    Self::Mvc2,
+    Self::Mvdv,
+    Self::Mvha,
+    Self::Mwsc,
+    Self::Mxpeg,
+    Self::Notchlc,
+    Self::Nuv,
+    Self::PafVideo,
+    Self::Pam,
+    Self::Pbm,
+    Self::Pcx,
+    Self::Pdv,
+    Self::Pfm,
+    Self::Pgm,
+    Self::Pgmyuv,
+    Self::Pgx,
+    Self::Phm,
+    Self::Photocd,
+    Self::Pictor,
+    Self::Pixlet,
+    Self::Png,
+    Self::Ppm,
+    Self::Prores,
+    Self::ProresRaw,
+    Self::Prosumer,
+    Self::Psd,
+    Self::Ptx,
+    Self::Qdraw,
+    Self::Qoi,
+    Self::Qpeg,
+    Self::Qtrle,
+    Self::R10k,
+    Self::R210,
+    Self::Rasc,
+    Self::Rawvideo,
+    Self::Rl2,
+    Self::Roq,
+    Self::Rpza,
+    Self::Rscc,
+    Self::Rtv1,
+    Self::Rv10,
+    Self::Rv20,
+    Self::Rv30,
+    Self::Rv40,
+    Self::Rv60,
+    Self::Sanm,
+    Self::Scpr,
+    Self::Screenpresso,
+    Self::Sga,
+    Self::Sgi,
+    Self::Sgirle,
+    Self::Sheervideo,
+    Self::SimbiosisImx,
+    Self::Smackvideo,
+    Self::Smc,
+    Self::Smvjpeg,
+    Self::Snow,
+    Self::Sp5x,
+    Self::Speedhq,
+    Self::Srgc,
+    Self::Sunrast,
+    Self::Svg,
+    Self::Svq1,
+    Self::Svq3,
+    Self::Targa,
+    Self::TargaY216,
+    Self::Tdsc,
+    Self::Tgq,
+    Self::Tgv,
+    Self::Theora,
+    Self::Thp,
+    Self::Tiertexseqvideo,
+    Self::Tiff,
+    Self::Tmv,
+    Self::Tqi,
+    Self::Truemotion1,
+    Self::Truemotion2,
+    Self::Truemotion2rt,
+    Self::Tscc,
+    Self::Tscc2,
+    Self::Txd,
+    Self::Ulti,
+    Self::Utvideo,
+    Self::V210,
+    Self::V210x,
+    Self::Vb,
+    Self::Vble,
+    Self::Vbn,
+    Self::Vc1,
+    Self::Vc1image,
+    Self::Vcr1,
+    Self::Vixl,
+    Self::Vmdvideo,
+    Self::Vmix,
+    Self::Vmnc,
+    Self::Vnull,
+    Self::Vp3,
+    Self::Vp4,
+    Self::Vp5,
+    Self::Vp6,
+    Self::Vp6a,
+    Self::Vp6f,
+    Self::Vp7,
+    Self::Vp8,
+    Self::Vp9,
+    Self::Vqc,
+    Self::Vvc,
+    Self::Wbmp,
+    Self::Wcmv,
+    Self::Webp,
+    Self::WebpAnim,
+    Self::Wmv1,
+    Self::Wmv2,
+    Self::Wmv3,
+    Self::Wmv3image,
+    Self::Wnv1,
+    Self::WrappedAvframe,
+    Self::WsVqa,
+    Self::XanWc3,
+    Self::XanWc4,
+    Self::Xbin,
+    Self::Xbm,
+    Self::Xface,
+    Self::Xpm,
+    Self::Xwd,
+    Self::Y41p,
+    Self::Ylc,
+    Self::Yop,
+    Self::Yuv4,
+    Self::Zerocodec,
+    Self::Zlib,
+    Self::Zmbv,
+  ];
+}
+const _: () = {
+  #[allow(dead_code)]
+  fn every_variant_is_rostered(v: &VideoCodec) {
+    match v {
+      VideoCodec::N012v
+      | VideoCodec::N4xm
+      | VideoCodec::N8bps
+      | VideoCodec::A64Multi
+      | VideoCodec::A64Multi5
+      | VideoCodec::Aasc
+      | VideoCodec::Agm
+      | VideoCodec::Aic
+      | VideoCodec::AliasPix
+      | VideoCodec::Amv
+      | VideoCodec::Anm
+      | VideoCodec::Ansi
+      | VideoCodec::Apng
+      | VideoCodec::Apv
+      | VideoCodec::Arbc
+      | VideoCodec::Argo
+      | VideoCodec::Asv1
+      | VideoCodec::Asv2
+      | VideoCodec::Aura
+      | VideoCodec::Aura2
+      | VideoCodec::Av1
+      | VideoCodec::Avrn
+      | VideoCodec::Avrp
+      | VideoCodec::Avs
+      | VideoCodec::Avs2
+      | VideoCodec::Avs3
+      | VideoCodec::Avui
+      | VideoCodec::Bethsoftvid
+      | VideoCodec::Bfi
+      | VideoCodec::Binkvideo
+      | VideoCodec::Bintext
+      | VideoCodec::Bitpacked
+      | VideoCodec::Bmp
+      | VideoCodec::BmvVideo
+      | VideoCodec::BrenderPix
+      | VideoCodec::C93
+      | VideoCodec::Cavs
+      | VideoCodec::Cdgraphics
+      | VideoCodec::Cdtoons
+      | VideoCodec::Cdxl
+      | VideoCodec::Cfhd
+      | VideoCodec::Cinepak
+      | VideoCodec::Clearvideo
+      | VideoCodec::Cljr
+      | VideoCodec::Cllc
+      | VideoCodec::Cmv
+      | VideoCodec::Cpia
+      | VideoCodec::Cri
+      | VideoCodec::Cscd
+      | VideoCodec::Cyuv
+      | VideoCodec::Daala
+      | VideoCodec::Dds
+      | VideoCodec::Dfa
+      | VideoCodec::Dirac
+      | VideoCodec::Dnxhd
+      | VideoCodec::Dnxuc
+      | VideoCodec::Dpx
+      | VideoCodec::Dsicinvideo
+      | VideoCodec::Dvvideo
+      | VideoCodec::Dxa
+      | VideoCodec::Dxtory
+      | VideoCodec::Dxv
+      | VideoCodec::Escape124
+      | VideoCodec::Escape130
+      | VideoCodec::Evc
+      | VideoCodec::Exr
+      | VideoCodec::Ffv1
+      | VideoCodec::Ffvhuff
+      | VideoCodec::Fic
+      | VideoCodec::Fits
+      | VideoCodec::Flashsv
+      | VideoCodec::Flashsv2
+      | VideoCodec::Flic
+      | VideoCodec::Flv1
+      | VideoCodec::Fmvc
+      | VideoCodec::Fraps
+      | VideoCodec::Frwu
+      | VideoCodec::G2m
+      | VideoCodec::Gdv
+      | VideoCodec::Gem
+      | VideoCodec::Gif
+      | VideoCodec::H261
+      | VideoCodec::H263
+      | VideoCodec::H263i
+      | VideoCodec::H263p
+      | VideoCodec::H264
+      | VideoCodec::Hap
+      | VideoCodec::Hdr
+      | VideoCodec::Hevc
+      | VideoCodec::Hnm4video
+      | VideoCodec::HqHqa
+      | VideoCodec::Hqx
+      | VideoCodec::Huffyuv
+      | VideoCodec::Hymt
+      | VideoCodec::Idcin
+      | VideoCodec::Idf
+      | VideoCodec::IffIlbm
+      | VideoCodec::Imm4
+      | VideoCodec::Imm5
+      | VideoCodec::Indeo2
+      | VideoCodec::Indeo3
+      | VideoCodec::Indeo4
+      | VideoCodec::Indeo5
+      | VideoCodec::Interplayvideo
+      | VideoCodec::Ipu
+      | VideoCodec::Jpeg2000
+      | VideoCodec::Jpegls
+      | VideoCodec::Jpegxl
+      | VideoCodec::JpegxlAnim
+      | VideoCodec::Jpegxs
+      | VideoCodec::Jv
+      | VideoCodec::Kgv1
+      | VideoCodec::Kmvc
+      | VideoCodec::Lagarith
+      | VideoCodec::Lcevc
+      | VideoCodec::Lead
+      | VideoCodec::Ljpeg
+      | VideoCodec::Loco
+      | VideoCodec::Lscr
+      | VideoCodec::M101
+      | VideoCodec::Mad
+      | VideoCodec::Magicyuv
+      | VideoCodec::Mdec
+      | VideoCodec::Media100
+      | VideoCodec::Mimic
+      | VideoCodec::Mjpeg
+      | VideoCodec::Mjpegb
+      | VideoCodec::Mmvideo
+      | VideoCodec::Mobiclip
+      | VideoCodec::Motionpixels
+      | VideoCodec::Mpeg1video
+      | VideoCodec::Mpeg2video
+      | VideoCodec::Mpeg4
+      | VideoCodec::Msa1
+      | VideoCodec::Mscc
+      | VideoCodec::Msmpeg4v1
+      | VideoCodec::Msmpeg4v2
+      | VideoCodec::Msmpeg4v3
+      | VideoCodec::Msp2
+      | VideoCodec::Msrle
+      | VideoCodec::Mss1
+      | VideoCodec::Mss2
+      | VideoCodec::Msvideo1
+      | VideoCodec::Mszh
+      | VideoCodec::Mts2
+      | VideoCodec::Mv30
+      | VideoCodec::Mvc1
+      | VideoCodec::Mvc2
+      | VideoCodec::Mvdv
+      | VideoCodec::Mvha
+      | VideoCodec::Mwsc
+      | VideoCodec::Mxpeg
+      | VideoCodec::Notchlc
+      | VideoCodec::Nuv
+      | VideoCodec::PafVideo
+      | VideoCodec::Pam
+      | VideoCodec::Pbm
+      | VideoCodec::Pcx
+      | VideoCodec::Pdv
+      | VideoCodec::Pfm
+      | VideoCodec::Pgm
+      | VideoCodec::Pgmyuv
+      | VideoCodec::Pgx
+      | VideoCodec::Phm
+      | VideoCodec::Photocd
+      | VideoCodec::Pictor
+      | VideoCodec::Pixlet
+      | VideoCodec::Png
+      | VideoCodec::Ppm
+      | VideoCodec::Prores
+      | VideoCodec::ProresRaw
+      | VideoCodec::Prosumer
+      | VideoCodec::Psd
+      | VideoCodec::Ptx
+      | VideoCodec::Qdraw
+      | VideoCodec::Qoi
+      | VideoCodec::Qpeg
+      | VideoCodec::Qtrle
+      | VideoCodec::R10k
+      | VideoCodec::R210
+      | VideoCodec::Rasc
+      | VideoCodec::Rawvideo
+      | VideoCodec::Rl2
+      | VideoCodec::Roq
+      | VideoCodec::Rpza
+      | VideoCodec::Rscc
+      | VideoCodec::Rtv1
+      | VideoCodec::Rv10
+      | VideoCodec::Rv20
+      | VideoCodec::Rv30
+      | VideoCodec::Rv40
+      | VideoCodec::Rv60
+      | VideoCodec::Sanm
+      | VideoCodec::Scpr
+      | VideoCodec::Screenpresso
+      | VideoCodec::Sga
+      | VideoCodec::Sgi
+      | VideoCodec::Sgirle
+      | VideoCodec::Sheervideo
+      | VideoCodec::SimbiosisImx
+      | VideoCodec::Smackvideo
+      | VideoCodec::Smc
+      | VideoCodec::Smvjpeg
+      | VideoCodec::Snow
+      | VideoCodec::Sp5x
+      | VideoCodec::Speedhq
+      | VideoCodec::Srgc
+      | VideoCodec::Sunrast
+      | VideoCodec::Svg
+      | VideoCodec::Svq1
+      | VideoCodec::Svq3
+      | VideoCodec::Targa
+      | VideoCodec::TargaY216
+      | VideoCodec::Tdsc
+      | VideoCodec::Tgq
+      | VideoCodec::Tgv
+      | VideoCodec::Theora
+      | VideoCodec::Thp
+      | VideoCodec::Tiertexseqvideo
+      | VideoCodec::Tiff
+      | VideoCodec::Tmv
+      | VideoCodec::Tqi
+      | VideoCodec::Truemotion1
+      | VideoCodec::Truemotion2
+      | VideoCodec::Truemotion2rt
+      | VideoCodec::Tscc
+      | VideoCodec::Tscc2
+      | VideoCodec::Txd
+      | VideoCodec::Ulti
+      | VideoCodec::Utvideo
+      | VideoCodec::V210
+      | VideoCodec::V210x
+      | VideoCodec::Vb
+      | VideoCodec::Vble
+      | VideoCodec::Vbn
+      | VideoCodec::Vc1
+      | VideoCodec::Vc1image
+      | VideoCodec::Vcr1
+      | VideoCodec::Vixl
+      | VideoCodec::Vmdvideo
+      | VideoCodec::Vmix
+      | VideoCodec::Vmnc
+      | VideoCodec::Vnull
+      | VideoCodec::Vp3
+      | VideoCodec::Vp4
+      | VideoCodec::Vp5
+      | VideoCodec::Vp6
+      | VideoCodec::Vp6a
+      | VideoCodec::Vp6f
+      | VideoCodec::Vp7
+      | VideoCodec::Vp8
+      | VideoCodec::Vp9
+      | VideoCodec::Vqc
+      | VideoCodec::Vvc
+      | VideoCodec::Wbmp
+      | VideoCodec::Wcmv
+      | VideoCodec::Webp
+      | VideoCodec::WebpAnim
+      | VideoCodec::Wmv1
+      | VideoCodec::Wmv2
+      | VideoCodec::Wmv3
+      | VideoCodec::Wmv3image
+      | VideoCodec::Wnv1
+      | VideoCodec::WrappedAvframe
+      | VideoCodec::WsVqa
+      | VideoCodec::XanWc3
+      | VideoCodec::XanWc4
+      | VideoCodec::Xbin
+      | VideoCodec::Xbm
+      | VideoCodec::Xface
+      | VideoCodec::Xpm
+      | VideoCodec::Xwd
+      | VideoCodec::Y41p
+      | VideoCodec::Ylc
+      | VideoCodec::Yop
+      | VideoCodec::Yuv4
+      | VideoCodec::Zerocodec
+      | VideoCodec::Zlib
+      | VideoCodec::Zmbv => {}
+      VideoCodec::Other(_) => {}
+    }
+  }
+};
 impl FromStr for VideoCodec {
   type Err = core::convert::Infallible;
   /// Recognise an FFmpeg codec short name, case-insensitively; unknown
@@ -1888,6 +2467,471 @@ impl AudioCodec {
     Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
+impl AudioCodec {
+  /// Every audio codec this vocabulary names, in declaration order.
+  ///
+  /// A slice rather than an array: how many codecs this build carries
+  /// is a fact about the vendored FFmpeg table, not part of the type,
+  /// so a regeneration that adds one stays a minor change.
+  ///
+  /// [`Self::Other`] is not a member. The roster answers "which names
+  /// does this build know", and the escape is precisely the arm that
+  /// carries a name it does not.
+  pub const ROSTER: &'static [Self] = &[
+    Self::N4gv,
+    Self::N8svxExp,
+    Self::N8svxFib,
+    Self::Aac,
+    Self::AacLatm,
+    Self::Ac3,
+    Self::Ac4,
+    Self::AcelpKelvin,
+    Self::Adpcm4xm,
+    Self::AdpcmAdx,
+    Self::AdpcmAfc,
+    Self::AdpcmAgm,
+    Self::AdpcmAica,
+    Self::AdpcmArgo,
+    Self::AdpcmCircus,
+    Self::AdpcmCt,
+    Self::AdpcmDtk,
+    Self::AdpcmEa,
+    Self::AdpcmEaMaxisXa,
+    Self::AdpcmEaR1,
+    Self::AdpcmEaR2,
+    Self::AdpcmEaR3,
+    Self::AdpcmEaXas,
+    Self::AdpcmG722,
+    Self::AdpcmG726,
+    Self::AdpcmG726le,
+    Self::AdpcmImaAcorn,
+    Self::AdpcmImaAlp,
+    Self::AdpcmImaAmv,
+    Self::AdpcmImaApc,
+    Self::AdpcmImaApm,
+    Self::AdpcmImaCunning,
+    Self::AdpcmImaDat4,
+    Self::AdpcmImaDk3,
+    Self::AdpcmImaDk4,
+    Self::AdpcmImaEaEacs,
+    Self::AdpcmImaEaSead,
+    Self::AdpcmImaEscape,
+    Self::AdpcmImaHvqm2,
+    Self::AdpcmImaHvqm4,
+    Self::AdpcmImaIss,
+    Self::AdpcmImaMagix,
+    Self::AdpcmImaMoflex,
+    Self::AdpcmImaMtf,
+    Self::AdpcmImaOki,
+    Self::AdpcmImaPda,
+    Self::AdpcmImaQt,
+    Self::AdpcmImaRad,
+    Self::AdpcmImaSmjpeg,
+    Self::AdpcmImaSsi,
+    Self::AdpcmImaWav,
+    Self::AdpcmImaWs,
+    Self::AdpcmImaXbox,
+    Self::AdpcmMs,
+    Self::AdpcmMtaf,
+    Self::AdpcmN64,
+    Self::AdpcmPsx,
+    Self::AdpcmPsxc,
+    Self::AdpcmSanyo,
+    Self::AdpcmSbpro2,
+    Self::AdpcmSbpro3,
+    Self::AdpcmSbpro4,
+    Self::AdpcmSwf,
+    Self::AdpcmThp,
+    Self::AdpcmThpLe,
+    Self::AdpcmVima,
+    Self::AdpcmXa,
+    Self::AdpcmXmd,
+    Self::AdpcmYamaha,
+    Self::AdpcmZork,
+    Self::Ahx,
+    Self::Alac,
+    Self::AmrNb,
+    Self::AmrWb,
+    Self::Anull,
+    Self::Apac,
+    Self::Ape,
+    Self::AppleApac,
+    Self::Aptx,
+    Self::AptxHd,
+    Self::Atrac1,
+    Self::Atrac3,
+    Self::Atrac3al,
+    Self::Atrac3p,
+    Self::Atrac3pal,
+    Self::Atrac9,
+    Self::Avc,
+    Self::BinkaudioDct,
+    Self::BinkaudioRdft,
+    Self::BmvAudio,
+    Self::Bonk,
+    Self::Cbd2Dpcm,
+    Self::Celt,
+    Self::Codec2,
+    Self::Comfortnoise,
+    Self::Cook,
+    Self::DerfDpcm,
+    Self::Dfpwm,
+    Self::DolbyE,
+    Self::DsdLsbf,
+    Self::DsdLsbfPlanar,
+    Self::DsdMsbf,
+    Self::DsdMsbfPlanar,
+    Self::Dsicinaudio,
+    Self::DssSp,
+    Self::Dst,
+    Self::Dts,
+    Self::Dvaudio,
+    Self::Eac3,
+    Self::Evrc,
+    Self::Fastaudio,
+    Self::Flac,
+    Self::Ftr,
+    Self::G7231,
+    Self::G728,
+    Self::G729,
+    Self::GremlinDpcm,
+    Self::Gsm,
+    Self::GsmMs,
+    Self::Hca,
+    Self::Hcom,
+    Self::Iac,
+    Self::Ilbc,
+    Self::Imc,
+    Self::InterplayDpcm,
+    Self::Interplayacm,
+    Self::Lc3,
+    Self::Mace3,
+    Self::Mace6,
+    Self::Metasound,
+    Self::Misc4,
+    Self::Mlp,
+    Self::Mp1,
+    Self::Mp2,
+    Self::Mp3,
+    Self::Mp3adu,
+    Self::Mp3on4,
+    Self::Mp4als,
+    Self::Mpegh3dAudio,
+    Self::Msnsiren,
+    Self::Musepack7,
+    Self::Musepack8,
+    Self::Nellymoser,
+    Self::Opus,
+    Self::Osq,
+    Self::PafAudio,
+    Self::PcmAlaw,
+    Self::PcmBluray,
+    Self::PcmDvd,
+    Self::PcmF16le,
+    Self::PcmF24le,
+    Self::PcmF32be,
+    Self::PcmF32le,
+    Self::PcmF64be,
+    Self::PcmF64le,
+    Self::PcmLxf,
+    Self::PcmMulaw,
+    Self::PcmS16be,
+    Self::PcmS16bePlanar,
+    Self::PcmS16le,
+    Self::PcmS16lePlanar,
+    Self::PcmS24be,
+    Self::PcmS24daud,
+    Self::PcmS24le,
+    Self::PcmS24lePlanar,
+    Self::PcmS32be,
+    Self::PcmS32le,
+    Self::PcmS32lePlanar,
+    Self::PcmS64be,
+    Self::PcmS64le,
+    Self::PcmS8,
+    Self::PcmS8Planar,
+    Self::PcmSga,
+    Self::PcmU16be,
+    Self::PcmU16le,
+    Self::PcmU24be,
+    Self::PcmU24le,
+    Self::PcmU32be,
+    Self::PcmU32le,
+    Self::PcmU8,
+    Self::PcmVidc,
+    Self::Qcelp,
+    Self::Qdm2,
+    Self::Qdmc,
+    Self::Qoa,
+    Self::Ra144,
+    Self::Ra288,
+    Self::Ralf,
+    Self::Rka,
+    Self::RoqDpcm,
+    Self::S302m,
+    Self::Sbc,
+    Self::Sdx2Dpcm,
+    Self::Shorten,
+    Self::Sipr,
+    Self::Siren,
+    Self::Smackaudio,
+    Self::Smv,
+    Self::SolDpcm,
+    Self::Sonic,
+    Self::Sonicls,
+    Self::Speex,
+    Self::Tak,
+    Self::Truehd,
+    Self::Truespeech,
+    Self::Tta,
+    Self::Twinvq,
+    Self::Vmdaudio,
+    Self::Vorbis,
+    Self::WadyDpcm,
+    Self::Wavarc,
+    Self::Wavesynth,
+    Self::Wavpack,
+    Self::WestwoodSnd1,
+    Self::Wmalossless,
+    Self::Wmapro,
+    Self::Wmav1,
+    Self::Wmav2,
+    Self::Wmavoice,
+    Self::XanDpcm,
+    Self::Xma1,
+    Self::Xma2,
+  ];
+}
+const _: () = {
+  #[allow(dead_code)]
+  fn every_variant_is_rostered(v: &AudioCodec) {
+    match v {
+      AudioCodec::N4gv
+      | AudioCodec::N8svxExp
+      | AudioCodec::N8svxFib
+      | AudioCodec::Aac
+      | AudioCodec::AacLatm
+      | AudioCodec::Ac3
+      | AudioCodec::Ac4
+      | AudioCodec::AcelpKelvin
+      | AudioCodec::Adpcm4xm
+      | AudioCodec::AdpcmAdx
+      | AudioCodec::AdpcmAfc
+      | AudioCodec::AdpcmAgm
+      | AudioCodec::AdpcmAica
+      | AudioCodec::AdpcmArgo
+      | AudioCodec::AdpcmCircus
+      | AudioCodec::AdpcmCt
+      | AudioCodec::AdpcmDtk
+      | AudioCodec::AdpcmEa
+      | AudioCodec::AdpcmEaMaxisXa
+      | AudioCodec::AdpcmEaR1
+      | AudioCodec::AdpcmEaR2
+      | AudioCodec::AdpcmEaR3
+      | AudioCodec::AdpcmEaXas
+      | AudioCodec::AdpcmG722
+      | AudioCodec::AdpcmG726
+      | AudioCodec::AdpcmG726le
+      | AudioCodec::AdpcmImaAcorn
+      | AudioCodec::AdpcmImaAlp
+      | AudioCodec::AdpcmImaAmv
+      | AudioCodec::AdpcmImaApc
+      | AudioCodec::AdpcmImaApm
+      | AudioCodec::AdpcmImaCunning
+      | AudioCodec::AdpcmImaDat4
+      | AudioCodec::AdpcmImaDk3
+      | AudioCodec::AdpcmImaDk4
+      | AudioCodec::AdpcmImaEaEacs
+      | AudioCodec::AdpcmImaEaSead
+      | AudioCodec::AdpcmImaEscape
+      | AudioCodec::AdpcmImaHvqm2
+      | AudioCodec::AdpcmImaHvqm4
+      | AudioCodec::AdpcmImaIss
+      | AudioCodec::AdpcmImaMagix
+      | AudioCodec::AdpcmImaMoflex
+      | AudioCodec::AdpcmImaMtf
+      | AudioCodec::AdpcmImaOki
+      | AudioCodec::AdpcmImaPda
+      | AudioCodec::AdpcmImaQt
+      | AudioCodec::AdpcmImaRad
+      | AudioCodec::AdpcmImaSmjpeg
+      | AudioCodec::AdpcmImaSsi
+      | AudioCodec::AdpcmImaWav
+      | AudioCodec::AdpcmImaWs
+      | AudioCodec::AdpcmImaXbox
+      | AudioCodec::AdpcmMs
+      | AudioCodec::AdpcmMtaf
+      | AudioCodec::AdpcmN64
+      | AudioCodec::AdpcmPsx
+      | AudioCodec::AdpcmPsxc
+      | AudioCodec::AdpcmSanyo
+      | AudioCodec::AdpcmSbpro2
+      | AudioCodec::AdpcmSbpro3
+      | AudioCodec::AdpcmSbpro4
+      | AudioCodec::AdpcmSwf
+      | AudioCodec::AdpcmThp
+      | AudioCodec::AdpcmThpLe
+      | AudioCodec::AdpcmVima
+      | AudioCodec::AdpcmXa
+      | AudioCodec::AdpcmXmd
+      | AudioCodec::AdpcmYamaha
+      | AudioCodec::AdpcmZork
+      | AudioCodec::Ahx
+      | AudioCodec::Alac
+      | AudioCodec::AmrNb
+      | AudioCodec::AmrWb
+      | AudioCodec::Anull
+      | AudioCodec::Apac
+      | AudioCodec::Ape
+      | AudioCodec::AppleApac
+      | AudioCodec::Aptx
+      | AudioCodec::AptxHd
+      | AudioCodec::Atrac1
+      | AudioCodec::Atrac3
+      | AudioCodec::Atrac3al
+      | AudioCodec::Atrac3p
+      | AudioCodec::Atrac3pal
+      | AudioCodec::Atrac9
+      | AudioCodec::Avc
+      | AudioCodec::BinkaudioDct
+      | AudioCodec::BinkaudioRdft
+      | AudioCodec::BmvAudio
+      | AudioCodec::Bonk
+      | AudioCodec::Cbd2Dpcm
+      | AudioCodec::Celt
+      | AudioCodec::Codec2
+      | AudioCodec::Comfortnoise
+      | AudioCodec::Cook
+      | AudioCodec::DerfDpcm
+      | AudioCodec::Dfpwm
+      | AudioCodec::DolbyE
+      | AudioCodec::DsdLsbf
+      | AudioCodec::DsdLsbfPlanar
+      | AudioCodec::DsdMsbf
+      | AudioCodec::DsdMsbfPlanar
+      | AudioCodec::Dsicinaudio
+      | AudioCodec::DssSp
+      | AudioCodec::Dst
+      | AudioCodec::Dts
+      | AudioCodec::Dvaudio
+      | AudioCodec::Eac3
+      | AudioCodec::Evrc
+      | AudioCodec::Fastaudio
+      | AudioCodec::Flac
+      | AudioCodec::Ftr
+      | AudioCodec::G7231
+      | AudioCodec::G728
+      | AudioCodec::G729
+      | AudioCodec::GremlinDpcm
+      | AudioCodec::Gsm
+      | AudioCodec::GsmMs
+      | AudioCodec::Hca
+      | AudioCodec::Hcom
+      | AudioCodec::Iac
+      | AudioCodec::Ilbc
+      | AudioCodec::Imc
+      | AudioCodec::InterplayDpcm
+      | AudioCodec::Interplayacm
+      | AudioCodec::Lc3
+      | AudioCodec::Mace3
+      | AudioCodec::Mace6
+      | AudioCodec::Metasound
+      | AudioCodec::Misc4
+      | AudioCodec::Mlp
+      | AudioCodec::Mp1
+      | AudioCodec::Mp2
+      | AudioCodec::Mp3
+      | AudioCodec::Mp3adu
+      | AudioCodec::Mp3on4
+      | AudioCodec::Mp4als
+      | AudioCodec::Mpegh3dAudio
+      | AudioCodec::Msnsiren
+      | AudioCodec::Musepack7
+      | AudioCodec::Musepack8
+      | AudioCodec::Nellymoser
+      | AudioCodec::Opus
+      | AudioCodec::Osq
+      | AudioCodec::PafAudio
+      | AudioCodec::PcmAlaw
+      | AudioCodec::PcmBluray
+      | AudioCodec::PcmDvd
+      | AudioCodec::PcmF16le
+      | AudioCodec::PcmF24le
+      | AudioCodec::PcmF32be
+      | AudioCodec::PcmF32le
+      | AudioCodec::PcmF64be
+      | AudioCodec::PcmF64le
+      | AudioCodec::PcmLxf
+      | AudioCodec::PcmMulaw
+      | AudioCodec::PcmS16be
+      | AudioCodec::PcmS16bePlanar
+      | AudioCodec::PcmS16le
+      | AudioCodec::PcmS16lePlanar
+      | AudioCodec::PcmS24be
+      | AudioCodec::PcmS24daud
+      | AudioCodec::PcmS24le
+      | AudioCodec::PcmS24lePlanar
+      | AudioCodec::PcmS32be
+      | AudioCodec::PcmS32le
+      | AudioCodec::PcmS32lePlanar
+      | AudioCodec::PcmS64be
+      | AudioCodec::PcmS64le
+      | AudioCodec::PcmS8
+      | AudioCodec::PcmS8Planar
+      | AudioCodec::PcmSga
+      | AudioCodec::PcmU16be
+      | AudioCodec::PcmU16le
+      | AudioCodec::PcmU24be
+      | AudioCodec::PcmU24le
+      | AudioCodec::PcmU32be
+      | AudioCodec::PcmU32le
+      | AudioCodec::PcmU8
+      | AudioCodec::PcmVidc
+      | AudioCodec::Qcelp
+      | AudioCodec::Qdm2
+      | AudioCodec::Qdmc
+      | AudioCodec::Qoa
+      | AudioCodec::Ra144
+      | AudioCodec::Ra288
+      | AudioCodec::Ralf
+      | AudioCodec::Rka
+      | AudioCodec::RoqDpcm
+      | AudioCodec::S302m
+      | AudioCodec::Sbc
+      | AudioCodec::Sdx2Dpcm
+      | AudioCodec::Shorten
+      | AudioCodec::Sipr
+      | AudioCodec::Siren
+      | AudioCodec::Smackaudio
+      | AudioCodec::Smv
+      | AudioCodec::SolDpcm
+      | AudioCodec::Sonic
+      | AudioCodec::Sonicls
+      | AudioCodec::Speex
+      | AudioCodec::Tak
+      | AudioCodec::Truehd
+      | AudioCodec::Truespeech
+      | AudioCodec::Tta
+      | AudioCodec::Twinvq
+      | AudioCodec::Vmdaudio
+      | AudioCodec::Vorbis
+      | AudioCodec::WadyDpcm
+      | AudioCodec::Wavarc
+      | AudioCodec::Wavesynth
+      | AudioCodec::Wavpack
+      | AudioCodec::WestwoodSnd1
+      | AudioCodec::Wmalossless
+      | AudioCodec::Wmapro
+      | AudioCodec::Wmav1
+      | AudioCodec::Wmav2
+      | AudioCodec::Wmavoice
+      | AudioCodec::XanDpcm
+      | AudioCodec::Xma1
+      | AudioCodec::Xma2 => {}
+      AudioCodec::Other(_) => {}
+    }
+  }
+};
 impl FromStr for AudioCodec {
   type Err = core::convert::Infallible;
   /// Recognise an FFmpeg codec short name, case-insensitively; unknown
@@ -2280,6 +3324,81 @@ impl SubtitleCodec {
     }
   }
 }
+impl SubtitleCodec {
+  /// Every subtitle codec this vocabulary names, in declaration order.
+  ///
+  /// A slice rather than an array: how many codecs this build carries
+  /// is a fact about the vendored FFmpeg table, not part of the type,
+  /// so a regeneration that adds one stays a minor change.
+  ///
+  /// [`Self::Other`] is not a member. The roster answers "which names
+  /// does this build know", and the escape is precisely the arm that
+  /// carries a name it does not.
+  pub const ROSTER: &'static [Self] = &[
+    Self::AribCaption,
+    Self::Ass,
+    Self::DvbSubtitle,
+    Self::DvbTeletext,
+    Self::DvdSubtitle,
+    Self::Eia608,
+    Self::HdmvPgsSubtitle,
+    Self::HdmvTextSubtitle,
+    Self::IvtvVbi,
+    Self::Jacosub,
+    Self::Microdvd,
+    Self::MovText,
+    Self::Mpl2,
+    Self::Pjs,
+    Self::Realtext,
+    Self::Sami,
+    Self::Srt,
+    Self::Ssa,
+    Self::Stl,
+    Self::Subrip,
+    Self::Subviewer,
+    Self::Subviewer1,
+    Self::Text,
+    Self::Ttml,
+    Self::Vplayer,
+    Self::Webvtt,
+    Self::Xsub,
+  ];
+}
+const _: () = {
+  #[allow(dead_code)]
+  fn every_variant_is_rostered(v: &SubtitleCodec) {
+    match v {
+      SubtitleCodec::AribCaption
+      | SubtitleCodec::Ass
+      | SubtitleCodec::DvbSubtitle
+      | SubtitleCodec::DvbTeletext
+      | SubtitleCodec::DvdSubtitle
+      | SubtitleCodec::Eia608
+      | SubtitleCodec::HdmvPgsSubtitle
+      | SubtitleCodec::HdmvTextSubtitle
+      | SubtitleCodec::IvtvVbi
+      | SubtitleCodec::Jacosub
+      | SubtitleCodec::Microdvd
+      | SubtitleCodec::MovText
+      | SubtitleCodec::Mpl2
+      | SubtitleCodec::Pjs
+      | SubtitleCodec::Realtext
+      | SubtitleCodec::Sami
+      | SubtitleCodec::Srt
+      | SubtitleCodec::Ssa
+      | SubtitleCodec::Stl
+      | SubtitleCodec::Subrip
+      | SubtitleCodec::Subviewer
+      | SubtitleCodec::Subviewer1
+      | SubtitleCodec::Text
+      | SubtitleCodec::Ttml
+      | SubtitleCodec::Vplayer
+      | SubtitleCodec::Webvtt
+      | SubtitleCodec::Xsub => {}
+      SubtitleCodec::Other(_) => {}
+    }
+  }
+};
 impl FromStr for SubtitleCodec {
   type Err = core::convert::Infallible;
   /// Recognise an FFmpeg codec short name, case-insensitively; unknown

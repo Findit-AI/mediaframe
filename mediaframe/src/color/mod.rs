@@ -241,6 +241,17 @@ impl Matrix {
   }
 }
 
+roster!(
+  Matrix,
+  "colour matrix",
+  [
+    Rgb, Bt601, Bt709, Unspecified, Fcc, Bt470Bg, Smpte170M, Smpte240m, YCgCo,
+    Bt2020Ncl, Bt2020Cl, Smpte2085, ChromaDerivedNcl, ChromaDerivedCl, Ictcp,
+    IptC2, YCgCoRe, YCgCoRo
+  ],
+  alloc_escape: Other
+);
+
 /// The error [`Matrix`]'s [`FromStr`](core::str::FromStr) returns.
 ///
 /// Opaque and sealed: the input is deliberately not retained (these types
@@ -770,6 +781,16 @@ impl Primaries {
   }
 }
 
+roster!(
+  Primaries,
+  "set of colour primaries",
+  [
+    Bt709, Unspecified, Bt470M, Bt470Bg, Smpte170M, Smpte240M, Film, Bt2020,
+    SmpteSt428, SmpteRp431, SmpteEg432, Ebu3213E
+  ],
+  alloc_escape: Other
+);
+
 /// The error [`Primaries`]'s [`FromStr`](core::str::FromStr) returns.
 ///
 /// Opaque and sealed: the input is deliberately not retained (these types
@@ -1019,6 +1040,17 @@ impl Transfer {
   }
 }
 
+roster!(
+  Transfer,
+  "transfer characteristic",
+  [
+    Bt709, Unspecified, Gamma22, Gamma28, Smpte170M, Smpte240M, Linear,
+    Log100, Log316, Iec6196624, Bt1361Ecg, Iec6196621, Bt2020_10Bit,
+    Bt2020_12Bit, SmpteSt2084Pq, SmpteSt428, AribStdB67Hlg
+  ],
+  alloc_escape: Other
+);
+
 /// The error [`Transfer`]'s [`FromStr`](core::str::FromStr) returns.
 ///
 /// Opaque and sealed: the input is deliberately not retained (these types
@@ -1206,6 +1238,8 @@ impl DynamicRange {
   }
 }
 
+roster!(DynamicRange, "dynamic range", [Unspecified, Limited, Full], alloc_escape: Other);
+
 /// The error [`DynamicRange`]'s [`FromStr`](core::str::FromStr) returns.
 ///
 /// Opaque and sealed: the input is deliberately not retained (these types
@@ -1389,6 +1423,15 @@ impl ChromaLocation {
     Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
+
+roster!(
+  ChromaLocation,
+  "chroma siting",
+  [
+    Unspecified, Left, Center, TopLeft, Top, BottomLeft, Bottom
+  ],
+  alloc_escape: Other
+);
 
 /// The error [`ChromaLocation`]'s [`FromStr`](core::str::FromStr) returns.
 ///

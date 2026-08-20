@@ -699,3 +699,15 @@ fn geometry_rejects_malformed_input() {
     );
   }
 }
+
+/// The runtime half of the `ROSTER` contract for `Rotation` / `FieldOrder` / `StereoMode` — no duplicate
+/// entry, no two entries sharing a slug, and `as_str` → `FromStr` the
+/// identity on every named variant. Completeness is the compile-time
+/// half: the witness beside each declaration is `E0004` the moment a
+/// variant is added without being rostered.
+#[test]
+fn rosters_are_well_formed() {
+  crate::roster_tests::check(Rotation::ROSTER, "Rotation", Rotation::as_str);
+  crate::roster_tests::check(FieldOrder::ROSTER, "FieldOrder", FieldOrder::as_str);
+  crate::roster_tests::check(StereoMode::ROSTER, "StereoMode", StereoMode::as_str);
+}

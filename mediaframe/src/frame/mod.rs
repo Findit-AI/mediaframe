@@ -785,6 +785,8 @@ impl Rotation {
   }
 }
 
+roster!(Rotation, "rotation", [D0, D90, D180, D270], alloc_escape: Other);
+
 /// The error [`Rotation`]'s [`FromStr`](core::str::FromStr) returns.
 ///
 /// Opaque and sealed: the input is deliberately not retained (these types
@@ -1542,6 +1544,8 @@ impl FieldOrder {
   }
 }
 
+roster!(FieldOrder, "field order", [Unknown, Progressive, Tt, Bb, Tb, Bt], alloc_escape: Other);
+
 /// The error [`FieldOrder`]'s [`FromStr`](core::str::FromStr) returns.
 ///
 /// Opaque and sealed: the input is deliberately not retained (these types
@@ -1730,6 +1734,16 @@ impl StereoMode {
     Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
+
+roster!(
+  StereoMode,
+  "stereo mode",
+  [
+    Mono, SideBySide, TopBottom, FrameSequence, Checkerboard,
+    SideBySideQuincunx, Lines, Columns
+  ],
+  alloc_escape: Other
+);
 
 /// The error [`StereoMode`]'s [`FromStr`](core::str::FromStr) returns.
 ///

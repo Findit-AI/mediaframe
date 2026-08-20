@@ -148,6 +148,13 @@ impl TrackOrigin {
   }
 }
 
+roster!(
+  TrackOrigin,
+  "track origin",
+  [Embedded, Sidecar, External, Derived],
+  escape: Other
+);
+
 /// The error [`TrackOrigin`]'s [`FromStr`](core::str::FromStr) declares.
 ///
 /// **Never returned as of 0.5.0.** [`TrackOrigin`] gained its

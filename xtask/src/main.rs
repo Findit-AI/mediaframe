@@ -1826,6 +1826,26 @@ fn build_codec_enum(
     quote! { #name => Self::#ident, }
   });
 
+  // `ROSTER` and its completeness witness are emitted from the *same*
+  // `variants` vector the declaration is built from, so declaration order
+  // and roster order cannot disagree — there is one list, used three
+  // times. The hand-written vocabularies get the same pair from the
+  // crate's `roster!` macro; here the generator is already the single
+  // source, and emitting plain items (rather than a macro call) keeps the
+  // output deterministic for the byte-for-byte freshness diff in
+  // `cargo xtask check`.
+  //
+  // The witness is one or-pattern rather than one arm per variant: with
+  // 200-plus variants that is the difference between a readable generated
+  // file and several hundred lines of noise, and `E0004` names the missing
+  // variant either way.
+  let roster_entries = variants.iter().map(|(ident, _)| quote! { Self::#ident });
+  let witness_pats = variants
+    .iter()
+    .map(|(ident, _)| quote! { #enum_ident::#ident });
+  let roster_doc =
+    format!(" Every {media_type} codec this vocabulary names, in declaration order.");
+
   let other_doc = format!(" The open escape for a codec name FFmpeg {FFMPEG_TAG} does not carry,");
 
   let enum_doc = format!(
@@ -1952,6 +1972,32 @@ fn build_codec_enum(
       #extra_impl
     }
 
+    impl #enum_ident {
+      #[doc = #roster_doc]
+      ///
+      /// A slice rather than an array: how many codecs this build carries
+      /// is a fact about the vendored FFmpeg table, not part of the type,
+      /// so a regeneration that adds one stays a minor change.
+      ///
+      /// [`Self::Other`] is not a member. The roster answers "which names
+      /// does this build know", and the escape is precisely the arm that
+      /// carries a name it does not.
+      pub const ROSTER: &'static [Self] = &[#(#roster_entries),*];
+    }
+
+    // The witness that `ROSTER` above is complete: a regeneration that
+    // adds a codec makes this `match` non-exhaustive, and the compiler
+    // names the variant missing from the roster.
+    const _: () = {
+      #[allow(dead_code)]
+      fn every_variant_is_rostered(v: &#enum_ident) {
+        match v {
+          #(#witness_pats)|* => (),
+          #enum_ident::Other(_) => (),
+        }
+      }
+    };
+
     impl FromStr for #enum_ident {
       type Err = core::convert::Infallible;
 
@@ -1989,6 +2035,7 @@ fn build_codec_tests(
     .map(|n| quote! { ("video", #n) })
     .chain(audio.keys().map(|n| quote! { ("audio", #n) }))
     .chain(subtitle.keys().map(|n| quote! { ("subtitle", #n) }));
+  let (video_len, audio_len, subtitle_len) = (video.len(), audio.len(), subtitle.len());
   quote! {
     use super::*;
       // Bring `ToString` into scope explicitly. Under `feature = "std"`
@@ -2125,6 +2172,53 @@ fn build_codec_tests(
         let c: SubtitleCodec = "not_a_real_subtitle_codec_zzz".parse().unwrap();
         assert!(c.is_other());
         assert_eq!(c.is_image_based(), None);
+      }
+
+      /// Each `ROSTER` is exactly the vendored name list for its media
+      /// type: same length, same order, no repeats, and every entry
+      /// round-trips through its own slug. The completeness half is the
+      /// `match` witness beside each declaration — a codec added by a
+      /// regeneration cannot reach the roster without passing `E0004`
+      /// first, and cannot reach the *right place* in it without matching
+      /// the vendored order asserted here.
+      #[test]
+      fn rosters_match_the_vendored_tables() {
+        fn check<T>(roster: &'static [T], media: &'static str, expected_len: usize)
+        where
+          T: ::core::str::FromStr + ::core::fmt::Debug + ::core::fmt::Display + PartialEq,
+          T::Err: ::core::fmt::Debug,
+        {
+          assert_eq!(roster.len(), expected_len, "{media} roster length");
+          for (entry, name) in roster.iter().zip(vendored_of(media)) {
+            assert_eq!(
+              entry.to_string(),
+              name,
+              "{media} roster is out of declaration order at `{name}`"
+            );
+            assert_eq!(
+              &name.parse::<T>().unwrap(),
+              entry,
+              "{media} roster entry `{name}` does not round-trip"
+            );
+          }
+        }
+
+        // `VENDORED_PAIRS` is sorted and deduplicated per media type (the
+        // generator builds it from a `BTreeMap`), and the enum is emitted
+        // from that same map, so equal length plus pairwise-equal slugs is
+        // both an order check and a no-duplicates check.
+        check::<VideoCodec>(VideoCodec::ROSTER, "video", #video_len);
+        check::<AudioCodec>(AudioCodec::ROSTER, "audio", #audio_len);
+        check::<SubtitleCodec>(SubtitleCodec::ROSTER, "subtitle", #subtitle_len);
+      }
+
+      /// No roster carries the open escape — it holds names this build
+      /// knows, and `Other` is the arm for one it does not.
+      #[test]
+      fn rosters_exclude_the_escape() {
+        assert!(VideoCodec::ROSTER.iter().all(|c| !c.is_other()));
+        assert!(AudioCodec::ROSTER.iter().all(|c| !c.is_other()));
+        assert!(SubtitleCodec::ROSTER.iter().all(|c| !c.is_other()));
       }
 
       #[test]
