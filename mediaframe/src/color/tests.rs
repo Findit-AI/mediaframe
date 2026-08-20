@@ -794,3 +794,27 @@ fn rosters_are_well_formed() {
     ChromaLocation::as_str,
   );
 }
+
+/// **Type-level** totality for the vocabularies whose escape arm exists at
+/// this tier: each `let Ok(..) = ..` below is an *irrefutable* pattern, and
+/// it can only be irrefutable because `FromStr::Err` is uninhabited here.
+/// Narrow `Self::Err` back to a refusal type and these stop compiling
+/// (`E0005`) — the totality is checked, not merely asserted.
+///
+/// The no-alloc half of the same claim is the build itself: the sibling
+/// tests gated on `not(any(std, alloc))` still name the vocabulary's own
+/// error, and a `--no-default-features` build type-checks them.
+#[cfg(any(feature = "std", feature = "alloc"))]
+#[test]
+fn unnamed_slugs_parse_totally_at_this_tier() {
+  let Ok(v) = "not-a-colour-matrix".parse::<Matrix>();
+  assert_eq!(v, Matrix::other("not-a-colour-matrix"));
+  let Ok(v) = "not-a-primaries-set".parse::<Primaries>();
+  assert_eq!(v, Primaries::other("not-a-primaries-set"));
+  let Ok(v) = "not-a-transfer-function".parse::<Transfer>();
+  assert_eq!(v, Transfer::other("not-a-transfer-function"));
+  let Ok(v) = "not-a-dynamic-range".parse::<DynamicRange>();
+  assert_eq!(v, DynamicRange::other("not-a-dynamic-range"));
+  let Ok(v) = "not-a-chroma-siting".parse::<ChromaLocation>();
+  assert_eq!(v, ChromaLocation::other("not-a-chroma-siting"));
+}

@@ -19,6 +19,16 @@
 //! the same at every tier (a slug either way) — only the openness
 //! differs.
 //!
+//! Since 0.5.0 the **error type follows the tier too**. Where the escape
+//! arm exists the parse cannot fail, so `FromStr::Err` is
+//! [`Infallible`](core::convert::Infallible) and a caller can discharge it
+//! with an irrefutable `let Ok(x) = s.parse::<T>();`. The vocabulary's own
+//! `Parse*Error` stays exported and is still what the no-alloc tier
+//! returns. This applies to the vocabularies compiled at *every* tier —
+//! the colour enums, [`PixelFormat`](pixel_format::PixelFormat), and the
+//! frame orientation enums. Vocabularies that only exist at the `alloc`
+//! tier have had `Err = Infallible` all along.
+//!
 //! Every gate on an alloc-tier item is spelled
 //! `any(feature = "std", feature = "alloc")` rather than bare
 //! `feature = "alloc"`, so the item cannot evaporate for a dependant
