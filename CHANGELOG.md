@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-20
+
 A vocabulary window: two closed enums stop pretending they might grow, one
 closed enum opens, every open vocabulary publishes its roster, and the nine
 that are compiled at every tier stop declaring an error their `alloc` build
