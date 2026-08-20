@@ -711,3 +711,23 @@ fn rosters_are_well_formed() {
   crate::roster_tests::check(FieldOrder::ROSTER, "FieldOrder", FieldOrder::as_str);
   crate::roster_tests::check(StereoMode::ROSTER, "StereoMode", StereoMode::as_str);
 }
+
+/// **Type-level** totality for the vocabularies whose escape arm exists at
+/// this tier: each `let Ok(..) = ..` below is an *irrefutable* pattern, and
+/// it can only be irrefutable because `FromStr::Err` is uninhabited here.
+/// Narrow `Self::Err` back to a refusal type and these stop compiling
+/// (`E0005`) — the totality is checked, not merely asserted.
+///
+/// The no-alloc half of the same claim is the build itself: the sibling
+/// tests gated on `not(any(std, alloc))` still name the vocabulary's own
+/// error, and a `--no-default-features` build type-checks them.
+#[cfg(any(feature = "std", feature = "alloc"))]
+#[test]
+fn unnamed_slugs_parse_totally_at_this_tier() {
+  let Ok(v) = "not-a-rotation".parse::<Rotation>();
+  assert_eq!(v, Rotation::other("not-a-rotation"));
+  let Ok(v) = "not-a-field-order".parse::<FieldOrder>();
+  assert_eq!(v, FieldOrder::other("not-a-field-order"));
+  let Ok(v) = "not-a-stereo-mode".parse::<StereoMode>();
+  assert_eq!(v, StereoMode::other("not-a-stereo-mode"));
+}
