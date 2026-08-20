@@ -181,8 +181,8 @@ pub mod source;
 /// Subtitle-stream descriptor vocabulary — file / demuxer format
 /// ([`subtitle::Format`]) and track-origin axis
 /// ([`subtitle::TrackOrigin`]). Requires the `alloc`
-/// feature (`std` includes it) for the [`subtitle::Format`]'s
-/// `Other(SmolStr)` escape arm.
+/// feature (`std` includes it) for both types' `Other(SmolStr)`
+/// escape arms.
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod subtitle;
