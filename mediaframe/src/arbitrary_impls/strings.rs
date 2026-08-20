@@ -47,8 +47,8 @@ super::arb_open_string_enum!(
 // Both spellings of the crossed pairs are seeded on purpose — see the
 // twin list in `quickcheck_helpers::strings`. The unqualified `"5.0"` /
 // `"5.1"` / `"7.1(wide)"` are FFmpeg's names for the **back** layouts,
-// so the short spelling alone leaves `N5Point0` / `N5Point1` /
-// `N7Point1Wide` unreachable.
+// so the short spelling alone leaves `Ch5_0` / `Ch5_1` /
+// `Ch7_1Wide` unreachable.
 super::arb_open_string_enum!(
   crate::audio::ChannelLayout,
   [

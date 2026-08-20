@@ -19,7 +19,7 @@
 //! frequency, `DL`/`DR` downmix left/right.
 //!
 //! **Two namings, and they do not line up.** A variant's *ident* follows
-//! the FFmpeg constant (`N5Point1Back` ⇒ `AV_CH_LAYOUT_5POINT1_BACK`);
+//! the FFmpeg constant (`Ch5_1Back` ⇒ `AV_CH_LAYOUT_5POINT1_BACK`);
 //! its *slug* is the name FFmpeg's `channel_layout_map[]` gives that
 //! constant — what `av_channel_layout_describe` prints, and therefore
 //! what an FFmpeg-sourced string actually says. The two disagree three
@@ -43,7 +43,7 @@
 //!    `AV_CH_LAYOUT_2_1` and `AV_CH_LAYOUT_2_2` are historical spellings
 //!    that describe no arrangement anyone would recognise — and `2_1`
 //!    read as an ident collides with the real `2POINT1`. They are
-//!    [`ChannelLayout::N3Point0Back`] and [`ChannelLayout::QuadSide`],
+//!    [`ChannelLayout::Ch3_0Back`] and [`ChannelLayout::QuadSide`],
 //!    after `"3.0(back)"` and `"quad(side)"`.
 //!
 //! `channel_layout_slugs_match_ffmpegs_map` transcribes the whole map
@@ -90,24 +90,24 @@ pub enum ChannelLayout {
   /// entry after the result, hence the crossed spelling.
   StereoDownmix,
   /// `"2.1"` — FL+FR+LFE (FFmpeg `AV_CH_LAYOUT_2POINT1`).
-  N2Point1,
+  Ch2_1,
   /// `"3.0"` — FL+FR+FC (FFmpeg `AV_CH_LAYOUT_SURROUND`).
-  N3Point0,
+  Ch3_0,
   /// `"3.0(back)"` — FL+FR+BC (FFmpeg `AV_CH_LAYOUT_2_1`).
   ///
   /// Back-centre surround rather than a front centre. The ident follows
   /// the slug here: the constant's `2_1` is a historical spelling, and
   /// as an ident it would collide with the real 2.1 above.
-  N3Point0Back,
+  Ch3_0Back,
   /// `"3.1"` — FL+FR+FC+LFE (FFmpeg `AV_CH_LAYOUT_3POINT1`).
-  N3Point1,
+  Ch3_1,
   /// `"3.1.2"` — FL+FR+FC+LFE+TFL+TFR (FFmpeg
   /// `AV_CH_LAYOUT_3POINT1POINT2`).
-  N3Point1Point2,
+  Ch3_1_2,
   /// `"4.0"` — FL+FR+FC+BC (FFmpeg `AV_CH_LAYOUT_4POINT0`).
-  N4Point0,
+  Ch4_0,
   /// `"4.1"` — FL+FR+FC+LFE+BC (FFmpeg `AV_CH_LAYOUT_4POINT1`).
-  N4Point1,
+  Ch4_1,
   /// `"quad"` — FL+FR+BL+BR (FFmpeg `AV_CH_LAYOUT_QUAD`).
   ///
   /// The **side** four-channel layout is [`Self::QuadSide`].
@@ -115,34 +115,34 @@ pub enum ChannelLayout {
   /// `"quad(side)"` — FL+FR+SL+SR (FFmpeg `AV_CH_LAYOUT_2_2`).
   ///
   /// The ident follows the slug for the same reason
-  /// [`Self::N3Point0Back`]'s does: the constant's `2_2` names no
+  /// [`Self::Ch3_0Back`]'s does: the constant's `2_2` names no
   /// arrangement a reader would recognise, and reads as a "2.2" that
   /// does not exist.
   QuadSide,
   /// `"5.0(side)"` — FL+FR+FC+SL+SR (FFmpeg `AV_CH_LAYOUT_5POINT0`).
   ///
   /// FFmpeg's plain `"5.0"` is the **back** layout, not this one — see
-  /// [`Self::N5Point0Back`].
-  N5Point0,
+  /// [`Self::Ch5_0Back`].
+  Ch5_0,
   /// `"5.0"` — FL+FR+FC+BL+BR (FFmpeg `AV_CH_LAYOUT_5POINT0_BACK`).
   ///
   /// The unqualified `"5.0"` is FFmpeg's name for the back-speaker
-  /// layout; the side-speaker one is [`Self::N5Point0`], spelled
+  /// layout; the side-speaker one is [`Self::Ch5_0`], spelled
   /// `"5.0(side)"`.
-  N5Point0Back,
+  Ch5_0Back,
   /// `"5.1(side)"` — FL+FR+FC+LFE+SL+SR (FFmpeg
   /// `AV_CH_LAYOUT_5POINT1`).
   ///
   /// FFmpeg's plain `"5.1"` is the **back** layout — see
-  /// [`Self::N5Point1Back`].
-  N5Point1,
+  /// [`Self::Ch5_1Back`].
+  Ch5_1,
   /// `"5.1"` — FL+FR+FC+LFE+BL+BR (FFmpeg
   /// `AV_CH_LAYOUT_5POINT1_BACK`).
   ///
   /// This is what an FFmpeg-sourced `"5.1"` means — the historically
   /// unqualified spelling belongs to the back-speaker layout, and the
-  /// side-speaker one is [`Self::N5Point1`], spelled `"5.1(side)"`.
-  N5Point1Back,
+  /// side-speaker one is [`Self::Ch5_1`], spelled `"5.1(side)"`.
+  Ch5_1Back,
   /// `"5.1.2(back)"` — FL+FR+FC+LFE+BL+BR+TFL+TFR (FFmpeg
   /// `AV_CH_LAYOUT_5POINT1POINT2_BACK`).
   ///
@@ -152,78 +152,78 @@ pub enum ChannelLayout {
   /// enumerate — it rides [`Self::Other`]. FFmpeg's
   /// `AV_CH_LAYOUT_7POINT1_TOP_BACK` is a deprecated alias of this
   /// same layout, not a separate one.
-  N5Point1Point2Back,
+  Ch5_1_2Back,
   /// `"5.1.4"` — FL+FR+FC+LFE+SL+SR+TFL+TFR+TBL+TBR (FFmpeg
   /// `AV_CH_LAYOUT_5POINT1POINT4_BACK`).
   ///
   /// The constant's `_BACK` marks the top-*back* height pair, not the
   /// surrounds — those are side (SL/SR) — so the slug carries no
   /// qualifier.
-  N5Point1Point4Back,
+  Ch5_1_4Back,
   /// `"6.0"` — FL+FR+FC+BC+SL+SR (FFmpeg `AV_CH_LAYOUT_6POINT0`).
-  N6Point0,
+  Ch6_0,
   /// `"6.0(front)"` — FL+FR+FLC+FRC+SL+SR (FFmpeg
   /// `AV_CH_LAYOUT_6POINT0_FRONT`).
   ///
   /// No front centre: the centre pair is FLC/FRC, off-centre.
-  N6Point0Front,
+  Ch6_0Front,
   /// `"6.1"` — FL+FR+FC+LFE+BC+SL+SR (FFmpeg `AV_CH_LAYOUT_6POINT1`).
-  N6Point1,
+  Ch6_1,
   /// `"6.1(back)"` — FL+FR+FC+LFE+BL+BR+BC (FFmpeg
   /// `AV_CH_LAYOUT_6POINT1_BACK`).
-  N6Point1Back,
+  Ch6_1Back,
   /// `"6.1(front)"` — FL+FR+LFE+FLC+FRC+SL+SR (FFmpeg
   /// `AV_CH_LAYOUT_6POINT1_FRONT`).
   ///
-  /// No front centre, as with [`Self::N6Point0Front`].
-  N6Point1Front,
+  /// No front centre, as with [`Self::Ch6_0Front`].
+  Ch6_1Front,
   /// `"7.0"` — FL+FR+FC+BL+BR+SL+SR (FFmpeg `AV_CH_LAYOUT_7POINT0`).
-  N7Point0,
+  Ch7_0,
   /// `"7.0(front)"` — FL+FR+FC+FLC+FRC+SL+SR (FFmpeg
   /// `AV_CH_LAYOUT_7POINT0_FRONT`).
-  N7Point0Front,
+  Ch7_0Front,
   /// `"7.1"` — FL+FR+FC+LFE+BL+BR+SL+SR (FFmpeg
   /// `AV_CH_LAYOUT_7POINT1`).
-  N7Point1,
+  Ch7_1,
   /// `"7.1(wide-side)"` — FL+FR+FC+LFE+FLC+FRC+SL+SR (FFmpeg
   /// `AV_CH_LAYOUT_7POINT1_WIDE`).
   ///
   /// FFmpeg's plain `"7.1(wide)"` is the **back** layout, not this one —
-  /// see [`Self::N7Point1WideBack`]. The same crossing as the 5.x pairs,
+  /// see [`Self::Ch7_1WideBack`]. The same crossing as the 5.x pairs,
   /// one family further up.
-  N7Point1Wide,
+  Ch7_1Wide,
   /// `"7.1(wide)"` — FL+FR+FC+LFE+BL+BR+FLC+FRC (FFmpeg
   /// `AV_CH_LAYOUT_7POINT1_WIDE_BACK`).
   ///
   /// The unqualified `"7.1(wide)"` belongs to the back-speaker layout;
-  /// the side-speaker one is [`Self::N7Point1Wide`], spelled
+  /// the side-speaker one is [`Self::Ch7_1Wide`], spelled
   /// `"7.1(wide-side)"`.
-  N7Point1WideBack,
+  Ch7_1WideBack,
   /// `"7.1.2"` — FL+FR+FC+LFE+BL+BR+SL+SR+TFL+TFR (FFmpeg
   /// `AV_CH_LAYOUT_7POINT1POINT2`).
-  N7Point1Point2,
+  Ch7_1_2,
   /// `"7.1.4"` — FL+FR+FC+LFE+BL+BR+SL+SR+TFL+TFR+TBL+TBR (FFmpeg
   /// `AV_CH_LAYOUT_7POINT1POINT4_BACK`).
   ///
   /// `_BACK` marks the top-back height pair, not the surrounds — see
-  /// [`Self::N5Point1Point4Back`].
-  N7Point1Point4Back,
+  /// [`Self::Ch5_1_4Back`].
+  Ch7_1_4Back,
   /// `"7.2.3"` — FL+FR+FC+LFE+BL+BR+SL+SR+TFL+TFR+TBC+LFE2 (FFmpeg
   /// `AV_CH_LAYOUT_7POINT2POINT3`).
   ///
   /// The `.2` is two LFE channels (LFE and LFE2); the `.3` is three
   /// height channels (TFL, TFR, TBC).
-  N7Point2Point3,
+  Ch7_2_3,
   /// `"9.1.4"` — FL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFL+TFR+TBL+TBR
   /// (FFmpeg `AV_CH_LAYOUT_9POINT1POINT4_BACK`).
   ///
   /// `_BACK` marks the top-back height pair, not the surrounds — see
-  /// [`Self::N5Point1Point4Back`].
-  N9Point1Point4Back,
+  /// [`Self::Ch5_1_4Back`].
+  Ch9_1_4Back,
   /// `"22.2"` — the 24-channel NHK Super Hi-Vision arrangement:
   /// FL+FR+FC+LFE+BL+BR+FLC+FRC+BC+SL+SR+TC+TFL+TFC+TFR+TBL+TBC+TBR+
   /// LFE2+TSL+TSR+BFC+BFL+BFR (FFmpeg `AV_CH_LAYOUT_22POINT2`).
-  N22Point2,
+  Ch22_2,
   /// `"hexagonal"` — FL+FR+FC+BL+BR+BC (FFmpeg
   /// `AV_CH_LAYOUT_HEXAGONAL`). Six channels in a hexagon, no LFE.
   Hexagonal,
@@ -272,45 +272,45 @@ impl ChannelLayout {
       Self::Mono => "mono",
       Self::Stereo => "stereo",
       Self::StereoDownmix => "downmix",
-      Self::N2Point1 => "2.1",
-      Self::N3Point0 => "3.0",
-      Self::N3Point0Back => "3.0(back)",
-      Self::N3Point1 => "3.1",
-      Self::N3Point1Point2 => "3.1.2",
-      Self::N4Point0 => "4.0",
-      Self::N4Point1 => "4.1",
+      Self::Ch2_1 => "2.1",
+      Self::Ch3_0 => "3.0",
+      Self::Ch3_0Back => "3.0(back)",
+      Self::Ch3_1 => "3.1",
+      Self::Ch3_1_2 => "3.1.2",
+      Self::Ch4_0 => "4.0",
+      Self::Ch4_1 => "4.1",
       Self::Quad => "quad",
       Self::QuadSide => "quad(side)",
       // FFmpeg gives the unqualified name to the BACK layout and
       // qualifies the side one — see `channel_layout_map[]`. The idents
       // follow the constants, the slugs follow FFmpeg's names, so these
       // six read crossed and are exactly right.
-      Self::N5Point0 => "5.0(side)",
-      Self::N5Point0Back => "5.0",
-      Self::N5Point1 => "5.1(side)",
-      Self::N5Point1Back => "5.1",
+      Self::Ch5_0 => "5.0(side)",
+      Self::Ch5_0Back => "5.0",
+      Self::Ch5_1 => "5.1(side)",
+      Self::Ch5_1Back => "5.1",
       // ...and here the qualifier runs the other way: the unqualified
       // "5.1.2" is the SIDE layout, which this vocabulary does not name.
-      Self::N5Point1Point2Back => "5.1.2(back)",
+      Self::Ch5_1_2Back => "5.1.2(back)",
       // `_BACK` in these three constants marks the top-back height pair,
       // not the surrounds, and FFmpeg minted no unsuffixed sibling — so
       // no `(back)` reaches the slug.
-      Self::N5Point1Point4Back => "5.1.4",
-      Self::N6Point0 => "6.0",
-      Self::N6Point0Front => "6.0(front)",
-      Self::N6Point1 => "6.1",
-      Self::N6Point1Back => "6.1(back)",
-      Self::N6Point1Front => "6.1(front)",
-      Self::N7Point0 => "7.0",
-      Self::N7Point0Front => "7.0(front)",
-      Self::N7Point1 => "7.1",
-      Self::N7Point1Wide => "7.1(wide-side)",
-      Self::N7Point1WideBack => "7.1(wide)",
-      Self::N7Point1Point2 => "7.1.2",
-      Self::N7Point1Point4Back => "7.1.4",
-      Self::N7Point2Point3 => "7.2.3",
-      Self::N9Point1Point4Back => "9.1.4",
-      Self::N22Point2 => "22.2",
+      Self::Ch5_1_4Back => "5.1.4",
+      Self::Ch6_0 => "6.0",
+      Self::Ch6_0Front => "6.0(front)",
+      Self::Ch6_1 => "6.1",
+      Self::Ch6_1Back => "6.1(back)",
+      Self::Ch6_1Front => "6.1(front)",
+      Self::Ch7_0 => "7.0",
+      Self::Ch7_0Front => "7.0(front)",
+      Self::Ch7_1 => "7.1",
+      Self::Ch7_1Wide => "7.1(wide-side)",
+      Self::Ch7_1WideBack => "7.1(wide)",
+      Self::Ch7_1_2 => "7.1.2",
+      Self::Ch7_1_4Back => "7.1.4",
+      Self::Ch7_2_3 => "7.2.3",
+      Self::Ch9_1_4Back => "9.1.4",
+      Self::Ch22_2 => "22.2",
       Self::Hexagonal => "hexagonal",
       Self::Octagonal => "octagonal",
       Self::Hexadecagonal => "hexadecagonal",
@@ -340,36 +340,36 @@ roster!(
     Mono,
     Stereo,
     StereoDownmix,
-    N2Point1,
-    N3Point0,
-    N3Point0Back,
-    N3Point1,
-    N3Point1Point2,
-    N4Point0,
-    N4Point1,
+    Ch2_1,
+    Ch3_0,
+    Ch3_0Back,
+    Ch3_1,
+    Ch3_1_2,
+    Ch4_0,
+    Ch4_1,
     Quad,
     QuadSide,
-    N5Point0,
-    N5Point0Back,
-    N5Point1,
-    N5Point1Back,
-    N5Point1Point2Back,
-    N5Point1Point4Back,
-    N6Point0,
-    N6Point0Front,
-    N6Point1,
-    N6Point1Back,
-    N6Point1Front,
-    N7Point0,
-    N7Point0Front,
-    N7Point1,
-    N7Point1Wide,
-    N7Point1WideBack,
-    N7Point1Point2,
-    N7Point1Point4Back,
-    N7Point2Point3,
-    N9Point1Point4Back,
-    N22Point2,
+    Ch5_0,
+    Ch5_0Back,
+    Ch5_1,
+    Ch5_1Back,
+    Ch5_1_2Back,
+    Ch5_1_4Back,
+    Ch6_0,
+    Ch6_0Front,
+    Ch6_1,
+    Ch6_1Back,
+    Ch6_1Front,
+    Ch7_0,
+    Ch7_0Front,
+    Ch7_1,
+    Ch7_1Wide,
+    Ch7_1WideBack,
+    Ch7_1_2,
+    Ch7_1_4Back,
+    Ch7_2_3,
+    Ch9_1_4Back,
+    Ch22_2,
     Hexagonal,
     Octagonal,
     Hexadecagonal,
@@ -394,36 +394,36 @@ impl FromStr for ChannelLayout {
       b"mono" => Self::Mono,
       b"stereo" => Self::Stereo,
       b"downmix" => Self::StereoDownmix,
-      b"2.1" => Self::N2Point1,
-      b"3.0" => Self::N3Point0,
-      b"3.0(back)" => Self::N3Point0Back,
-      b"3.1" => Self::N3Point1,
-      b"3.1.2" => Self::N3Point1Point2,
-      b"4.0" => Self::N4Point0,
-      b"4.1" => Self::N4Point1,
+      b"2.1" => Self::Ch2_1,
+      b"3.0" => Self::Ch3_0,
+      b"3.0(back)" => Self::Ch3_0Back,
+      b"3.1" => Self::Ch3_1,
+      b"3.1.2" => Self::Ch3_1_2,
+      b"4.0" => Self::Ch4_0,
+      b"4.1" => Self::Ch4_1,
       b"quad" => Self::Quad,
       b"quad(side)" => Self::QuadSide,
-      b"5.0(side)" => Self::N5Point0,
-      b"5.0" => Self::N5Point0Back,
-      b"5.1(side)" => Self::N5Point1,
-      b"5.1" => Self::N5Point1Back,
-      b"5.1.2(back)" => Self::N5Point1Point2Back,
-      b"5.1.4" => Self::N5Point1Point4Back,
-      b"6.0" => Self::N6Point0,
-      b"6.0(front)" => Self::N6Point0Front,
-      b"6.1" => Self::N6Point1,
-      b"6.1(back)" => Self::N6Point1Back,
-      b"6.1(front)" => Self::N6Point1Front,
-      b"7.0" => Self::N7Point0,
-      b"7.0(front)" => Self::N7Point0Front,
-      b"7.1" => Self::N7Point1,
-      b"7.1(wide-side)" => Self::N7Point1Wide,
-      b"7.1(wide)" => Self::N7Point1WideBack,
-      b"7.1.2" => Self::N7Point1Point2,
-      b"7.1.4" => Self::N7Point1Point4Back,
-      b"7.2.3" => Self::N7Point2Point3,
-      b"9.1.4" => Self::N9Point1Point4Back,
-      b"22.2" => Self::N22Point2,
+      b"5.0(side)" => Self::Ch5_0,
+      b"5.0" => Self::Ch5_0Back,
+      b"5.1(side)" => Self::Ch5_1,
+      b"5.1" => Self::Ch5_1Back,
+      b"5.1.2(back)" => Self::Ch5_1_2Back,
+      b"5.1.4" => Self::Ch5_1_4Back,
+      b"6.0" => Self::Ch6_0,
+      b"6.0(front)" => Self::Ch6_0Front,
+      b"6.1" => Self::Ch6_1,
+      b"6.1(back)" => Self::Ch6_1Back,
+      b"6.1(front)" => Self::Ch6_1Front,
+      b"7.0" => Self::Ch7_0,
+      b"7.0(front)" => Self::Ch7_0Front,
+      b"7.1" => Self::Ch7_1,
+      b"7.1(wide-side)" => Self::Ch7_1Wide,
+      b"7.1(wide)" => Self::Ch7_1WideBack,
+      b"7.1.2" => Self::Ch7_1_2,
+      b"7.1.4" => Self::Ch7_1_4Back,
+      b"7.2.3" => Self::Ch7_2_3,
+      b"9.1.4" => Self::Ch9_1_4Back,
+      b"22.2" => Self::Ch22_2,
       b"hexagonal" => Self::Hexagonal,
       b"octagonal" => Self::Octagonal,
       b"hexadecagonal" => Self::Hexadecagonal,

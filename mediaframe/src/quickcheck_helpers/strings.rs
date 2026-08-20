@@ -51,8 +51,8 @@ qc_open_string_enum!(
 // Both spellings of the crossed pairs are seeded on purpose. FFmpeg
 // gives the unqualified `"5.0"` / `"5.1"` / `"7.1(wide)"` to the
 // **back**-speaker layouts and qualifies the side ones, so seeding only
-// the short spelling reaches `N5Point0Back` / `N5Point1Back` /
-// `N7Point1WideBack` and leaves their side twins unreachable — exactly
+// the short spelling reaches `Ch5_0Back` / `Ch5_1Back` /
+// `Ch7_1WideBack` and leaves their side twins unreachable — exactly
 // the half whose slug moved in 0.4.0.
 qc_open_string_enum!(
   channel_layout,

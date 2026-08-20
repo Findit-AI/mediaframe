@@ -866,7 +866,7 @@ fn channel_layout_round_trip_named_and_other() {
     ChannelLayout::decode_from_slice(&v.encode_to_vec()).unwrap(),
     v
   );
-  let v = ChannelLayout::N5Point1;
+  let v = ChannelLayout::Ch5_1;
   assert_eq!(
     ChannelLayout::decode_from_slice(&v.encode_to_vec()).unwrap(),
     v
@@ -884,7 +884,7 @@ fn channel_layout_round_trip_named_and_other() {
   assert_eq!(
     ChannelLayout::decode_from_slice(&ChannelLayout::Other(SmolStr::new("22.2")).encode_to_vec())
       .unwrap(),
-    ChannelLayout::N22Point2
+    ChannelLayout::Ch22_2
   );
   // Default (Other("")) elides to empty bytes.
   assert!(ChannelLayout::default().encode_to_vec().is_empty());

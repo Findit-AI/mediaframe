@@ -27,60 +27,44 @@ const MAP: &[(ChannelLayout, &str, &str)] = &[
   (ChannelLayout::Mono, "MONO", "mono"),
   (ChannelLayout::Stereo, "STEREO", "stereo"),
   (ChannelLayout::StereoDownmix, "STEREO_DOWNMIX", "downmix"),
-  (ChannelLayout::N2Point1, "2POINT1", "2.1"),
-  (ChannelLayout::N3Point0, "SURROUND", "3.0"),
-  (ChannelLayout::N3Point0Back, "2_1", "3.0(back)"),
-  (ChannelLayout::N3Point1, "3POINT1", "3.1"),
-  (ChannelLayout::N3Point1Point2, "3POINT1POINT2", "3.1.2"),
-  (ChannelLayout::N4Point0, "4POINT0", "4.0"),
-  (ChannelLayout::N4Point1, "4POINT1", "4.1"),
+  (ChannelLayout::Ch2_1, "2POINT1", "2.1"),
+  (ChannelLayout::Ch3_0, "SURROUND", "3.0"),
+  (ChannelLayout::Ch3_0Back, "2_1", "3.0(back)"),
+  (ChannelLayout::Ch3_1, "3POINT1", "3.1"),
+  (ChannelLayout::Ch3_1_2, "3POINT1POINT2", "3.1.2"),
+  (ChannelLayout::Ch4_0, "4POINT0", "4.0"),
+  (ChannelLayout::Ch4_1, "4POINT1", "4.1"),
   (ChannelLayout::Quad, "QUAD", "quad"),
   (ChannelLayout::QuadSide, "2_2", "quad(side)"),
-  (ChannelLayout::N5Point0, "5POINT0", "5.0(side)"),
-  (ChannelLayout::N5Point0Back, "5POINT0_BACK", "5.0"),
-  (ChannelLayout::N5Point1, "5POINT1", "5.1(side)"),
-  (ChannelLayout::N5Point1Back, "5POINT1_BACK", "5.1"),
+  (ChannelLayout::Ch5_0, "5POINT0", "5.0(side)"),
+  (ChannelLayout::Ch5_0Back, "5POINT0_BACK", "5.0"),
+  (ChannelLayout::Ch5_1, "5POINT1", "5.1(side)"),
+  (ChannelLayout::Ch5_1Back, "5POINT1_BACK", "5.1"),
   (
-    ChannelLayout::N5Point1Point2Back,
+    ChannelLayout::Ch5_1_2Back,
     "5POINT1POINT2_BACK",
     "5.1.2(back)",
   ),
+  (ChannelLayout::Ch5_1_4Back, "5POINT1POINT4_BACK", "5.1.4"),
+  (ChannelLayout::Ch6_0, "6POINT0", "6.0"),
+  (ChannelLayout::Ch6_0Front, "6POINT0_FRONT", "6.0(front)"),
+  (ChannelLayout::Ch6_1, "6POINT1", "6.1"),
+  (ChannelLayout::Ch6_1Back, "6POINT1_BACK", "6.1(back)"),
+  (ChannelLayout::Ch6_1Front, "6POINT1_FRONT", "6.1(front)"),
+  (ChannelLayout::Ch7_0, "7POINT0", "7.0"),
+  (ChannelLayout::Ch7_0Front, "7POINT0_FRONT", "7.0(front)"),
+  (ChannelLayout::Ch7_1, "7POINT1", "7.1"),
+  (ChannelLayout::Ch7_1Wide, "7POINT1_WIDE", "7.1(wide-side)"),
   (
-    ChannelLayout::N5Point1Point4Back,
-    "5POINT1POINT4_BACK",
-    "5.1.4",
-  ),
-  (ChannelLayout::N6Point0, "6POINT0", "6.0"),
-  (ChannelLayout::N6Point0Front, "6POINT0_FRONT", "6.0(front)"),
-  (ChannelLayout::N6Point1, "6POINT1", "6.1"),
-  (ChannelLayout::N6Point1Back, "6POINT1_BACK", "6.1(back)"),
-  (ChannelLayout::N6Point1Front, "6POINT1_FRONT", "6.1(front)"),
-  (ChannelLayout::N7Point0, "7POINT0", "7.0"),
-  (ChannelLayout::N7Point0Front, "7POINT0_FRONT", "7.0(front)"),
-  (ChannelLayout::N7Point1, "7POINT1", "7.1"),
-  (
-    ChannelLayout::N7Point1Wide,
-    "7POINT1_WIDE",
-    "7.1(wide-side)",
-  ),
-  (
-    ChannelLayout::N7Point1WideBack,
+    ChannelLayout::Ch7_1WideBack,
     "7POINT1_WIDE_BACK",
     "7.1(wide)",
   ),
-  (ChannelLayout::N7Point1Point2, "7POINT1POINT2", "7.1.2"),
-  (
-    ChannelLayout::N7Point1Point4Back,
-    "7POINT1POINT4_BACK",
-    "7.1.4",
-  ),
-  (ChannelLayout::N7Point2Point3, "7POINT2POINT3", "7.2.3"),
-  (
-    ChannelLayout::N9Point1Point4Back,
-    "9POINT1POINT4_BACK",
-    "9.1.4",
-  ),
-  (ChannelLayout::N22Point2, "22POINT2", "22.2"),
+  (ChannelLayout::Ch7_1_2, "7POINT1POINT2", "7.1.2"),
+  (ChannelLayout::Ch7_1_4Back, "7POINT1POINT4_BACK", "7.1.4"),
+  (ChannelLayout::Ch7_2_3, "7POINT2POINT3", "7.2.3"),
+  (ChannelLayout::Ch9_1_4Back, "9POINT1POINT4_BACK", "9.1.4"),
+  (ChannelLayout::Ch22_2, "22POINT2", "22.2"),
   (ChannelLayout::Hexagonal, "HEXAGONAL", "hexagonal"),
   (ChannelLayout::Octagonal, "OCTAGONAL", "octagonal"),
   (
@@ -155,14 +139,14 @@ fn every_rostered_variant_has_a_transcribed_source() {
 /// well-meaning "fix" cannot quietly put them back.
 #[test]
 fn the_unqualified_five_point_slugs_are_the_back_layouts() {
-  assert_eq!("5.0".parse(), Ok(ChannelLayout::N5Point0Back));
-  assert_eq!("5.1".parse(), Ok(ChannelLayout::N5Point1Back));
-  assert_eq!("5.0(side)".parse(), Ok(ChannelLayout::N5Point0));
-  assert_eq!("5.1(side)".parse(), Ok(ChannelLayout::N5Point1));
-  assert_eq!(ChannelLayout::N5Point0Back.as_str(), "5.0");
-  assert_eq!(ChannelLayout::N5Point1Back.as_str(), "5.1");
-  assert_eq!(ChannelLayout::N5Point0.as_str(), "5.0(side)");
-  assert_eq!(ChannelLayout::N5Point1.as_str(), "5.1(side)");
+  assert_eq!("5.0".parse(), Ok(ChannelLayout::Ch5_0Back));
+  assert_eq!("5.1".parse(), Ok(ChannelLayout::Ch5_1Back));
+  assert_eq!("5.0(side)".parse(), Ok(ChannelLayout::Ch5_0));
+  assert_eq!("5.1(side)".parse(), Ok(ChannelLayout::Ch5_1));
+  assert_eq!(ChannelLayout::Ch5_0Back.as_str(), "5.0");
+  assert_eq!(ChannelLayout::Ch5_1Back.as_str(), "5.1");
+  assert_eq!(ChannelLayout::Ch5_0.as_str(), "5.0(side)");
+  assert_eq!(ChannelLayout::Ch5_1.as_str(), "5.1(side)");
 }
 
 /// The 7.1-wide pair crosses exactly like the 5.x pairs — the
@@ -171,10 +155,10 @@ fn the_unqualified_five_point_slugs_are_the_back_layouts() {
 /// `mediadecode` 0.5.0 had this pair the other way round.
 #[test]
 fn the_unqualified_wide_slug_is_the_back_layout() {
-  assert_eq!("7.1(wide)".parse(), Ok(ChannelLayout::N7Point1WideBack));
-  assert_eq!("7.1(wide-side)".parse(), Ok(ChannelLayout::N7Point1Wide));
-  assert_eq!(ChannelLayout::N7Point1WideBack.as_str(), "7.1(wide)");
-  assert_eq!(ChannelLayout::N7Point1Wide.as_str(), "7.1(wide-side)");
+  assert_eq!("7.1(wide)".parse(), Ok(ChannelLayout::Ch7_1WideBack));
+  assert_eq!("7.1(wide-side)".parse(), Ok(ChannelLayout::Ch7_1Wide));
+  assert_eq!(ChannelLayout::Ch7_1WideBack.as_str(), "7.1(wide)");
+  assert_eq!(ChannelLayout::Ch7_1Wide.as_str(), "7.1(wide-side)");
 }
 
 /// Two ways the `(back)` qualifier does *not* behave like the 5.x one,
@@ -185,15 +169,15 @@ fn the_back_qualifier_is_not_a_rule() {
   // 5.1.2 runs the opposite way: the qualified slug is the back layout,
   // and the unqualified one is the side layout this vocabulary does not
   // name.
-  assert_eq!("5.1.2(back)".parse(), Ok(ChannelLayout::N5Point1Point2Back));
-  assert_eq!(ChannelLayout::N5Point1Point2Back.as_str(), "5.1.2(back)");
+  assert_eq!("5.1.2(back)".parse(), Ok(ChannelLayout::Ch5_1_2Back));
+  assert_eq!(ChannelLayout::Ch5_1_2Back.as_str(), "5.1.2(back)");
   assert!("5.1.2".parse::<ChannelLayout>().unwrap().is_other());
 
   // The `_BACK` in these three constants marks a top-back height pair,
   // not surround placement, so no qualifier reaches the slug.
-  assert_eq!(ChannelLayout::N5Point1Point4Back.as_str(), "5.1.4");
-  assert_eq!(ChannelLayout::N7Point1Point4Back.as_str(), "7.1.4");
-  assert_eq!(ChannelLayout::N9Point1Point4Back.as_str(), "9.1.4");
+  assert_eq!(ChannelLayout::Ch5_1_4Back.as_str(), "5.1.4");
+  assert_eq!(ChannelLayout::Ch7_1_4Back.as_str(), "7.1.4");
+  assert_eq!(ChannelLayout::Ch9_1_4Back.as_str(), "9.1.4");
   for slug in ["5.1.4(back)", "7.1.4(back)", "9.1.4(back)"] {
     assert!(
       slug.parse::<ChannelLayout>().unwrap().is_other(),
@@ -230,7 +214,7 @@ fn unknown_layout_lands_in_other() {
 #[test]
 fn display_matches_as_str() {
   assert_eq!(ChannelLayout::Stereo.to_string(), "stereo");
-  assert_eq!(ChannelLayout::N5Point1.to_string(), "5.1(side)");
+  assert_eq!(ChannelLayout::Ch5_1.to_string(), "5.1(side)");
   assert_eq!(
     ChannelLayout::Other(SmolStr::new("custom_layout")).to_string(),
     "custom_layout"
@@ -241,7 +225,8 @@ fn display_matches_as_str() {
 fn is_variant_predicates() {
   assert!(ChannelLayout::Mono.is_mono());
   assert!(ChannelLayout::Stereo.is_stereo());
-  assert!(ChannelLayout::N5Point1.is_n_5_point_1());
+  assert!(ChannelLayout::Ch5_1.is_ch_5_1());
+  assert!(ChannelLayout::Ch5_1_2Back.is_ch_5_1_2_back());
   assert!(ChannelLayout::QuadSide.is_quad_side());
   assert!(ChannelLayout::Other(SmolStr::new("x")).is_other());
 }
