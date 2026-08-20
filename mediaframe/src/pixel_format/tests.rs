@@ -335,3 +335,13 @@ fn an_unnamed_pixel_format_is_rejected_without_an_allocator() {
   let err: ParsePixelFormatError = "yuv420q".parse::<PixelFormat>().unwrap_err();
   let _ = err;
 }
+
+/// The runtime half of the `ROSTER` contract for `PixelFormat` — no duplicate
+/// entry, no two entries sharing a slug, and `as_str` → `FromStr` the
+/// identity on every named variant. Completeness is the compile-time
+/// half: the witness beside each declaration is `E0004` the moment a
+/// variant is added without being rostered.
+#[test]
+fn rosters_are_well_formed() {
+  crate::roster_tests::check(PixelFormat::ROSTER, "PixelFormat", PixelFormat::as_str);
+}

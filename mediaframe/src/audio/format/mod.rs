@@ -158,6 +158,15 @@ impl SampleFormat {
   }
 }
 
+roster!(
+  SampleFormat,
+  "sample format",
+  [
+    U8, S16, S32, Flt, Dbl, U8p, S16p, S32p, Fltp, Dblp, S64, S64p
+  ],
+  escape: Other
+);
+
 impl FromStr for SampleFormat {
   type Err = core::convert::Infallible;
   /// Recognise a canonical FFmpeg sample-format slug; unknown
@@ -338,6 +347,15 @@ impl ContainerFormat {
     Self::Other(crate::parse::fold_owned(slug.as_ref()))
   }
 }
+
+roster!(
+  ContainerFormat,
+  "audio container format",
+  [
+    Mp3, Aac, Flac, Ogg, Opus, Wav, Aiff, Alac, Wma, Ape, Wv, Mka, M4a, Caf
+  ],
+  escape: Other
+);
 
 impl FromStr for ContainerFormat {
   type Err = core::convert::Infallible;

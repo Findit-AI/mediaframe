@@ -99,3 +99,13 @@ fn format_slugs_are_lowercase_canonical_and_fold() {
   assert_eq!(escaped.as_str(), "mp4_x");
   assert_eq!(Format::other("MP4_X"), escaped);
 }
+
+/// The runtime half of the `ROSTER` contract for `Format` — no duplicate
+/// entry, no two entries sharing a slug, and `as_str` → `FromStr` the
+/// identity on every named variant. Completeness is the compile-time
+/// half: the witness beside each declaration is `E0004` the moment a
+/// variant is added without being rostered.
+#[test]
+fn rosters_are_well_formed() {
+  crate::roster_tests::check(Format::ROSTER, "Format", Format::as_str);
+}

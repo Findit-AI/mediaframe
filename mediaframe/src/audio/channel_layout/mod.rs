@@ -177,6 +177,17 @@ impl ChannelLayout {
   }
 }
 
+roster!(
+  ChannelLayout,
+  "channel layout",
+  [
+    Mono, Stereo, N2Point1, N3Point0, N3Point0Back, N3Point1, Quad, N5Point0,
+    N5Point0Back, N5Point1, N5Point1Back, N6Point0, N6Point1, N7Point0,
+    N7Point1, Hexagonal, Octagonal, Ambisonic1, Ambisonic2, Ambisonic3
+  ],
+  escape: Other
+);
+
 impl FromStr for ChannelLayout {
   type Err = core::convert::Infallible;
   /// Recognise a canonical layout slug; unknown values land in

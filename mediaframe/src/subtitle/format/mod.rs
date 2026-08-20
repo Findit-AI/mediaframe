@@ -226,6 +226,16 @@ impl Format {
   }
 }
 
+roster!(
+  Format,
+  "subtitle format",
+  [
+    Srt, WebVtt, Ass, Ssa, Sub, Mpl2, Lrc, Smi, Stl, Sbv, Ttml, MovText,
+    DvdSub, PgsSub, HdmvPgs, DvbSub, XSub
+  ],
+  escape: Other
+);
+
 impl FromStr for Format {
   type Err = core::convert::Infallible;
 

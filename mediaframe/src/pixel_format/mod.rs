@@ -2493,5 +2493,57 @@ impl PixelFormat {
   }
 }
 
+roster!(
+  PixelFormat,
+  "pixel format",
+  [
+    None, Yuv420p, Yuv422p, Yuv440p, Yuv444p, Yuv411p, Yuv410p, Yuvj411p,
+    Yuvj420p, Yuvj422p, Yuvj440p, Yuvj444p, Yuv420p9Le, Yuv420p9Be,
+    Yuv420p10Le, Yuv420p10Be, Yuv420p12Le, Yuv420p12Be, Yuv420p14Le,
+    Yuv420p14Be, Yuv420p16Le, Yuv420p16Be, Yuv422p9Le, Yuv422p9Be,
+    Yuv422p10Le, Yuv422p10Be, Yuv422p12Le, Yuv422p12Be, Yuv422p14Le,
+    Yuv422p14Be, Yuv422p16Le, Yuv422p16Be, Yuv440p10Le, Yuv440p10Be,
+    Yuv440p12Le, Yuv440p12Be, Yuv444p9Le, Yuv444p9Be, Yuv444p10Le,
+    Yuv444p10Be, Yuv444p12Le, Yuv444p12Be, Yuv444p14Le, Yuv444p14Be,
+    Yuv444p16Le, Yuv444p16Be, Yuv444p10MsbLe, Yuv444p10MsbBe, Yuv444p12MsbLe,
+    Yuv444p12MsbBe, Yuva420p, Yuva422p, Yuva444p, Yuva420p9Le, Yuva420p9Be,
+    Yuva422p9Le, Yuva422p9Be, Yuva444p9Le, Yuva444p9Be, Yuva420p10Le,
+    Yuva420p10Be, Yuva422p10Le, Yuva422p10Be, Yuva444p10Le, Yuva444p10Be,
+    Yuva420p12Le, Yuva420p12Be, Yuva422p12Le, Yuva422p12Be, Yuva444p12Le,
+    Yuva444p12Be, Yuva444p14Le, Yuva420p16Le, Yuva420p16Be, Yuva422p16Le,
+    Yuva422p16Be, Yuva444p16Le, Yuva444p16Be, Nv12, Nv21, Nv16, Nv24, Nv42,
+    Nv20Le, Nv20Be, P010Le, P010Be, P012Le, P012Be, P016Le, P016Be, P210Le,
+    P210Be, P212Le, P212Be, P216Le, P216Be, P410Le, P410Be, P412Le, P412Be,
+    P416Le, P416Be, Yuyv422, Uyvy422, Yvyu422, Uyyvyy411, Y210Le, Y210Be,
+    Y212Le, Y212Be, Y216Le, Y216Be, V210, V410Le, V410Be, Xv30Le, Xv30Be,
+    V30xLe, V30xBe, Xv36Le, Xv36Be, Xv48Le, Xv48Be, Vuya, Vuyx, Ayuv,
+    Ayuv64Le, Ayuv64Be, Uyva, Vyu444, Xyz12Le, Xyz12Be, Rgb24, Bgr24, Rgba,
+    Bgra, Argb, Abgr, Rgbx, Bgrx, Xrgb, Xbgr, X2Rgb10Le, X2Rgb10Be, X2Bgr10Le,
+    X2Bgr10Be, Gbr24p, Rgb4, Rgb4Byte, Rgb8, Bgr4, Bgr4Byte, Bgr8, Rgb444Le,
+    Rgb444Be, Bgr444Le, Bgr444Be, Rgb555Le, Rgb555Be, Bgr555Le, Bgr555Be,
+    Rgb565Le, Rgb565Be, Bgr565Le, Bgr565Be, Rgb48Le, Rgb48Be, Bgr48Le,
+    Bgr48Be, Rgba64Le, Rgba64Be, Bgra64Le, Bgra64Be, Rgb96Le, Rgb96Be,
+    Rgba128Le, Rgba128Be, Rgbf16Le, Rgbf16Be, Rgbf32Le, Rgbf32Be, Rgbaf16Le,
+    Rgbaf16Be, Rgbaf32Le, Rgbaf32Be, Gbrp, Gbrp9Le, Gbrp9Be, Gbrp10Le,
+    Gbrp10Be, Gbrp10MsbLe, Gbrp10MsbBe, Gbrp12Le, Gbrp12Be, Gbrp12MsbLe,
+    Gbrp12MsbBe, Gbrp14Le, Gbrp14Be, Gbrp16Le, Gbrp16Be, Gbrpf16Le, Gbrpf16Be,
+    Gbrpf32Le, Gbrpf32Be, Gbrap, Gbrap10Le, Gbrap10Be, Gbrap12Le, Gbrap12Be,
+    Gbrap14Le, Gbrap14Be, Gbrap16Le, Gbrap16Be, Gbrap32Le, Gbrap32Be,
+    Gbrapf16Le, Gbrapf16Be, Gbrapf32Le, Gbrapf32Be, Gray8, Gray8a, Gray9Le,
+    Gray9Be, Gray10Le, Gray10Be, Gray12Le, Gray12Be, Gray14Le, Gray14Be,
+    Gray16Le, Gray16Be, Gray32Le, Gray32Be, Grayf32Le, Grayf32Be, Grayf16Le,
+    Grayf16Be, Ya8, Y400a, Ya16Le, Ya16Be, Yaf16Le, Yaf16Be, Yaf32Le, Yaf32Be,
+    Monowhite, Monoblack, Pal8, BayerBggr8, BayerRggb8, BayerGbrg8,
+    BayerGrbg8, BayerBggr10Le, BayerBggr10Be, BayerRggb10Le, BayerRggb10Be,
+    BayerGbrg10Le, BayerGbrg10Be, BayerGrbg10Le, BayerGrbg10Be, BayerBggr12Le,
+    BayerBggr12Be, BayerRggb12Le, BayerRggb12Be, BayerGbrg12Le, BayerGbrg12Be,
+    BayerGrbg12Le, BayerGrbg12Be, BayerBggr14Le, BayerBggr14Be, BayerRggb14Le,
+    BayerRggb14Be, BayerGbrg14Le, BayerGbrg14Be, BayerGrbg14Le, BayerGrbg14Be,
+    BayerBggr16Le, BayerBggr16Be, BayerRggb16Le, BayerRggb16Be, BayerGbrg16Le,
+    BayerGbrg16Be, BayerGrbg16Le, BayerGrbg16Be
+  ],
+  alloc_escape: Other
+);
+
 #[cfg(test)]
 mod tests;

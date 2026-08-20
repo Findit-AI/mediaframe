@@ -776,3 +776,21 @@ fn dcp_target_gamut_slugs_are_stable() {
   assert_eq!(DcpTargetGamut::Rec2020.as_str(), "rec2020");
   assert_eq!("dci-p3".parse(), Ok(DcpTargetGamut::DciP3));
 }
+
+/// The runtime half of the `ROSTER` contract for `Matrix` / `Primaries` / `Transfer` / `DynamicRange` / `ChromaLocation` — no duplicate
+/// entry, no two entries sharing a slug, and `as_str` → `FromStr` the
+/// identity on every named variant. Completeness is the compile-time
+/// half: the witness beside each declaration is `E0004` the moment a
+/// variant is added without being rostered.
+#[test]
+fn rosters_are_well_formed() {
+  crate::roster_tests::check(Matrix::ROSTER, "Matrix", Matrix::as_str);
+  crate::roster_tests::check(Primaries::ROSTER, "Primaries", Primaries::as_str);
+  crate::roster_tests::check(Transfer::ROSTER, "Transfer", Transfer::as_str);
+  crate::roster_tests::check(DynamicRange::ROSTER, "DynamicRange", DynamicRange::as_str);
+  crate::roster_tests::check(
+    ChromaLocation::ROSTER,
+    "ChromaLocation",
+    ChromaLocation::as_str,
+  );
+}

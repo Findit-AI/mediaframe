@@ -162,6 +162,16 @@ impl Format {
   }
 }
 
+roster!(
+  Format,
+  "container format",
+  [
+    Mov, Mp4, Mkv, Webm, Avi, Flv, MpegTs, Ogg, Asf, Rm, Wmv, Mxf, Gxf,
+    Threegp
+  ],
+  escape: Other
+);
+
 impl FromStr for Format {
   type Err = core::convert::Infallible;
   /// Recognise a canonical container slug; unknown values land in
