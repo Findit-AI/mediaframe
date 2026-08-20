@@ -550,6 +550,15 @@ impl BayerSampleOutOfRange {
 /// won't ride on this enum. See
 /// `docs/color-conversion-functions.md` § "Cleanup follow-ups
 /// → Tier 14 RAW family extensions" for the full roadmap.
+///
+/// **Closed** — deliberately *not* `#[non_exhaustive]`, because the
+/// scope above is a geometric closure rather than a snapshot of
+/// today's cameras: a 2×2 tile carrying one red, one blue and two
+/// greens admits exactly four top-left phases, and there is no fifth
+/// to append. Every CFA family that would need one is a different
+/// tile shape and leaves via a different type. A downstream `match`
+/// is therefore exhaustive and the compiler proves it handles every
+/// arrangement.
 #[cfg_attr(
   feature = "quickcheck",
   derive(::quickcheck_richderive::Arbitrary),
@@ -557,7 +566,6 @@ impl BayerSampleOutOfRange {
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IsVariant, Display)]
 #[display("{}", self.as_str())]
-#[non_exhaustive]
 pub enum BayerPattern {
   /// `B G / G R` — top-left is **B**, bottom-right is **R**.
   Bggr,
