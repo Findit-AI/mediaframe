@@ -1,71 +1,107 @@
 use super::*;
 use ::std::string::ToString;
 
-#[test]
-fn every_named_variant_round_trips() {
-  for slug in [
-    "mono",
-    "stereo",
-    "2.1",
-    "3.0",
-    "3.0(back)",
-    "3.1",
-    "quad",
-    "5.0",
-    "5.0(side)",
-    "5.1",
-    "5.1(side)",
-    "6.0",
-    "6.1",
-    "7.0",
-    "7.1",
-    "hexagonal",
-    "octagonal",
-    "ambisonic1",
-    "ambisonic2",
-    "ambisonic3",
-  ] {
-    let v: ChannelLayout = slug.parse().unwrap();
-    assert!(!v.is_other(), "`{slug}` should be a named variant");
-    assert_eq!(v.as_str(), slug, "round-trip mismatch for `{slug}`");
-  }
-}
-
 /// Every named variant's slug is the name FFmpeg's
 /// `channel_layout_map[]` gives the constant that variant is named
 /// after — transcribed from `libavutil/channel_layout.c` at the pinned
-/// n9.0 tag.
+/// n9.0 tag, and re-checked against `av_channel_layout_describe` output
+/// for every `AV_CHANNEL_LAYOUT_*` initializer in that release.
 ///
-/// This exists because the 5.x arms *look* wrong: FFmpeg gives the
-/// unqualified `"5.0"` / `"5.1"` to the **back**-speaker layouts
-/// (`AV_CH_LAYOUT_5POINT0_BACK` = `SURROUND|BACK_LEFT|BACK_RIGHT`) and
-/// qualifies the side ones. mediaframe had them the other way round
-/// until 0.4.0, so an FFmpeg-sourced `"5.1"` landed on the variant whose
-/// documentation promised side speakers. Nothing but a transcribed table
-/// catches that, so here it is; `ambisonic*` are excluded because FFmpeg
+/// This exists because a third of these arms *look* wrong:
+///
+/// * FFmpeg gives the unqualified `"5.0"` / `"5.1"` / `"7.1(wide)"` to
+///   the **back**-speaker layouts and qualifies the side ones;
+/// * for the 5.1.2 family the qualifier runs the other way;
+/// * `_BACK` in `5POINT1POINT4_BACK`, `7POINT1POINT4_BACK` and
+///   `9POINT1POINT4_BACK` never reaches the slug at all;
+/// * `STEREO_DOWNMIX` is named `"downmix"`, and `2_1` / `2_2` are named
+///   `"3.0(back)"` / `"quad(side)"`.
+///
+/// mediaframe had the 5.x pairs the other way round until 0.4.0, so an
+/// FFmpeg-sourced `"5.1"` landed on the variant whose documentation
+/// promised side speakers. Nothing but a transcribed table catches that,
+/// so here is the whole table; `ambisonic*` are excluded because FFmpeg
 /// models ambisonics as a channel *order*, not a map entry.
+const MAP: &[(ChannelLayout, &str, &str)] = &[
+  // (variant, `AV_CH_LAYOUT_` suffix it is named after, FFmpeg's name)
+  (ChannelLayout::Mono, "MONO", "mono"),
+  (ChannelLayout::Stereo, "STEREO", "stereo"),
+  (ChannelLayout::StereoDownmix, "STEREO_DOWNMIX", "downmix"),
+  (ChannelLayout::N2Point1, "2POINT1", "2.1"),
+  (ChannelLayout::N3Point0, "SURROUND", "3.0"),
+  (ChannelLayout::N3Point0Back, "2_1", "3.0(back)"),
+  (ChannelLayout::N3Point1, "3POINT1", "3.1"),
+  (ChannelLayout::N3Point1Point2, "3POINT1POINT2", "3.1.2"),
+  (ChannelLayout::N4Point0, "4POINT0", "4.0"),
+  (ChannelLayout::N4Point1, "4POINT1", "4.1"),
+  (ChannelLayout::Quad, "QUAD", "quad"),
+  (ChannelLayout::QuadSide, "2_2", "quad(side)"),
+  (ChannelLayout::N5Point0, "5POINT0", "5.0(side)"),
+  (ChannelLayout::N5Point0Back, "5POINT0_BACK", "5.0"),
+  (ChannelLayout::N5Point1, "5POINT1", "5.1(side)"),
+  (ChannelLayout::N5Point1Back, "5POINT1_BACK", "5.1"),
+  (
+    ChannelLayout::N5Point1Point2Back,
+    "5POINT1POINT2_BACK",
+    "5.1.2(back)",
+  ),
+  (
+    ChannelLayout::N5Point1Point4Back,
+    "5POINT1POINT4_BACK",
+    "5.1.4",
+  ),
+  (ChannelLayout::N6Point0, "6POINT0", "6.0"),
+  (ChannelLayout::N6Point0Front, "6POINT0_FRONT", "6.0(front)"),
+  (ChannelLayout::N6Point1, "6POINT1", "6.1"),
+  (ChannelLayout::N6Point1Back, "6POINT1_BACK", "6.1(back)"),
+  (ChannelLayout::N6Point1Front, "6POINT1_FRONT", "6.1(front)"),
+  (ChannelLayout::N7Point0, "7POINT0", "7.0"),
+  (ChannelLayout::N7Point0Front, "7POINT0_FRONT", "7.0(front)"),
+  (ChannelLayout::N7Point1, "7POINT1", "7.1"),
+  (
+    ChannelLayout::N7Point1Wide,
+    "7POINT1_WIDE",
+    "7.1(wide-side)",
+  ),
+  (
+    ChannelLayout::N7Point1WideBack,
+    "7POINT1_WIDE_BACK",
+    "7.1(wide)",
+  ),
+  (ChannelLayout::N7Point1Point2, "7POINT1POINT2", "7.1.2"),
+  (
+    ChannelLayout::N7Point1Point4Back,
+    "7POINT1POINT4_BACK",
+    "7.1.4",
+  ),
+  (ChannelLayout::N7Point2Point3, "7POINT2POINT3", "7.2.3"),
+  (
+    ChannelLayout::N9Point1Point4Back,
+    "9POINT1POINT4_BACK",
+    "9.1.4",
+  ),
+  (ChannelLayout::N22Point2, "22POINT2", "22.2"),
+  (ChannelLayout::Hexagonal, "HEXAGONAL", "hexagonal"),
+  (ChannelLayout::Octagonal, "OCTAGONAL", "octagonal"),
+  (
+    ChannelLayout::Hexadecagonal,
+    "HEXADECAGONAL",
+    "hexadecagonal",
+  ),
+  (ChannelLayout::Cube, "CUBE", "cube"),
+];
+
+/// The ambisonic groupings, which have no `channel_layout_map[]` entry
+/// to transcribe: FFmpeg models ambisonics as a channel *order*
+/// (`AV_CHANNEL_ORDER_AMBISONIC`), so these slugs are this crate's own.
+const AMBISONIC: &[(ChannelLayout, &str)] = &[
+  (ChannelLayout::Ambisonic1, "ambisonic1"),
+  (ChannelLayout::Ambisonic2, "ambisonic2"),
+  (ChannelLayout::Ambisonic3, "ambisonic3"),
+];
+
 #[test]
 fn channel_layout_slugs_match_ffmpegs_map() {
-  // (variant, `AV_CH_LAYOUT_` suffix it is named after, FFmpeg's name)
-  const MAP: &[(ChannelLayout, &str, &str)] = &[
-    (ChannelLayout::Mono, "MONO", "mono"),
-    (ChannelLayout::Stereo, "STEREO", "stereo"),
-    (ChannelLayout::N2Point1, "2POINT1", "2.1"),
-    (ChannelLayout::N3Point0, "SURROUND", "3.0"),
-    (ChannelLayout::N3Point0Back, "2_1", "3.0(back)"),
-    (ChannelLayout::N3Point1, "3POINT1", "3.1"),
-    (ChannelLayout::Quad, "QUAD", "quad"),
-    (ChannelLayout::N5Point0, "5POINT0", "5.0(side)"),
-    (ChannelLayout::N5Point0Back, "5POINT0_BACK", "5.0"),
-    (ChannelLayout::N5Point1, "5POINT1", "5.1(side)"),
-    (ChannelLayout::N5Point1Back, "5POINT1_BACK", "5.1"),
-    (ChannelLayout::N6Point0, "6POINT0", "6.0"),
-    (ChannelLayout::N6Point1, "6POINT1", "6.1"),
-    (ChannelLayout::N7Point0, "7POINT0", "7.0"),
-    (ChannelLayout::N7Point1, "7POINT1", "7.1"),
-    (ChannelLayout::Hexagonal, "HEXAGONAL", "hexagonal"),
-    (ChannelLayout::Octagonal, "OCTAGONAL", "octagonal"),
-  ];
   for (layout, constant, ffmpeg_name) in MAP {
     assert_eq!(
       layout.as_str(),
@@ -77,6 +113,40 @@ fn channel_layout_slugs_match_ffmpegs_map() {
       ffmpeg_name.parse::<ChannelLayout>().unwrap(),
       *layout,
       "FFmpeg's {ffmpeg_name:?} must read back as the AV_CH_LAYOUT_{constant} variant"
+    );
+  }
+}
+
+#[test]
+fn ambisonic_slugs_round_trip() {
+  for (layout, slug) in AMBISONIC {
+    assert_eq!(layout.as_str(), *slug);
+    assert_eq!(slug.parse::<ChannelLayout>().unwrap(), *layout);
+  }
+}
+
+/// A variant cannot join the roster without a transcribed map row (or a
+/// place among the ambisonics). Without this, a new layout could be
+/// added with an invented slug and every other test here would still
+/// pass — the roster witness only proves the variant is *listed*, not
+/// that anyone checked what FFmpeg calls it.
+#[test]
+fn every_rostered_variant_has_a_transcribed_source() {
+  assert_eq!(
+    MAP.len() + AMBISONIC.len(),
+    ChannelLayout::ROSTER.len(),
+    "roster has {} entries but only {} are accounted for by the FFmpeg map \
+     ({}) plus the ambisonics ({})",
+    ChannelLayout::ROSTER.len(),
+    MAP.len() + AMBISONIC.len(),
+    MAP.len(),
+    AMBISONIC.len()
+  );
+  for layout in ChannelLayout::ROSTER {
+    assert!(
+      MAP.iter().any(|(mapped, ..)| mapped == layout)
+        || AMBISONIC.iter().any(|(mapped, _)| mapped == layout),
+      "{layout} is rostered but appears in neither table"
     );
   }
 }
@@ -95,12 +165,66 @@ fn the_unqualified_five_point_slugs_are_the_back_layouts() {
   assert_eq!(ChannelLayout::N5Point1.as_str(), "5.1(side)");
 }
 
+/// The 7.1-wide pair crosses exactly like the 5.x pairs — the
+/// unqualified `"7.1(wide)"` is `AV_CH_LAYOUT_7POINT1_WIDE_BACK`, and
+/// `AV_CH_LAYOUT_7POINT1_WIDE` is the qualified `"7.1(wide-side)"`.
+/// `mediadecode` 0.5.0 had this pair the other way round.
+#[test]
+fn the_unqualified_wide_slug_is_the_back_layout() {
+  assert_eq!("7.1(wide)".parse(), Ok(ChannelLayout::N7Point1WideBack));
+  assert_eq!("7.1(wide-side)".parse(), Ok(ChannelLayout::N7Point1Wide));
+  assert_eq!(ChannelLayout::N7Point1WideBack.as_str(), "7.1(wide)");
+  assert_eq!(ChannelLayout::N7Point1Wide.as_str(), "7.1(wide-side)");
+}
+
+/// Two ways the `(back)` qualifier does *not* behave like the 5.x one,
+/// both of which would be silently "fixed" wrong by anyone
+/// generalising from that family.
+#[test]
+fn the_back_qualifier_is_not_a_rule() {
+  // 5.1.2 runs the opposite way: the qualified slug is the back layout,
+  // and the unqualified one is the side layout this vocabulary does not
+  // name.
+  assert_eq!("5.1.2(back)".parse(), Ok(ChannelLayout::N5Point1Point2Back));
+  assert_eq!(ChannelLayout::N5Point1Point2Back.as_str(), "5.1.2(back)");
+  assert!("5.1.2".parse::<ChannelLayout>().unwrap().is_other());
+
+  // The `_BACK` in these three constants marks a top-back height pair,
+  // not surround placement, so no qualifier reaches the slug.
+  assert_eq!(ChannelLayout::N5Point1Point4Back.as_str(), "5.1.4");
+  assert_eq!(ChannelLayout::N7Point1Point4Back.as_str(), "7.1.4");
+  assert_eq!(ChannelLayout::N9Point1Point4Back.as_str(), "9.1.4");
+  for slug in ["5.1.4(back)", "7.1.4(back)", "9.1.4(back)"] {
+    assert!(
+      slug.parse::<ChannelLayout>().unwrap().is_other(),
+      "{slug} is not a name FFmpeg gives anything"
+    );
+  }
+}
+
+/// `AV_CH_LAYOUT_7POINT1_TOP_BACK` is a deprecated **alias** of
+/// `5POINT1POINT2_BACK`, not a layout of its own — one mask, and
+/// therefore one variant. `mediadecode` 0.5.0 spends two variants on it,
+/// which makes its `Ch7_1TopBack` unreachable from its own FFmpeg
+/// adapter.
+#[test]
+fn the_top_back_alias_is_not_a_second_layout() {
+  assert!("7.1(top-back)".parse::<ChannelLayout>().unwrap().is_other());
+  assert_eq!(
+    ChannelLayout::ROSTER
+      .iter()
+      .filter(|layout| layout.as_str() == "5.1.2(back)")
+      .count(),
+    1
+  );
+}
+
 #[test]
 fn unknown_layout_lands_in_other() {
-  let v: ChannelLayout = "22.2".parse().unwrap();
+  let v: ChannelLayout = "binaural".parse().unwrap();
   assert!(v.is_other());
-  assert_eq!(v.as_str(), "22.2");
-  assert_eq!(v.to_string(), "22.2");
+  assert_eq!(v.as_str(), "binaural");
+  assert_eq!(v.to_string(), "binaural");
 }
 
 #[test]
@@ -118,6 +242,7 @@ fn is_variant_predicates() {
   assert!(ChannelLayout::Mono.is_mono());
   assert!(ChannelLayout::Stereo.is_stereo());
   assert!(ChannelLayout::N5Point1.is_n_5_point_1());
+  assert!(ChannelLayout::QuadSide.is_quad_side());
   assert!(ChannelLayout::Other(SmolStr::new("x")).is_other());
 }
 
@@ -152,8 +277,8 @@ fn channellayout_slugs_are_lowercase_canonical_and_fold() {
 }
 #[test]
 fn channel_layout_unwrap_other_borrowed_view() {
-  let v = ChannelLayout::other("22.2");
-  assert_eq!(v.unwrap_other_ref().as_str(), "22.2");
+  let v = ChannelLayout::other("9.1.6");
+  assert_eq!(v.unwrap_other_ref().as_str(), "9.1.6");
   assert!(v.try_unwrap_other_ref().is_ok());
   assert!(ChannelLayout::Stereo.try_unwrap_other_ref().is_err());
 }

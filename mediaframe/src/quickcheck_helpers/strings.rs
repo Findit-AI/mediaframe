@@ -48,11 +48,12 @@ qc_open_string_enum!(
   ["embedded", "sidecar", "external", "derived"]
 );
 
-// Both spellings of the 5.x pair are seeded on purpose. FFmpeg gives the
-// unqualified `"5.0"` / `"5.1"` to the **back**-speaker layouts and
-// qualifies the side ones, so seeding only the short pair reaches
-// `N5Point0Back` / `N5Point1Back` and leaves `N5Point0` / `N5Point1`
-// unreachable — exactly the half whose slug moved in 0.4.0.
+// Both spellings of the crossed pairs are seeded on purpose. FFmpeg
+// gives the unqualified `"5.0"` / `"5.1"` / `"7.1(wide)"` to the
+// **back**-speaker layouts and qualifies the side ones, so seeding only
+// the short spelling reaches `N5Point0Back` / `N5Point1Back` /
+// `N7Point1WideBack` and leaves their side twins unreachable — exactly
+// the half whose slug moved in 0.4.0.
 qc_open_string_enum!(
   channel_layout,
   crate::audio::ChannelLayout,
@@ -64,7 +65,9 @@ qc_open_string_enum!(
     "7.1",
     "quad",
     "5.0",
-    "5.0(side)"
+    "5.0(side)",
+    "7.1(wide)",
+    "7.1(wide-side)"
   ]
 );
 

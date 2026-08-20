@@ -871,10 +871,20 @@ fn channel_layout_round_trip_named_and_other() {
     ChannelLayout::decode_from_slice(&v.encode_to_vec()).unwrap(),
     v
   );
-  let v = ChannelLayout::Other(SmolStr::new("22.2"));
+  // A slug outside the roster. `"22.2"` stood here until 0.6.0 named
+  // it: the wire form is the slug, so an escape carrying a slug the
+  // reader now recognises comes back as the *named* variant, not as the
+  // `Other` it was encoded from. Lossless on the wire, a different value
+  // in memory.
+  let v = ChannelLayout::Other(SmolStr::new("binaural"));
   assert_eq!(
     ChannelLayout::decode_from_slice(&v.encode_to_vec()).unwrap(),
     v
+  );
+  assert_eq!(
+    ChannelLayout::decode_from_slice(&ChannelLayout::Other(SmolStr::new("22.2")).encode_to_vec())
+      .unwrap(),
+    ChannelLayout::N22Point2
   );
   // Default (Other("")) elides to empty bytes.
   assert!(ChannelLayout::default().encode_to_vec().is_empty());

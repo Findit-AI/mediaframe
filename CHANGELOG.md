@@ -6,6 +6,64 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`audio::ChannelLayout` names twenty more layouts**, growing the roster
+  from 20 to 40 so there is one channel-layout vocabulary for this
+  ecosystem instead of two that disagree. `mediadecode`'s
+  `ChannelLayoutKind` named a different set of 38 and read `"5.0"` /
+  `"5.1"` as the *side* layouts, where this crate reads them as FFmpeg
+  does — the back ones. The union settles that in favour of FFmpeg.
+
+  The new layouts, spelled as FFmpeg's `channel_layout_map[]` spells
+  them:
+
+  | slug | FFmpeg constant | slug | FFmpeg constant |
+  |---|---|---|---|
+  | `downmix` | `STEREO_DOWNMIX` | `7.0(front)` | `7POINT0_FRONT` |
+  | `quad(side)` | `2_2` | `7.1(wide)` | `7POINT1_WIDE_BACK` |
+  | `3.1.2` | `3POINT1POINT2` | `7.1(wide-side)` | `7POINT1_WIDE` |
+  | `4.0` | `4POINT0` | `7.1.2` | `7POINT1POINT2` |
+  | `4.1` | `4POINT1` | `7.1.4` | `7POINT1POINT4_BACK` |
+  | `5.1.2(back)` | `5POINT1POINT2_BACK` | `7.2.3` | `7POINT2POINT3` |
+  | `5.1.4` | `5POINT1POINT4_BACK` | `9.1.4` | `9POINT1POINT4_BACK` |
+  | `6.0(front)` | `6POINT0_FRONT` | `22.2` | `22POINT2` |
+  | `6.1(back)` | `6POINT1_BACK` | `hexadecagonal` | `HEXADECAGONAL` |
+  | `6.1(front)` | `6POINT1_FRONT` | `cube` | `CUBE` |
+
+  Slugs are FFmpeg's, not `mediadecode`'s. Taking `mediadecode`'s would
+  have imported its ambiguity along with its coverage: it spells the
+  side 5.1 `"5.1"` and the back one `"5.1-back"`, inverting FFmpeg, and
+  it crosses the 7.1-wide pair the same way. Every slug here is what
+  `av_channel_layout_describe` prints for that constant in libavutil
+  9.0.1, and the full 37-row map is transcribed into the tests.
+
+  Three things make these arms look wrong and are not:
+
+  * The unqualified name belongs to the **back** layout for 5.0, 5.1 and
+    7.1(wide) — but to the **side** layout for 5.1.2, where the back one
+    is qualified `"5.1.2(back)"`.
+  * `_BACK` in `5POINT1POINT4_BACK`, `7POINT1POINT4_BACK` and
+    `9POINT1POINT4_BACK` marks a top-back *height* pair, not surround
+    placement, and never reaches the slug: they are `"5.1.4"`, `"7.1.4"`
+    and `"9.1.4"`.
+  * `2_1` and `2_2` are named `"3.0(back)"` and `"quad(side)"`, and
+    their idents follow the slug rather than the constant — `2_1` as an
+    ident is the real `2POINT1`'s.
+
+  `AV_CH_LAYOUT_7POINT1_TOP_BACK` gets no variant: it is a deprecated
+  alias of `5POINT1POINT2_BACK`, one mask under two names.
+
+  **Growing the roster shrinks the escape.** A value held as
+  `Other("22.2")` now reads back as the named variant. The wire form is
+  the slug, so nothing serialized changes and nothing on disk needs
+  migrating — but the two values are not `Eq`, so code matching
+  `Other(s) if s == "22.2"` (or any of the other nineteen new slugs)
+  stops matching.
+
+  `"binaural"`, `"9.1.6"` and the unqualified `"5.1.2"` are the three
+  FFmpeg n9.0 layouts still unnamed here; they continue to ride `Other`.
+
 ## [0.5.0] - 2026-08-20
 
 A vocabulary window: two closed enums stop pretending they might grow, one
