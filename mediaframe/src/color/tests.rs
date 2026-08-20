@@ -817,4 +817,9 @@ fn unnamed_slugs_parse_totally_at_this_tier() {
   assert_eq!(v, DynamicRange::other("not-a-dynamic-range"));
   let Ok(v) = "not-a-chroma-siting".parse::<ChromaLocation>();
   assert_eq!(v, ChromaLocation::other("not-a-chroma-siting"));
+  // `DcpTargetGamut` is the tenth vocabulary of this shape. It is outside
+  // the enum-mirror roster, but its parse is total on exactly the same
+  // terms, so it carries the same proof.
+  let Ok(v) = "not-a-target-gamut".parse::<DcpTargetGamut>();
+  assert_eq!(v, DcpTargetGamut::other("not-a-target-gamut"));
 }
