@@ -70,13 +70,8 @@ pub enum Format {
   /// DVD bitmap subtitles — SPU streams from a DVD-Video VOB
   /// (FFmpeg slug `"dvd_subtitle"`). Image-based.
   DvdSub,
-  /// Blu-Ray / HDMV PGS bitmap subtitles
-  /// (FFmpeg slug `"hdmv_pgs_subtitle"`). Image-based. Alias for
-  /// [`Self::HdmvPgs`].
-  PgsSub,
-  /// Blu-Ray / HDMV PGS bitmap subtitles — same wire format as
-  /// [`Self::PgsSub`] under the FFmpeg-canonical demuxer name
-  /// (`"hdmv_pgs_subtitle"`). Image-based.
+  /// Blu-Ray / HDMV PGS bitmap subtitles, under the FFmpeg-canonical
+  /// demuxer name (`"hdmv_pgs_subtitle"`). Image-based.
   HdmvPgs,
   /// DVB bitmap subtitles — broadcast-TV image subtitles
   /// (FFmpeg slug `"dvb_subtitle"`). Image-based.
@@ -125,7 +120,6 @@ impl Format {
       Self::Ttml => "ttml",
       Self::MovText => "mov_text",
       Self::DvdSub => "dvd_subtitle",
-      Self::PgsSub => "hdmv_pgs_subtitle",
       Self::HdmvPgs => "hdmv_pgs_subtitle",
       Self::DvbSub => "dvb_subtitle",
       Self::XSub => "xsub",
@@ -147,7 +141,7 @@ impl Format {
   /// [`Self::DvbSub`] in MPEG-TS broadcast; [`Self::XSub`] in
   /// DivX), come as multi-file pairs ([`Self::DvdSub`] writes
   /// paired `.idx` and `.sub` files), or are demuxed straight from
-  /// disc images ([`Self::PgsSub`] / [`Self::HdmvPgs`] become
+  /// disc images ([`Self::HdmvPgs`] becomes
   /// `.sup` only after extraction). Callers that have already
   /// extracted these to disk and know the conventional extension
   /// should hardcode it on their side; this method returns the
@@ -174,7 +168,6 @@ impl Format {
       Self::Ttml => "ttml",
       Self::MovText => "",
       Self::DvdSub => "",
-      Self::PgsSub => "",
       Self::HdmvPgs => "",
       Self::DvbSub => "",
       Self::XSub => "",
@@ -190,7 +183,7 @@ impl Format {
   /// to extract searchable text.
   ///
   /// - `Some(true)`: known image-based format ([`Self::DvdSub`],
-  ///   [`Self::PgsSub`], [`Self::HdmvPgs`], [`Self::DvbSub`],
+  ///   [`Self::HdmvPgs`], [`Self::DvbSub`],
   ///   [`Self::XSub`]).
   /// - `Some(false)`: known text-based format (everything else
   ///   enumerated here).
@@ -198,7 +191,7 @@ impl Format {
   ///   enumerated set, so this method cannot classify it.
   pub const fn is_image_based(&self) -> Option<bool> {
     match self {
-      Self::DvdSub | Self::PgsSub | Self::HdmvPgs | Self::DvbSub | Self::XSub => Some(true),
+      Self::DvdSub | Self::HdmvPgs | Self::DvbSub | Self::XSub => Some(true),
       Self::Srt
       | Self::WebVtt
       | Self::Ass
@@ -231,7 +224,7 @@ roster!(
   "subtitle format",
   [
     Srt, WebVtt, Ass, Ssa, Sub, Mpl2, Lrc, Smi, Stl, Sbv, Ttml, MovText,
-    DvdSub, PgsSub, HdmvPgs, DvbSub, XSub
+    DvdSub, HdmvPgs, DvbSub, XSub
   ],
   escape: Other
 );
@@ -260,7 +253,7 @@ impl FromStr for Format {
       b"ttml" => Self::Ttml,
       b"mov_text" => Self::MovText,
       b"dvd_subtitle" => Self::DvdSub,
-      b"hdmv_pgs_subtitle" => Self::PgsSub,
+      b"hdmv_pgs_subtitle" => Self::HdmvPgs,
       b"dvb_subtitle" => Self::DvbSub,
       b"xsub" => Self::XSub,
       _ => Self::other(s),
