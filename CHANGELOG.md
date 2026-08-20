@@ -14,8 +14,9 @@ cannot return.
 **Breaking**, on three counts.
 
 1. **`FromStr::Err` is now `Infallible` at the `alloc` / `std` tier** for
-   `color::Matrix`, `color::Primaries`, `color::Transfer`,
-   `color::DynamicRange`, `color::ChromaLocation`,
+   the ten vocabularies compiled at every tier: `color::Matrix`,
+   `color::Primaries`, `color::Transfer`, `color::DynamicRange`,
+   `color::ChromaLocation`, `color::DcpTargetGamut`,
    `pixel_format::PixelFormat`, `frame::Rotation`, `frame::FieldOrder` and
    `frame::StereoMode`. Behaviour does not change at any tier — these
    parses have always been total wherever `Other` exists, and their docs
@@ -33,9 +34,15 @@ cannot return.
    stabilises).
 
 2. **`subtitle::TrackOrigin` gained an `Other(SmolStr)` escape**, which
-   moves it onto the crate-wide open-vocabulary shape and changes three
+   moves it onto the crate-wide open-vocabulary shape and changes four
    surfaces: it is no longer `Copy`, `as_str` is no longer
-   `const fn -> &'static str`, and `to_u32` returns `Option<u32>`.
+   `const fn -> &'static str`, `to_u32` returns `Option<u32>`, and
+   `FromStr::Err` is `Infallible` — **unconditionally**, with no `cfg`
+   fork, because the `subtitle` module is compiled only at the `alloc`
+   tier and so has no build in which the vocabulary closes.
+   `ParseTrackOriginError` is kept and exported on the same policy as the
+   ten above, and its doc states the one way it differs: their lean build
+   still returns theirs, nothing returns this one today.
 
    **Both of its wire forms change**, so persisted 0.4.x values do not
    read back: `serde` moves from an integer code to the canonical slug
@@ -101,11 +108,17 @@ cannot return.
   of now keeps its *name* rather than losing it to a nearby variant.
   `#[non_exhaustive]` is retained, so promoting a slug that rides `Other`
   today into a named variant tomorrow stays minor.
-- **The nine all-tier vocabularies tell the truth about their parse.** See
+- **The ten all-tier vocabularies tell the truth about their parse.** See
   breaking note 1. The `cfg` predicate on the split is the same one that
   gates each type's `Other` arm, so the error type and the escape cannot
   drift apart, and each type carries an irrefutable-`let` proof that stops
   compiling if the error is narrowed back.
+
+  With the set closed, the `buffa` string-enum codec stops guessing: its
+  shared decoder replaced `from_str(..).unwrap_or_else(|_| unreachable!())`
+  — unreachable only by argument — with an irrefutable binding, so all
+  fourteen vocabularies it serves are now *proved* to parse totally at that
+  tier, and adding one that cannot is a compile error.
 - **`subtitle::Format::PgsSub` merged into `HdmvPgs`.** See breaking note
   3. One format wore two variant names rendering the same slug, so
   `FromStr` could return only one of them and `Display` was not invertible
