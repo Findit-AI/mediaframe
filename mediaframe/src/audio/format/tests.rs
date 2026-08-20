@@ -191,3 +191,18 @@ fn sample_format_unwrap_other_borrowed_view() {
   assert!(v.try_unwrap_other_ref().is_ok());
   assert!(SampleFormat::S16.try_unwrap_other_ref().is_err());
 }
+
+/// The runtime half of the `ROSTER` contract for `SampleFormat` / `ContainerFormat` — no duplicate
+/// entry, no two entries sharing a slug, and `as_str` → `FromStr` the
+/// identity on every named variant. Completeness is the compile-time
+/// half: the witness beside each declaration is `E0004` the moment a
+/// variant is added without being rostered.
+#[test]
+fn rosters_are_well_formed() {
+  crate::roster_tests::check(SampleFormat::ROSTER, "SampleFormat", SampleFormat::as_str);
+  crate::roster_tests::check(
+    ContainerFormat::ROSTER,
+    "ContainerFormat",
+    ContainerFormat::as_str,
+  );
+}

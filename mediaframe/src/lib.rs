@@ -101,6 +101,74 @@ macro_rules! row_test_door_doc {
   };
 }
 
+/// Declares a vocabulary's `ROSTER` **and** the compile-time witness that
+/// keeps it complete, from one list of variant names.
+///
+/// The list is written once. From it the macro emits:
+///
+/// 1. `pub const ROSTER: &'static [Self]` — the named variants in
+///    declaration order, as a **slice** so the count stays out of the
+///    type and growing the vocabulary remains a minor change; and
+/// 2. an exhaustive `match` beside the type. `#[non_exhaustive]` does not
+///    bind the defining crate, so that `match` really is exhaustive here:
+///    a new variant makes it `E0004` and the compiler names the variant
+///    that was added. Updating this one list fixes both artefacts at
+///    once, which is why they are not two lists that can drift.
+///
+/// The escape arm is spelled at the call site rather than assumed,
+/// because the two families gate it differently: vocabularies living in
+/// `alloc`-only modules carry `Other` unconditionally (`escape:`), while
+/// those compiled at every tier carry it behind
+/// `any(feature = "std", feature = "alloc")` (`alloc_escape:`). The
+/// escape is deliberately **not** a roster member — the roster is the set
+/// of names this build knows, and the escape is the arm holding a name it
+/// does not.
+///
+/// Declared here, ahead of the vocabulary modules, because
+/// `macro_rules!` is textually scoped.
+macro_rules! roster {
+  ($ty:ident, $noun:literal, [$($variant:ident),+ $(,)?] $(,)?) => {
+    roster!(@emit $ty, $noun, [$($variant),+], {});
+  };
+  ($ty:ident, $noun:literal, [$($variant:ident),+ $(,)?], escape: $escape:ident $(,)?) => {
+    roster!(@emit $ty, $noun, [$($variant),+], { $ty::$escape(_) => (), });
+  };
+  ($ty:ident, $noun:literal, [$($variant:ident),+ $(,)?], alloc_escape: $escape:ident $(,)?) => {
+    roster!(@emit $ty, $noun, [$($variant),+], {
+      #[cfg(any(feature = "std", feature = "alloc"))]
+      $ty::$escape(_) => (),
+    });
+  };
+  (@emit $ty:ident, $noun:literal, [$($variant:ident),+], { $($escape_arm:tt)* }) => {
+    impl $ty {
+      #[doc = concat!(" Every ", $noun, " this vocabulary names, in declaration order.")]
+      ///
+      /// A slice rather than an array: how many names this build carries
+      /// is a fact about the release, not part of the type, so a later
+      /// addition stays a minor change.
+      ///
+      /// The open escape arm is not a member. The roster answers "which
+      /// names does this build know", and the escape is precisely the arm
+      /// that carries a name it does not — listing it would need a slug
+      /// to put in it, and there isn't one.
+      pub const ROSTER: &'static [Self] = &[$(Self::$variant),+];
+    }
+
+    // The witness that `ROSTER` above is complete: adding a variant makes
+    // this `match` non-exhaustive, and the compiler names the variant
+    // that is missing from the roster.
+    const _: () = {
+      #[allow(dead_code)]
+      fn every_variant_is_rostered(v: &$ty) {
+        match v {
+          $($ty::$variant => (),)+
+          $($escape_arm)*
+        }
+      }
+    };
+  };
+}
+
 /// Hand-written [`arbitrary::Arbitrary`] impls for the descriptor vocabulary
 /// (codecs, container/subtitle/audio formats, capture, language, colour, pixel
 /// format, frame geometry/orientation, disposition). All generation goes through
@@ -157,6 +225,11 @@ pub mod frame;
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod lang;
+/// The shared runtime checks for the `ROSTER` constants the `roster!`
+/// macro emits — duplicate entries and slug collisions, the two faults a
+/// compile-time completeness witness cannot see.
+#[cfg(test)]
+mod roster_tests;
 // The ASCII case-folding gate shared by every `FromStr` in the crate.
 // Private: the errors those parses return live with their vocabularies,
 // one per type.

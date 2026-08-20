@@ -657,6 +657,46 @@ fn subtitle_image_based_is_unknown_for_other() {
   assert!(c.is_other());
   assert_eq!(c.is_image_based(), None);
 }
+/// Each `ROSTER` is exactly the vendored name list for its media
+/// type: same length, same order, no repeats, and every entry
+/// round-trips through its own slug. The completeness half is the
+/// `match` witness beside each declaration — a codec added by a
+/// regeneration cannot reach the roster without passing `E0004`
+/// first, and cannot reach the *right place* in it without matching
+/// the vendored order asserted here.
+#[test]
+fn rosters_match_the_vendored_tables() {
+  fn check<T>(roster: &'static [T], media: &'static str, expected_len: usize)
+  where
+    T: ::core::str::FromStr + ::core::fmt::Debug + ::core::fmt::Display + PartialEq,
+    T::Err: ::core::fmt::Debug,
+  {
+    assert_eq!(roster.len(), expected_len, "{media} roster length");
+    for (entry, name) in roster.iter().zip(vendored_of(media)) {
+      assert_eq!(
+        entry.to_string(),
+        name,
+        "{media} roster is out of declaration order at `{name}`"
+      );
+      assert_eq!(
+        &name.parse::<T>().unwrap(),
+        entry,
+        "{media} roster entry `{name}` does not round-trip"
+      );
+    }
+  }
+  check::<VideoCodec>(VideoCodec::ROSTER, "video", 279usize);
+  check::<AudioCodec>(AudioCodec::ROSTER, "audio", 222usize);
+  check::<SubtitleCodec>(SubtitleCodec::ROSTER, "subtitle", 27usize);
+}
+/// No roster carries the open escape — it holds names this build
+/// knows, and `Other` is the arm for one it does not.
+#[test]
+fn rosters_exclude_the_escape() {
+  assert!(VideoCodec::ROSTER.iter().all(|c| !c.is_other()));
+  assert!(AudioCodec::ROSTER.iter().all(|c| !c.is_other()));
+  assert!(SubtitleCodec::ROSTER.iter().all(|c| !c.is_other()));
+}
 #[test]
 fn display_matches_as_str() {
   assert_eq!(VideoCodec::H264.to_string(), "h264");
