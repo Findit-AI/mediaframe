@@ -2238,12 +2238,11 @@ mod subtitle_impls {
             });
           }
           let s = decode_string(buf)?;
-          // `FromStr for TrackOrigin` names a refusal type but cannot
-          // reach it at this (alloc-gated) tier — every miss rides
-          // `Other`. Route the unreachable arm through the escape
-          // rather than a silent default, so the name survives even if
-          // that tier assumption ever changes.
-          *self = TrackOrigin::from_str(&s).unwrap_or_else(|_| TrackOrigin::other(&s));
+          // `FromStr for TrackOrigin` is `Infallible` (total — every
+          // string decodes either to a named variant or to `Other(_)`),
+          // so there is no failure branch to write.
+          let Ok(parsed) = TrackOrigin::from_str(&s);
+          *self = parsed;
         }
         _ => skip_field_depth(tag, buf, ctx.depth())?,
       }

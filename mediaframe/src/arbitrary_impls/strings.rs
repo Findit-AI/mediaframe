@@ -39,10 +39,6 @@ super::arb_open_string_enum!(
   ["srt", "webvtt", "ass", "ssa", "mov_text", "ttml"]
 );
 
-// `TrackOrigin`'s `FromStr::Err` is `ParseTrackOriginError`, not
-// `Infallible` — but this module is alloc-gated, and at that tier the
-// parse is total (every miss rides `Other`), so the macro's `unwrap` is
-// unreachable. See the note on `ParseTrackOriginError`.
 super::arb_open_string_enum!(
   crate::subtitle::TrackOrigin,
   ["embedded", "sidecar", "external", "derived"]
