@@ -105,8 +105,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Other(s) if s == "22.2"` (or any of the other nineteen new slugs)
   stops matching.
 
-  `"binaural"`, `"9.1.6"` and the unqualified `"5.1.2"` are the three
-  FFmpeg n9.0 layouts still unnamed here; they continue to ride `Other`.
+- **`audio::ChannelLayout` names the last three**, closing the roster at
+  40 named layouts plus `Ambisonic1`/`2`/`3` — **43** entries in
+  `ROSTER`.
+
+  | slug | FFmpeg constant | layout |
+  |---|---|---|
+  | `5.1.2` | `5POINT1POINT2` | FL+FR+FC+LFE+SL+SR+TFL+TFR |
+  | `9.1.6` | `9POINT1POINT6` | 9.1.4 plus the top *side* pair (16ch) |
+  | `binaural` | `BINAURAL` | BIL+BIR |
+
+  These three were in neither this crate's roster nor `mediadecode`'s, so
+  the union alone left them out — and a vocabulary carrying
+  `"5.1.2(back)"` but not `"5.1.2"`, or `"9.1.4"` but not `"9.1.6"`,
+  reads as an accident rather than as a decision.
+
+  **`Binaural` is not a stereo pair.** Binaural audio is rendered for
+  headphones with the head-related transfer function already applied, so
+  each channel is what one *ear* receives rather than what one *speaker*
+  emits; playing it over loudspeakers, or folding it down to `Mono`,
+  destroys the spatial cue it exists to carry. FFmpeg gives it channel
+  ids of its own (`BIL`/`BIR`) instead of reusing `FL`/`FR`, and this
+  vocabulary keeps that distinction rather than treating it as another
+  two-channel layout.
+
+  With these, **every entry in FFmpeg n9.0's `channel_layout_map[]` is
+  named** — all forty, pinned by `the_map_is_transcribed_in_full`, which
+  turns "the whole map is transcribed" from a comment into a checked
+  claim and makes a future FFmpeg's new layout arrive as a red test
+  rather than as silence. `Other` now carries only what the map cannot
+  name at all: custom channel orderings, ambisonic groupings beyond
+  third order, and whatever a later release adds.
+
+  The escape-shrinking note above applies to these three as well —
+  `Other("binaural")`, `Other("9.1.6")` and `Other("5.1.2")` now read
+  back as named variants.
 
 ## [0.5.0] - 2026-08-20
 

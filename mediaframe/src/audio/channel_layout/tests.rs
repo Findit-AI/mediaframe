@@ -22,11 +22,15 @@ use ::std::string::ToString;
 /// promised side speakers. Nothing but a transcribed table catches that,
 /// so here is the whole table; `ambisonic*` are excluded because FFmpeg
 /// models ambisonics as a channel *order*, not a map entry.
+///
+/// This is the map **in full** — see
+/// `the_map_is_transcribed_in_full`.
 const MAP: &[(ChannelLayout, &str, &str)] = &[
   // (variant, `AV_CH_LAYOUT_` suffix it is named after, FFmpeg's name)
   (ChannelLayout::Mono, "MONO", "mono"),
   (ChannelLayout::Stereo, "STEREO", "stereo"),
   (ChannelLayout::StereoDownmix, "STEREO_DOWNMIX", "downmix"),
+  (ChannelLayout::Binaural, "BINAURAL", "binaural"),
   (ChannelLayout::Ch2_1, "2POINT1", "2.1"),
   (ChannelLayout::Ch3_0, "SURROUND", "3.0"),
   (ChannelLayout::Ch3_0Back, "2_1", "3.0(back)"),
@@ -40,6 +44,7 @@ const MAP: &[(ChannelLayout, &str, &str)] = &[
   (ChannelLayout::Ch5_0Back, "5POINT0_BACK", "5.0"),
   (ChannelLayout::Ch5_1, "5POINT1", "5.1(side)"),
   (ChannelLayout::Ch5_1Back, "5POINT1_BACK", "5.1"),
+  (ChannelLayout::Ch5_1_2, "5POINT1POINT2", "5.1.2"),
   (
     ChannelLayout::Ch5_1_2Back,
     "5POINT1POINT2_BACK",
@@ -64,6 +69,7 @@ const MAP: &[(ChannelLayout, &str, &str)] = &[
   (ChannelLayout::Ch7_1_4Back, "7POINT1POINT4_BACK", "7.1.4"),
   (ChannelLayout::Ch7_2_3, "7POINT2POINT3", "7.2.3"),
   (ChannelLayout::Ch9_1_4Back, "9POINT1POINT4_BACK", "9.1.4"),
+  (ChannelLayout::Ch9_1_6, "9POINT1POINT6", "9.1.6"),
   (ChannelLayout::Ch22_2, "22POINT2", "22.2"),
   (ChannelLayout::Hexagonal, "HEXAGONAL", "hexagonal"),
   (ChannelLayout::Octagonal, "OCTAGONAL", "octagonal"),
@@ -135,6 +141,29 @@ fn every_rostered_variant_has_a_transcribed_source() {
   }
 }
 
+/// FFmpeg n9.0's `channel_layout_map[]` has exactly forty entries, and
+/// [`MAP`] transcribes all forty — so this vocabulary names every layout
+/// FFmpeg can put a name to, and `Other` carries only what the map has
+/// no entry for.
+///
+/// The count is the pin. `every_rostered_variant_has_a_transcribed_source`
+/// catches a variant added without a map row; this catches the reverse —
+/// a map row nobody noticed, which is how `"5.1.2"`, `"9.1.6"` and
+/// `"binaural"` sat in the escape for three releases. `ffmpeg -layouts`
+/// prints the map if it ever needs recounting against a newer FFmpeg;
+/// a bump that adds a layout lands here, deliberately, as a red test
+/// rather than as silence.
+#[test]
+fn the_map_is_transcribed_in_full() {
+  const FFMPEG_N9_MAP_ENTRIES: usize = 40;
+  assert_eq!(
+    MAP.len(),
+    FFMPEG_N9_MAP_ENTRIES,
+    "FFmpeg n9.0 names {FFMPEG_N9_MAP_ENTRIES} layouts; {} are transcribed",
+    MAP.len()
+  );
+}
+
 /// The four 5.x slugs were swapped in 0.4.0. Pin both readings so a
 /// well-meaning "fix" cannot quietly put them back.
 #[test]
@@ -166,12 +195,12 @@ fn the_unqualified_wide_slug_is_the_back_layout() {
 /// generalising from that family.
 #[test]
 fn the_back_qualifier_is_not_a_rule() {
-  // 5.1.2 runs the opposite way: the qualified slug is the back layout,
-  // and the unqualified one is the side layout this vocabulary does not
-  // name.
+  // 5.1.2 runs the opposite way to 5.1: here the *unqualified* slug is
+  // the side layout and the back one carries the qualifier.
+  assert_eq!("5.1.2".parse(), Ok(ChannelLayout::Ch5_1_2));
   assert_eq!("5.1.2(back)".parse(), Ok(ChannelLayout::Ch5_1_2Back));
+  assert_eq!(ChannelLayout::Ch5_1_2.as_str(), "5.1.2");
   assert_eq!(ChannelLayout::Ch5_1_2Back.as_str(), "5.1.2(back)");
-  assert!("5.1.2".parse::<ChannelLayout>().unwrap().is_other());
 
   // The `_BACK` in these three constants marks a top-back height pair,
   // not surround placement, so no qualifier reaches the slug.
@@ -203,12 +232,17 @@ fn the_top_back_alias_is_not_a_second_layout() {
   );
 }
 
+/// With the whole map named, the escape only ever carries something the
+/// map has no entry for. `av_channel_layout_describe` renders such a
+/// layout as its channel list, which is what this uses — a shape FFmpeg
+/// can never turn into a map name, unlike the layout slugs that kept
+/// getting promoted out of the escape as this vocabulary grew.
 #[test]
-fn unknown_layout_lands_in_other() {
-  let v: ChannelLayout = "binaural".parse().unwrap();
+fn a_layout_outside_the_map_lands_in_other() {
+  let v: ChannelLayout = "fl+fr+tfl".parse().unwrap();
   assert!(v.is_other());
-  assert_eq!(v.as_str(), "binaural");
-  assert_eq!(v.to_string(), "binaural");
+  assert_eq!(v.as_str(), "fl+fr+tfl");
+  assert_eq!(v.to_string(), "fl+fr+tfl");
 }
 
 #[test]
@@ -262,8 +296,8 @@ fn channellayout_slugs_are_lowercase_canonical_and_fold() {
 }
 #[test]
 fn channel_layout_unwrap_other_borrowed_view() {
-  let v = ChannelLayout::other("9.1.6");
-  assert_eq!(v.unwrap_other_ref().as_str(), "9.1.6");
+  let v = ChannelLayout::other("fl+fr+tfl");
+  assert_eq!(v.unwrap_other_ref().as_str(), "fl+fr+tfl");
   assert!(v.try_unwrap_other_ref().is_ok());
   assert!(ChannelLayout::Stereo.try_unwrap_other_ref().is_err());
 }

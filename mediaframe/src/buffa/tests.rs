@@ -875,8 +875,10 @@ fn channel_layout_round_trip_named_and_other() {
   // it: the wire form is the slug, so an escape carrying a slug the
   // reader now recognises comes back as the *named* variant, not as the
   // `Other` it was encoded from. Lossless on the wire, a different value
-  // in memory.
-  let v = ChannelLayout::Other(SmolStr::new("binaural"));
+  // in memory. This one is FFmpeg's rendering of a layout its map has no
+  // name for, so it cannot be promoted out of the escape by a later
+  // release the way `"22.2"` was.
+  let v = ChannelLayout::Other(SmolStr::new("fl+fr+tfl"));
   assert_eq!(
     ChannelLayout::decode_from_slice(&v.encode_to_vec()).unwrap(),
     v

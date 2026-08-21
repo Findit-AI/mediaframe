@@ -2,11 +2,13 @@
 //! an `Other(SmolStr)` lossless escape for anything outside the
 //! closed set.
 //!
-//! The named variants cover the `AV_CH_LAYOUT_*` shapes FFmpeg n9.0
-//! exposes, less three this vocabulary has never carried (`"5.1.2"`,
-//! `"9.1.6"`, `"binaural"`). Those three, custom orderings and ambisonic
-//! groupings beyond third order round-trip through
-//! [`ChannelLayout::Other`] carrying the FFmpeg-canonical slug verbatim.
+//! The named variants cover **every** entry in FFmpeg n9.0's
+//! `channel_layout_map[]` — all forty — plus the three ambisonic
+//! groupings FFmpeg models as a channel *order* rather than a map entry.
+//! What still rides [`ChannelLayout::Other`] is what the map does not
+//! name at all: custom channel orderings, ambisonic groupings beyond
+//! third order, and whatever a later FFmpeg adds. The escape carries the
+//! FFmpeg-canonical slug verbatim.
 //!
 //! Channel abbreviations in the variant docs are FFmpeg's own
 //! (`ffmpeg -layouts`): `FL`/`FR` front left/right, `FC` front centre,
@@ -60,8 +62,8 @@ use smol_str::SmolStr;
 ///
 /// Read from FFmpeg `AV_CH_LAYOUT_*` constants (`AVChannelLayout`'s
 /// canonical name) / WebCodecs `AudioData.channelLayout`. Layouts FFmpeg
-/// can describe but this enum doesn't enumerate (e.g. `"binaural"`,
-/// `"9.1.6"`, ambisonic groupings beyond `Ambisonic1`/`2`/`3`)
+/// can describe but this enum doesn't enumerate (a custom channel
+/// ordering, an ambisonic grouping beyond `Ambisonic1`/`2`/`3`)
 /// round-trip through [`Self::Other`] carrying the FFmpeg-canonical slug
 /// verbatim — never silently collapsed.
 ///
@@ -89,6 +91,16 @@ pub enum ChannelLayout {
   /// recording. FFmpeg names the constant after the source and the map
   /// entry after the result, hence the crossed spelling.
   StereoDownmix,
+  /// `"binaural"` — BIL+BIR (FFmpeg `AV_CH_LAYOUT_BINAURAL`).
+  ///
+  /// **Not a stereo pair.** Binaural audio is rendered for headphones
+  /// with the head-related transfer function already baked in, so each
+  /// channel is what one *ear* receives rather than what one *speaker*
+  /// emits. Playing it over loudspeakers, or downmixing it to
+  /// [`Self::Mono`], destroys the spatial cue it exists to carry —
+  /// which is why FFmpeg gives it channel ids of its own instead of
+  /// reusing FL/FR.
+  Binaural,
   /// `"2.1"` — FL+FR+LFE (FFmpeg `AV_CH_LAYOUT_2POINT1`).
   Ch2_1,
   /// `"3.0"` — FL+FR+FC (FFmpeg `AV_CH_LAYOUT_SURROUND`).
@@ -143,15 +155,19 @@ pub enum ChannelLayout {
   /// unqualified spelling belongs to the back-speaker layout, and the
   /// side-speaker one is [`Self::Ch5_1`], spelled `"5.1(side)"`.
   Ch5_1Back,
+  /// `"5.1.2"` — FL+FR+FC+LFE+SL+SR+TFL+TFR (FFmpeg
+  /// `AV_CH_LAYOUT_5POINT1POINT2`).
+  ///
+  /// The unqualified name is the **side** layout here — the opposite of
+  /// the 5.1 family, where it is the back one. See [`Self::Ch5_1_2Back`].
+  Ch5_1_2,
   /// `"5.1.2(back)"` — FL+FR+FC+LFE+BL+BR+TFL+TFR (FFmpeg
   /// `AV_CH_LAYOUT_5POINT1POINT2_BACK`).
   ///
   /// Here the qualifier runs the opposite way to the 5.1 family: the
-  /// unqualified `"5.1.2"` is the *side* layout
-  /// (`AV_CH_LAYOUT_5POINT1POINT2`), which this vocabulary does not
-  /// enumerate — it rides [`Self::Other`]. FFmpeg's
-  /// `AV_CH_LAYOUT_7POINT1_TOP_BACK` is a deprecated alias of this
-  /// same layout, not a separate one.
+  /// unqualified `"5.1.2"` is the *side* layout, [`Self::Ch5_1_2`].
+  /// FFmpeg's `AV_CH_LAYOUT_7POINT1_TOP_BACK` is a deprecated alias of
+  /// this same layout, not a separate one.
   Ch5_1_2Back,
   /// `"5.1.4"` — FL+FR+FC+LFE+SL+SR+TFL+TFR+TBL+TBR (FFmpeg
   /// `AV_CH_LAYOUT_5POINT1POINT4_BACK`).
@@ -220,6 +236,13 @@ pub enum ChannelLayout {
   /// `_BACK` marks the top-back height pair, not the surrounds — see
   /// [`Self::Ch5_1_4Back`].
   Ch9_1_4Back,
+  /// `"9.1.6"` — FL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFL+TFR+TBL+TBR+
+  /// TSL+TSR (FFmpeg `AV_CH_LAYOUT_9POINT1POINT6`).
+  ///
+  /// [`Self::Ch9_1_4Back`] plus the top *side* pair. This one is the
+  /// exception that proves the previous rule: its constant carries no
+  /// `_BACK`, because the height channels it adds are not back ones.
+  Ch9_1_6,
   /// `"22.2"` — the 24-channel NHK Super Hi-Vision arrangement:
   /// FL+FR+FC+LFE+BL+BR+FLC+FRC+BC+SL+SR+TC+TFL+TFC+TFR+TBL+TBC+TBR+
   /// LFE2+TSL+TSR+BFC+BFL+BFR (FFmpeg `AV_CH_LAYOUT_22POINT2`).
@@ -245,8 +268,11 @@ pub enum ChannelLayout {
   /// Third-order Ambisonic (16 channels): `"ambisonic3"`.
   Ambisonic3,
   /// A layout not enumerated above — carries the FFmpeg-canonical
-  /// name verbatim (e.g. `"binaural"`, `"9.1.6"`, a custom layout
-  /// description). Lossless escape.
+  /// name verbatim (a custom channel ordering, a higher-order ambisonic
+  /// grouping, a layout a later FFmpeg adds). Lossless escape.
+  ///
+  /// Every entry in FFmpeg n9.0's `channel_layout_map[]` is named above,
+  /// so nothing this release can classify lands here.
   Other(SmolStr),
 }
 
@@ -272,6 +298,7 @@ impl ChannelLayout {
       Self::Mono => "mono",
       Self::Stereo => "stereo",
       Self::StereoDownmix => "downmix",
+      Self::Binaural => "binaural",
       Self::Ch2_1 => "2.1",
       Self::Ch3_0 => "3.0",
       Self::Ch3_0Back => "3.0(back)",
@@ -290,7 +317,8 @@ impl ChannelLayout {
       Self::Ch5_1 => "5.1(side)",
       Self::Ch5_1Back => "5.1",
       // ...and here the qualifier runs the other way: the unqualified
-      // "5.1.2" is the SIDE layout, which this vocabulary does not name.
+      // "5.1.2" is the SIDE layout.
+      Self::Ch5_1_2 => "5.1.2",
       Self::Ch5_1_2Back => "5.1.2(back)",
       // `_BACK` in these three constants marks the top-back height pair,
       // not the surrounds, and FFmpeg minted no unsuffixed sibling — so
@@ -310,6 +338,7 @@ impl ChannelLayout {
       Self::Ch7_1_4Back => "7.1.4",
       Self::Ch7_2_3 => "7.2.3",
       Self::Ch9_1_4Back => "9.1.4",
+      Self::Ch9_1_6 => "9.1.6",
       Self::Ch22_2 => "22.2",
       Self::Hexagonal => "hexagonal",
       Self::Octagonal => "octagonal",
@@ -340,6 +369,7 @@ roster!(
     Mono,
     Stereo,
     StereoDownmix,
+    Binaural,
     Ch2_1,
     Ch3_0,
     Ch3_0Back,
@@ -353,6 +383,7 @@ roster!(
     Ch5_0Back,
     Ch5_1,
     Ch5_1Back,
+    Ch5_1_2,
     Ch5_1_2Back,
     Ch5_1_4Back,
     Ch6_0,
@@ -369,6 +400,7 @@ roster!(
     Ch7_1_4Back,
     Ch7_2_3,
     Ch9_1_4Back,
+    Ch9_1_6,
     Ch22_2,
     Hexagonal,
     Octagonal,
@@ -394,6 +426,7 @@ impl FromStr for ChannelLayout {
       b"mono" => Self::Mono,
       b"stereo" => Self::Stereo,
       b"downmix" => Self::StereoDownmix,
+      b"binaural" => Self::Binaural,
       b"2.1" => Self::Ch2_1,
       b"3.0" => Self::Ch3_0,
       b"3.0(back)" => Self::Ch3_0Back,
@@ -407,6 +440,7 @@ impl FromStr for ChannelLayout {
       b"5.0" => Self::Ch5_0Back,
       b"5.1(side)" => Self::Ch5_1,
       b"5.1" => Self::Ch5_1Back,
+      b"5.1.2" => Self::Ch5_1_2,
       b"5.1.2(back)" => Self::Ch5_1_2Back,
       b"5.1.4" => Self::Ch5_1_4Back,
       b"6.0" => Self::Ch6_0,
@@ -423,6 +457,7 @@ impl FromStr for ChannelLayout {
       b"7.1.4" => Self::Ch7_1_4Back,
       b"7.2.3" => Self::Ch7_2_3,
       b"9.1.4" => Self::Ch9_1_4Back,
+      b"9.1.6" => Self::Ch9_1_6,
       b"22.2" => Self::Ch22_2,
       b"hexagonal" => Self::Hexagonal,
       b"octagonal" => Self::Octagonal,
