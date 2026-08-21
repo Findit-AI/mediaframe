@@ -142,6 +142,73 @@ renamed.
   `Other("binaural")`, `Other("9.1.6")` and `Other("5.1.2")` now read
   back as named variants.
 
+- **The channel household moves in from `mediadecode`** — three new
+  types, one module each, describing *how* a layout is arranged where
+  `audio::ChannelLayout` names *which* layout it is.
+
+  | new | was, in `mediadecode` |
+  |---|---|
+  | `audio::channel_order::ChannelOrder` | `AudioChannelOrderKind` |
+  | `audio::channel_spec::ChannelSpec` | `AudioChannelSpec` |
+  | `audio::channel_layout_description::ChannelLayoutDescription` | `AudioChannelLayout` |
+  | `audio::channel_order::ParseChannelOrderError` | `ParseAudioChannelOrderKindError` |
+
+  `mediadecode` carried a four-layer channel model. Its first layer,
+  `ChannelLayoutKind`, named a different 38 layouts and read `"5.0"` /
+  `"5.1"` as the *side* ones — the duplicate this release's roster
+  settled, and it is not migrated. The other three layers have no
+  duplicate here and belong where the vocabulary they describe already
+  lives. `mediadecode` 0.6 will depend on these types rather than define
+  them; its FFmpeg interop functions stay there.
+
+  `Kind` was a redundancy that only read as a distinction while a
+  `ChannelLayoutKind` stood beside it. `ChannelLayoutDescription` is
+  long deliberately: the enum is the layout's *name* and this record is
+  its full *description*, which is `av_channel_layout_describe`'s own
+  distinction.
+
+  Two seats changed meaning rather than only spelling:
+
+  * `description` is now **`text`** — `description()` on a type called
+    `…Description` says nothing, while `text()` names what the field
+    holds: the backend's own rendering, verbatim, folded and parsed by
+    nothing. `known_kind` is the parsed name; the two are separate seats
+    and a description may carry either, both or neither.
+  * `known_kind` held the dead `ChannelLayoutKind` and now holds this
+    crate's `ChannelLayout`. Its "no well-known shape matches" state is
+    `ChannelLayout::default()` — the `Other("")` absent sentinel —
+    rather than a named `Unknown` variant, which is the same statement
+    in the vocabulary that survived.
+
+  Semantics, slugs and the `u32` wire integers are unchanged:
+  `"unspecified"` / `"native"` / `"custom"` / `"ambisonic"` at codes
+  `0`–`3`, with `from_u32` absorbing an unrecognised code into
+  `Unspecified`. Three adaptations to this crate's house style, none of
+  them semantic: `as_u32` is spelled **`to_u32`** as every other coded
+  vocabulary here spells it and `try_from_u32` joins it (the strict door
+  the wire uses); `FromStr` folds through the crate's shared ASCII gate;
+  and `ROSTER` comes from the roster macro, so completeness is a compile
+  error rather than a counted test.
+
+  `ChannelOrder` **serializes as its `u32` code**, not as its slug —
+  `mediadecode` sent the slug. It joins `audio::BitRateMode` in the
+  strictly-closed group, and the line between the two groups is whether
+  the code space is closed. This one's is: it mirrors FFmpeg's
+  `AVChannelOrder`, four members with no vendor range, so an integer
+  outside `0..=3` is a corrupt read rather than a name this build has
+  not heard of, and it is refused instead of decoded as `Unspecified`.
+
+  The `buffa` codec gains its first **repeated** field
+  (`custom_channels`), one length-delimited `ChannelSpec` per element.
+  `native_mask` uses presence encoding, so a layout reporting an
+  all-zero mask stays distinct from one reporting no mask at all.
+
+  These three live at the `alloc` tier, with the rest of `audio`. In
+  `mediadecode` the enum reached the no-alloc tier and only the two
+  records needed an allocator; nothing in `ChannelOrder` needs a heap,
+  so that split is recoverable, but a household cannot be less gated
+  than the module holding it.
+
 ## [0.5.0] - 2026-08-20
 
 A vocabulary window: two closed enums stop pretending they might grow, one
