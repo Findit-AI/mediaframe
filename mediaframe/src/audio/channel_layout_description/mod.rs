@@ -263,6 +263,27 @@ impl ChannelLayoutDescription {
     self.text = v.into();
     self
   }
+
+  /// Appends one channel to the custom-order list.
+  ///
+  /// Crate-private, and the `buffa` decoder is its only caller: a
+  /// repeated field arrives one element per `merge_field` call, and the
+  /// public seat is whole-`Vec` (`with_custom_channels` /
+  /// `set_custom_channels`). Reading the list out and writing it back
+  /// per element would make decoding quadratic in a length an untrusted
+  /// peer chooses, which is a denial of service rather than a
+  /// performance note.
+  ///
+  /// Not public because a caller assembling a description has the whole
+  /// list in hand and the whole-`Vec` setter is the honest shape for
+  /// that; this exists only because the wire hands them over one at a
+  /// time.
+  #[cfg(feature = "buffa")]
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub(crate) fn push_custom_channel(&mut self, v: ChannelSpec) -> &mut Self {
+    self.custom_channels.push(v);
+    self
+  }
 }
 
 #[cfg(test)]
