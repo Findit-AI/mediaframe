@@ -92,6 +92,10 @@ super::arb_open_string_enum!(
 // code has nowhere to go). Uniform u32 would skew to the default; pick
 // uniformly from the named variants instead.
 arb_via_named_variants!(crate::audio::BitRateMode, [Cbr, Vbr, Abr]);
+arb_via_named_variants!(
+  crate::audio::ChannelOrder,
+  [Unspecified, Native, Custom, Ambisonic]
+);
 
 // ─── colour structs ──────────────────────────────────────────────────────────
 

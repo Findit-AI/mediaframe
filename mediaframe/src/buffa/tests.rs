@@ -935,6 +935,177 @@ fn bit_rate_mode_round_trip() {
 }
 
 #[test]
+fn channel_order_round_trip() {
+  // Default `Unspecified` is code 0, so zero-elision is exact: it
+  // encodes to nothing and an absent field decodes back to it.
+  assert!(ChannelOrder::Unspecified.encode_to_vec().is_empty());
+  assert_eq!(
+    ChannelOrder::decode_from_slice(&[]).unwrap(),
+    ChannelOrder::Unspecified
+  );
+  for &v in ChannelOrder::ROSTER {
+    assert_eq!(
+      ChannelOrder::decode_from_slice(&v.encode_to_vec()).unwrap(),
+      v
+    );
+  }
+}
+
+#[test]
+fn channel_order_wrong_wire_type_and_unknown_skip() {
+  // Field 1 is a varint; a length-delimited payload there is a
+  // mismatch, not something to guess at.
+  let mut bad = Vec::new();
+  Tag::new(1, WireType::LengthDelimited).encode(&mut bad);
+  encode_string("native", &mut bad);
+  assert!(ChannelOrder::decode_from_slice(&bad).is_err());
+
+  // An unknown field is skipped, leaving the known one intact.
+  let mut buf = ChannelOrder::Custom.encode_to_vec();
+  Tag::new(9, WireType::Varint).encode(&mut buf);
+  encode_uint32(7, &mut buf);
+  assert_eq!(
+    ChannelOrder::decode_from_slice(&buf).unwrap(),
+    ChannelOrder::Custom
+  );
+}
+
+#[test]
+fn channel_spec_round_trip_with_zero_elision() {
+  // Default (0, 0, "") is proto-zero throughout → empty wire.
+  assert!(ChannelSpec::default().encode_to_vec().is_empty());
+  assert_eq!(
+    ChannelSpec::decode_from_slice(&[]).unwrap(),
+    ChannelSpec::default()
+  );
+  for spec in [
+    ChannelSpec::new(0, 1),
+    ChannelSpec::new(3, 0).with_label("LFE"),
+    ChannelSpec::new(7, 11).with_label("TBC"),
+  ] {
+    assert_eq!(
+      ChannelSpec::decode_from_slice(&spec.encode_to_vec()).unwrap(),
+      spec
+    );
+  }
+}
+
+#[test]
+fn channel_layout_description_round_trip_default_and_populated() {
+  // Every seat at its absent value is proto-zero, and `native_mask` is
+  // `None` and so simply absent → empty wire.
+  assert!(
+    ChannelLayoutDescription::default()
+      .encode_to_vec()
+      .is_empty()
+  );
+  assert_eq!(
+    ChannelLayoutDescription::decode_from_slice(&[]).unwrap(),
+    ChannelLayoutDescription::default()
+  );
+
+  let native = ChannelLayoutDescription::new(6)
+    .with_order(ChannelOrder::Native)
+    .with_known_kind(ChannelLayout::Ch5_1Back)
+    .with_native_mask(Some(0x3F))
+    .with_text("5.1");
+  assert_eq!(
+    ChannelLayoutDescription::decode_from_slice(&native.encode_to_vec()).unwrap(),
+    native
+  );
+
+  let custom = ChannelLayoutDescription::new(3)
+    .with_order(ChannelOrder::Custom)
+    .with_custom_channels(::std::vec![
+      ChannelSpec::new(0, 1).with_label("FL"),
+      ChannelSpec::new(1, 2).with_label("FR"),
+      ChannelSpec::new(2, 3).with_label("LFE"),
+    ])
+    .with_text("3 channels (FL+FR+LFE)");
+  assert_eq!(
+    ChannelLayoutDescription::decode_from_slice(&custom.encode_to_vec()).unwrap(),
+    custom
+  );
+}
+
+/// A repeated field is the crate's first, so the two properties that
+/// distinguish it from a scalar are pinned directly: order is preserved,
+/// and an element that is itself all-default still occupies a slot
+/// rather than vanishing into the elision that would swallow a scalar.
+#[test]
+fn channel_layout_description_repeated_field_keeps_order_and_empty_elements() {
+  let d = ChannelLayoutDescription::new(4).with_custom_channels(::std::vec![
+    ChannelSpec::new(0, 9).with_label("a"),
+    ChannelSpec::default(),
+    ChannelSpec::new(2, 0).with_label("c"),
+    ChannelSpec::default(),
+  ]);
+  let back = ChannelLayoutDescription::decode_from_slice(&d.encode_to_vec()).unwrap();
+  assert_eq!(back, d);
+  assert_eq!(back.custom_channels().len(), 4);
+  assert_eq!(back.custom_channels()[1], ChannelSpec::default());
+  assert_eq!(back.custom_channels()[2].label(), "c");
+}
+
+/// `Some(0)` and `None` are different facts — a layout that reports an
+/// all-zero mask against one that reports no mask at all — so the
+/// optional field uses presence encoding rather than zero-elision.
+#[test]
+fn channel_layout_description_distinguishes_a_zero_mask_from_no_mask() {
+  let zero = ChannelLayoutDescription::new(2).with_native_mask(Some(0));
+  let none = ChannelLayoutDescription::new(2);
+  assert_ne!(zero, none);
+  assert_ne!(zero.encode_to_vec(), none.encode_to_vec());
+  assert_eq!(
+    ChannelLayoutDescription::decode_from_slice(&zero.encode_to_vec()).unwrap(),
+    zero
+  );
+  assert_eq!(
+    ChannelLayoutDescription::decode_from_slice(&none.encode_to_vec()).unwrap(),
+    none
+  );
+}
+
+/// The name field carries an open vocabulary, so a slug this build does
+/// not enumerate arrives as `Other(name)` rather than as a decode error
+/// — the same rule the standalone `ChannelLayout` message follows,
+/// applied to a field.
+#[test]
+fn channel_layout_description_name_field_keeps_an_unknown_slug() {
+  let d = ChannelLayoutDescription::new(64).with_known_kind(ChannelLayout::other("64.4.8"));
+  let back = ChannelLayoutDescription::decode_from_slice(&d.encode_to_vec()).unwrap();
+  assert_eq!(back, d);
+  assert_eq!(back.known_kind().as_str(), "64.4.8");
+}
+
+#[test]
+fn channel_layout_description_wrong_wire_type_and_unknown_skip() {
+  // Field 2 (`channels`) is a varint; a length-delimited payload there
+  // is a mismatch.
+  let mut bad = Vec::new();
+  Tag::new(2, WireType::LengthDelimited).encode(&mut bad);
+  encode_string("6", &mut bad);
+  assert!(ChannelLayoutDescription::decode_from_slice(&bad).is_err());
+
+  // Field 5 (`custom_channels`) is length-delimited; a varint there is
+  // a mismatch too.
+  let mut bad = Vec::new();
+  Tag::new(5, WireType::Varint).encode(&mut bad);
+  encode_uint32(1, &mut bad);
+  assert!(ChannelLayoutDescription::decode_from_slice(&bad).is_err());
+
+  // An unknown field is skipped, leaving the known ones intact.
+  let d = ChannelLayoutDescription::new(6).with_order(ChannelOrder::Native);
+  let mut buf = d.encode_to_vec();
+  Tag::new(11, WireType::Varint).encode(&mut buf);
+  encode_uint32(7, &mut buf);
+  assert_eq!(
+    ChannelLayoutDescription::decode_from_slice(&buf).unwrap(),
+    d
+  );
+}
+
+#[test]
 fn audio_format_round_trip_named_and_unknown() {
   // Default = Unknown(u32::MAX) (AV_SAMPLE_FMT_NONE-ish sentinel),
   // non-zero `to_u32` — but default-elision means it encodes to empty.
