@@ -42,7 +42,6 @@ shape in human-readable formats.
   exists to carry. A closed vocabulary has no such value — every member
   has both spellings — so the format gets to choose, and a binary format
   has no reason to pay for a string it cannot read anyway.
-
 - **`audio::ChannelLayout`'s numeric variants take a `Ch` prefix and drop
   `Point`.** `N5Point1Back` becomes `Ch5_1Back`, `N2Point1` becomes
   `Ch2_1` — all twelve of them. Slugs, wire form, serde, `buffa` and
@@ -247,7 +246,6 @@ shape in human-readable formats.
   records needed an allocator; nothing in `ChannelOrder` needs a heap,
   so that split is recoverable, but a household cannot be less gated
   than the module holding it.
-
 ## [0.5.0] - 2026-08-20
 
 A vocabulary window: two closed enums stop pretending they might grow, one
