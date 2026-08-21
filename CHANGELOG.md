@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-21
+
 **Breaking**, on two counts: `audio::ChannelLayout`'s twelve numeric
 variants are renamed, and `audio::BitRateMode`'s `serde` wire changes
 shape in human-readable formats.
