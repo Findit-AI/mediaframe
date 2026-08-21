@@ -44,10 +44,11 @@ super::arb_open_string_enum!(
   ["embedded", "sidecar", "external", "derived"]
 );
 
-// Both spellings of the 5.x pair are seeded on purpose — see the twin
-// list in `quickcheck_helpers::strings`. The unqualified `"5.0"` /
-// `"5.1"` are FFmpeg's names for the **back** layouts, so the short pair
-// alone leaves `N5Point0` / `N5Point1` unreachable.
+// Both spellings of the crossed pairs are seeded on purpose — see the
+// twin list in `quickcheck_helpers::strings`. The unqualified `"5.0"` /
+// `"5.1"` / `"7.1(wide)"` are FFmpeg's names for the **back** layouts,
+// so the short spelling alone leaves `Ch5_0` / `Ch5_1` /
+// `Ch7_1Wide` unreachable.
 super::arb_open_string_enum!(
   crate::audio::ChannelLayout,
   [
@@ -58,7 +59,9 @@ super::arb_open_string_enum!(
     "7.1",
     "quad",
     "5.0",
-    "5.0(side)"
+    "5.0(side)",
+    "7.1(wide)",
+    "7.1(wide-side)"
   ]
 );
 
