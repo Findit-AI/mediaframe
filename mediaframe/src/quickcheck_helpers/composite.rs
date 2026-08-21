@@ -6,11 +6,45 @@
 //! pattern `try_new(arbitrary_float).unwrap()` — that would panic on input.
 //!
 //! Owned types:
+//!   - audio::{ChannelSpec, ChannelLayoutDescription}
 //!   - audio::{Loudness, Fingerprint, CoverArt, Tags}
 //!   - capture::{Device, GeoLocation}
 //!   - lang::Language
 
 use ::quickcheck::Arbitrary;
+
+/// `audio::ChannelSpec` — `new(index, raw_id)` + `with_label`.
+///
+/// Three independent fields, no invariant between them. The label is
+/// free text rather than a slug, so an arbitrary string goes straight
+/// through — nothing here folds or canonicalises.
+pub(crate) fn channel_spec(g: &mut ::quickcheck::Gen) -> crate::audio::ChannelSpec {
+  crate::audio::ChannelSpec::new(u32::arbitrary(g), u32::arbitrary(g)).with_label(
+    ::smol_str::SmolStr::from(<::std::string::String as Arbitrary>::arbitrary(g)),
+  )
+}
+
+/// `audio::ChannelLayoutDescription` — `new(channels)` + every builder
+/// setter, each field drawn independently.
+///
+/// Mirrors the `arbitrary_impls` half field for field and for the same
+/// reason: the type enforces no relation between its fields, so the
+/// incoherent combinations a well-formed FFmpeg layout never shows (a
+/// `Custom` order with no channel list, a `Native` order with no mask)
+/// must stay reachable — they are the ones a consumer is most likely to
+/// mishandle.
+pub(crate) fn channel_layout_description(
+  g: &mut ::quickcheck::Gen,
+) -> crate::audio::ChannelLayoutDescription {
+  crate::audio::ChannelLayoutDescription::new(u32::arbitrary(g))
+    .with_order(Arbitrary::arbitrary(g))
+    .with_known_kind(Arbitrary::arbitrary(g))
+    .with_native_mask(<::core::option::Option<u64> as Arbitrary>::arbitrary(g))
+    .with_custom_channels(<::std::vec::Vec<crate::audio::ChannelSpec> as Arbitrary>::arbitrary(g))
+    .with_text(::smol_str::SmolStr::from(
+      <::std::string::String as Arbitrary>::arbitrary(g),
+    ))
+}
 
 /// `audio::Loudness` — plain `new(f32, f32, f32, f32)` constructor.
 ///

@@ -131,9 +131,19 @@
 //! ```text
 //! ChannelLayout        { string value = 1; }   // value = as_str()
 //! BitRateMode          { uint32 value = 1; }   // value = to_u32() (Cbr=0)
+//! ChannelOrder         { uint32 value = 1; }   // value = to_u32() (Unspecified=0)
 //! SampleFormat          { uint32 value = 1; }   // value = to_u32() (FFmpeg AV_SAMPLE_FMT_* code, Other → u32::MAX)
 //! ContainerFormat { string value = 1; }   // value = as_str()
 //! Format      { string value = 1; }   // value = as_str()
+//!
+//! ChannelSpec { uint32 index = 1; uint32 raw_id = 2; string label = 3; }
+//! ChannelLayoutDescription
+//!                  { uint32 order       = 1;   // ChannelOrder::to_u32()
+//!                    uint32 channels    = 2;
+//!                    string known_kind  = 3;   // ChannelLayout::as_str()
+//!                    optional uint64 native_mask = 4;
+//!                    repeated ChannelSpec custom_channels = 5;
+//!                    string text        = 6; }
 //!
 //! Loudness         { float integrated_lufs = 1; float range_lu = 2;
 //!                    float true_peak_dbtp = 3; float sample_peak_dbfs = 4; }
@@ -154,7 +164,34 @@
 //! - **String-bearing enums** (`ChannelLayout`, `ContainerFormat`,
 //!   `Format`, `SampleFormat`) encode their `as_str()` slug. Default
 //!   (where defined) elides; `Other(SmolStr)` round-trips losslessly.
-//!   `BitRateMode` is strictly closed and encodes its `to_u32()` id.
+//!   `BitRateMode` and `ChannelOrder` are strictly closed and encode
+//!   their `to_u32()` id. Zero-elision is sound for both: each one's
+//!   `Default` (`Cbr` / `Unspecified`) *is* code `0`, so an absent field
+//!   decodes back to it exactly — unlike the colour enums, where a
+//!   non-default variant holds code `0` and eliding it would be a
+//!   silent loss.
+//! - **`ChannelSpec`** — `index` / `raw_id` (`uint32`) and `label`
+//!   (`string`) all use proto3 zero-elision: the seed is
+//!   `ChannelSpec::default()`, whose three fields are `0`, `0` and the
+//!   empty string, which is proto-zero for each.
+//! - **`ChannelLayoutDescription`** — `order`, `channels`,
+//!   `known_kind` and `text` use proto3 zero-elision, sound for the
+//!   same reason: the seed is the type's `Default`, whose order is code
+//!   `0`, channel count `0`, name `ChannelLayout::default()` (the
+//!   `Other("")` sentinel, so `as_str()` is `""`) and text empty.
+//!   `known_kind` decodes through `ChannelLayout`'s total `FromStr`, so
+//!   a name this build does not enumerate arrives as `Other(name)`
+//!   rather than as a decode error — the open-vocabulary rule, applied
+//!   to a field instead of a standalone message.
+//!   `native_mask` is an `optional uint64` using presence encoding
+//!   (emitted iff `Some`, including for `Some(0)`, so a layout that
+//!   reports an all-zero mask stays distinct from one that reports
+//!   none). `custom_channels` is the crate's first **repeated** field:
+//!   one length-delimited `ChannelSpec` sub-message per element, in
+//!   order, and an empty list writes nothing. The decoder appends each
+//!   element as it arrives rather than reading the list out and writing
+//!   it back, which would make decode quadratic in a length the peer
+//!   chooses.
 //! - **`Loudness`** — all four `f32` fields use proto3 zero-elision
 //!   (`Default` is all-zero == proto-zero for `f32`). Each present
 //!   field is wire-type `Fixed32` (4 bytes LE).
@@ -259,17 +296,17 @@ use ::buffa::{
   encoding::{Tag, WireType, encode_varint, skip_field_depth, varint_len},
   types::{
     FIXED32_ENCODED_LEN, bytes_encoded_len, decode_bytes, decode_double, decode_float,
-    decode_int64, decode_string, decode_uint32, encode_bytes, encode_double, encode_float,
-    encode_int64, encode_string, encode_uint32, int64_encoded_len, string_encoded_len,
-    uint32_encoded_len,
+    decode_int64, decode_string, decode_uint32, decode_uint64, encode_bytes, encode_double,
+    encode_float, encode_int64, encode_string, encode_uint32, encode_uint64, int64_encoded_len,
+    string_encoded_len, uint32_encoded_len, uint64_encoded_len,
   },
 };
 use smol_str::SmolStr;
 
 use crate::{
   audio::{
-    BitRateMode, ChannelLayout, ContainerFormat, CoverArt, Fingerprint, Loudness, ReplayGain,
-    SampleFormat, Tags,
+    BitRateMode, ChannelLayout, ChannelLayoutDescription, ChannelOrder, ChannelSpec,
+    ContainerFormat, CoverArt, Fingerprint, Loudness, ReplayGain, SampleFormat, Tags,
   },
   capture::{Device, GeoLocation},
   color::{
@@ -1530,6 +1567,312 @@ impl Message for BitRateMode {
 
   fn clear(&mut self) {
     *self = BitRateMode::default();
+  }
+}
+
+// ----------------------------------------------------------------------------
+// ChannelOrder — { uint32 value = 1; }
+//
+// Same shape and same reasoning as `BitRateMode`:
+// `ChannelOrder::default() == Unspecified` whose `to_u32() == 0`, so
+// proto3 zero-elision is sound — an absent field decodes via
+// `from_u32(0) == Unspecified`.
+// ----------------------------------------------------------------------------
+
+impl DefaultInstance for ChannelOrder {
+  fn default_instance() -> &'static Self {
+    static VALUE: buffa::__private::OnceBox<ChannelOrder> = buffa::__private::OnceBox::new();
+    VALUE.get_or_init(|| buffa::alloc::boxed::Box::new(ChannelOrder::default()))
+  }
+}
+
+impl Message for ChannelOrder {
+  fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
+    let v = self.to_u32();
+    if v != 0 {
+      1 + uint32_encoded_len(v) as u32
+    } else {
+      0
+    }
+  }
+
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
+    let v = self.to_u32();
+    if v != 0 {
+      Tag::new(1, WireType::Varint).encode(buf);
+      encode_uint32(v, buf);
+    }
+  }
+
+  fn merge_field(
+    &mut self,
+    tag: Tag,
+    buf: &mut impl Buf,
+    ctx: DecodeContext<'_>,
+  ) -> Result<(), DecodeError> {
+    match tag.field_number() {
+      1 => {
+        if tag.wire_type() != WireType::Varint {
+          return Err(DecodeError::WireTypeMismatch {
+            field_number: 1,
+            expected: VARINT,
+            actual: tag.wire_type() as u8,
+          });
+        }
+        *self = ChannelOrder::from_u32(decode_uint32(buf)?);
+      }
+      _ => skip_field_depth(tag, buf, ctx.depth())?,
+    }
+    Ok(())
+  }
+
+  fn clear(&mut self) {
+    *self = ChannelOrder::default();
+  }
+}
+
+// ----------------------------------------------------------------------------
+// ChannelSpec — { uint32 index = 1; uint32 raw_id = 2; string label = 3; }
+//
+// Default is `(0, 0, "")`, which is proto-zero for all three, so proto3
+// zero-elision is sound throughout.
+// ----------------------------------------------------------------------------
+
+impl DefaultInstance for ChannelSpec {
+  fn default_instance() -> &'static Self {
+    static VALUE: buffa::__private::OnceBox<ChannelSpec> = buffa::__private::OnceBox::new();
+    VALUE.get_or_init(|| buffa::alloc::boxed::Box::new(ChannelSpec::default()))
+  }
+}
+
+impl Message for ChannelSpec {
+  fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
+    let mut size = 0u32;
+    if self.index() != 0 {
+      size += 1 + uint32_encoded_len(self.index()) as u32;
+    }
+    if self.raw_id() != 0 {
+      size += 1 + uint32_encoded_len(self.raw_id()) as u32;
+    }
+    if !self.label().is_empty() {
+      size += 1 + string_encoded_len(self.label()) as u32;
+    }
+    size
+  }
+
+  fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
+    if self.index() != 0 {
+      Tag::new(1, WireType::Varint).encode(buf);
+      encode_uint32(self.index(), buf);
+    }
+    if self.raw_id() != 0 {
+      Tag::new(2, WireType::Varint).encode(buf);
+      encode_uint32(self.raw_id(), buf);
+    }
+    if !self.label().is_empty() {
+      Tag::new(3, WireType::LengthDelimited).encode(buf);
+      encode_string(self.label(), buf);
+    }
+  }
+
+  fn merge_field(
+    &mut self,
+    tag: Tag,
+    buf: &mut impl Buf,
+    ctx: DecodeContext<'_>,
+  ) -> Result<(), DecodeError> {
+    match tag.field_number() {
+      n @ 1..=2 => {
+        if tag.wire_type() != WireType::Varint {
+          return Err(DecodeError::WireTypeMismatch {
+            field_number: n,
+            expected: VARINT,
+            actual: tag.wire_type() as u8,
+          });
+        }
+        let v = decode_uint32(buf)?;
+        match n {
+          1 => {
+            self.set_index(v);
+          }
+          2 => {
+            self.set_raw_id(v);
+          }
+          _ => unreachable!(),
+        }
+      }
+      3 => {
+        if tag.wire_type() != WireType::LengthDelimited {
+          return Err(DecodeError::WireTypeMismatch {
+            field_number: 3,
+            expected: LEN,
+            actual: tag.wire_type() as u8,
+          });
+        }
+        let s = decode_string(buf)?;
+        self.set_label(SmolStr::new(s));
+      }
+      _ => skip_field_depth(tag, buf, ctx.depth())?,
+    }
+    Ok(())
+  }
+
+  fn clear(&mut self) {
+    *self = ChannelSpec::default();
+  }
+}
+
+// ----------------------------------------------------------------------------
+// ChannelLayoutDescription —
+//   { uint32 order = 1; uint32 channels = 2; string known_kind = 3;
+//     optional uint64 native_mask = 4;
+//     repeated ChannelSpec custom_channels = 5; string text = 6; }
+//
+// Fields 1/2/3/6 use proto3 zero-elision: the seed is the type's
+// `Default`, whose order is code 0, channel count 0, name
+// `ChannelLayout::default()` (the `Other("")` sentinel, rendering `""`)
+// and text empty — proto-zero in each case.
+//
+// `native_mask` is `optional`: emitted iff `Some`, including for
+// `Some(0)`, so a reported all-zero mask stays distinct from no mask at
+// all (the `ReplayGain` album-scalar stance).
+//
+// `custom_channels` is the crate's first repeated field — one
+// length-delimited sub-message per element, in order. The decoder
+// appends as elements arrive; reading the list out and writing it back
+// per element would make decode quadratic in a length an untrusted peer
+// chooses.
+// ----------------------------------------------------------------------------
+
+impl DefaultInstance for ChannelLayoutDescription {
+  fn default_instance() -> &'static Self {
+    static VALUE: buffa::__private::OnceBox<ChannelLayoutDescription> =
+      buffa::__private::OnceBox::new();
+    VALUE.get_or_init(|| buffa::alloc::boxed::Box::new(ChannelLayoutDescription::default()))
+  }
+}
+
+impl Message for ChannelLayoutDescription {
+  fn compute_size(&self, cache: &mut SizeCache) -> u32 {
+    let mut size = 0u32;
+    if self.order().to_u32() != 0 {
+      size += 1 + uint32_encoded_len(self.order().to_u32()) as u32;
+    }
+    if self.channels() != 0 {
+      size += 1 + uint32_encoded_len(self.channels()) as u32;
+    }
+    if !self.known_kind().as_str().is_empty() {
+      size += 1 + string_encoded_len(self.known_kind().as_str()) as u32;
+    }
+    if let Some(mask) = self.native_mask() {
+      size += 1 + uint64_encoded_len(mask) as u32;
+    }
+    for spec in self.custom_channels() {
+      let slot = cache.reserve();
+      let inner = spec.compute_size(cache);
+      cache.set(slot, inner);
+      size += 1 + varint_len(inner as u64) as u32 + inner;
+    }
+    if !self.text().is_empty() {
+      size += 1 + string_encoded_len(self.text()) as u32;
+    }
+    size
+  }
+
+  fn write_to(&self, cache: &mut SizeCache, buf: &mut impl EncodeSink) {
+    if self.order().to_u32() != 0 {
+      Tag::new(1, WireType::Varint).encode(buf);
+      encode_uint32(self.order().to_u32(), buf);
+    }
+    if self.channels() != 0 {
+      Tag::new(2, WireType::Varint).encode(buf);
+      encode_uint32(self.channels(), buf);
+    }
+    if !self.known_kind().as_str().is_empty() {
+      Tag::new(3, WireType::LengthDelimited).encode(buf);
+      encode_string(self.known_kind().as_str(), buf);
+    }
+    if let Some(mask) = self.native_mask() {
+      Tag::new(4, WireType::Varint).encode(buf);
+      encode_uint64(mask, buf);
+    }
+    for spec in self.custom_channels() {
+      Tag::new(5, WireType::LengthDelimited).encode(buf);
+      encode_varint(cache.consume_next() as u64, buf);
+      spec.write_to(cache, buf);
+    }
+    if !self.text().is_empty() {
+      Tag::new(6, WireType::LengthDelimited).encode(buf);
+      encode_string(self.text(), buf);
+    }
+  }
+
+  fn merge_field(
+    &mut self,
+    tag: Tag,
+    buf: &mut impl Buf,
+    ctx: DecodeContext<'_>,
+  ) -> Result<(), DecodeError> {
+    match tag.field_number() {
+      n @ (1 | 2 | 4) => {
+        if tag.wire_type() != WireType::Varint {
+          return Err(DecodeError::WireTypeMismatch {
+            field_number: n,
+            expected: VARINT,
+            actual: tag.wire_type() as u8,
+          });
+        }
+        match n {
+          1 => {
+            self.set_order(ChannelOrder::from_u32(decode_uint32(buf)?));
+          }
+          2 => {
+            self.set_channels(decode_uint32(buf)?);
+          }
+          4 => {
+            self.set_native_mask(Some(decode_uint64(buf)?));
+          }
+          _ => unreachable!(),
+        }
+      }
+      n @ (3 | 5 | 6) => {
+        if tag.wire_type() != WireType::LengthDelimited {
+          return Err(DecodeError::WireTypeMismatch {
+            field_number: n,
+            expected: LEN,
+            actual: tag.wire_type() as u8,
+          });
+        }
+        match n {
+          3 => {
+            let s = decode_string(buf)?;
+            // `ChannelLayout`'s parse is total at this tier (`buffa`
+            // implies `alloc`, which is where its `Other` arm lives), so
+            // this binding is irrefutable. Spelled this way on purpose:
+            // a future refusal stops it compiling (`E0005`) instead of
+            // silently acquiring an `unreachable!()`.
+            let Ok(parsed) = <ChannelLayout as core::str::FromStr>::from_str(&s);
+            self.set_known_kind(parsed);
+          }
+          5 => {
+            let mut spec = ChannelSpec::default();
+            buffa::Message::merge_length_delimited(&mut spec, buf, ctx)?;
+            self.push_custom_channel(spec);
+          }
+          6 => {
+            let s = decode_string(buf)?;
+            self.set_text(SmolStr::new(s));
+          }
+          _ => unreachable!(),
+        }
+      }
+      _ => skip_field_depth(tag, buf, ctx.depth())?,
+    }
+    Ok(())
+  }
+
+  fn clear(&mut self) {
+    *self = ChannelLayoutDescription::default();
   }
 }
 

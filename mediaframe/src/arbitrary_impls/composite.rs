@@ -5,6 +5,10 @@
 // attacker-controlled fuzz input into a fallible constructor + `.unwrap()`):
 //
 //   AUDIO COMPOSITE:
+//     - audio::ChannelSpec       (new(u32, u32) + with_label)
+//     - audio::ChannelLayoutDescription
+//                                (new(u32) + builder setters; every field drawn
+//                                 independently — see the impl for why)
 //     - audio::Loudness          (new(f32, f32, f32, f32) — plain ctor)
 //     - audio::ReplayGain        (new(f32, f32, Option<f32>, Option<f32>) — plain ctor)
 //     - audio::Fingerprint       (try_new(algo, value) — algo non-empty)
@@ -20,6 +24,48 @@
 //
 //   LANGUAGE:
 //     - lang::Language           (from_bcp47(<curated tag>) — `u.choose`)
+
+impl<'a> ::arbitrary::Arbitrary<'a> for crate::audio::ChannelSpec {
+  fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
+    // Three independent fields, no invariant between them. The label is
+    // free text rather than a slug, so an arbitrary string goes straight
+    // through — nothing here folds or canonicalises.
+    Ok(
+      crate::audio::ChannelSpec::new(
+        <u32 as ::arbitrary::Arbitrary>::arbitrary(u)?,
+        <u32 as ::arbitrary::Arbitrary>::arbitrary(u)?,
+      )
+      .with_label(::smol_str::SmolStr::from(
+        <::std::string::String as ::arbitrary::Arbitrary>::arbitrary(u)?,
+      )),
+    )
+  }
+}
+
+impl<'a> ::arbitrary::Arbitrary<'a> for crate::audio::ChannelLayoutDescription {
+  fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
+    // Every field is drawn independently — including the combinations a
+    // well-formed FFmpeg layout never shows (a `Custom` order with no
+    // channel list, a `Native` order with no mask). That is deliberate:
+    // the type enforces no relation between its fields, every one of
+    // them has a public unchecked setter, and a generator that produced
+    // only coherent descriptions would leave the incoherent ones — the
+    // ones a consumer is most likely to mishandle — unreachable by the
+    // fuzzer.
+    Ok(
+      crate::audio::ChannelLayoutDescription::new(<u32 as ::arbitrary::Arbitrary>::arbitrary(u)?)
+        .with_order(::arbitrary::Arbitrary::arbitrary(u)?)
+        .with_known_kind(::arbitrary::Arbitrary::arbitrary(u)?)
+        .with_native_mask(<::core::option::Option<u64> as ::arbitrary::Arbitrary>::arbitrary(u)?)
+        .with_custom_channels(
+          <::std::vec::Vec<crate::audio::ChannelSpec> as ::arbitrary::Arbitrary>::arbitrary(u)?,
+        )
+        .with_text(::smol_str::SmolStr::from(
+          <::std::string::String as ::arbitrary::Arbitrary>::arbitrary(u)?,
+        )),
+    )
+  }
+}
 
 impl<'a> ::arbitrary::Arbitrary<'a> for crate::audio::Loudness {
   fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
