@@ -188,11 +188,12 @@ macro_rules! roster {
 /// storage / wire layers serialize.
 #[cfg(feature = "arbitrary")]
 mod arbitrary_impls;
-/// Audio-stream descriptor vocabulary — channel layout, sample /
-/// container format, bit-rate mode, EBU R128 loudness, fingerprint,
-/// embedded metadata tags + cover art. Requires the `alloc` feature
-/// (`std` includes it) for the `Other(SmolStr)` escape arms and the
-/// `Vec<u8>` payloads.
+/// Audio-stream descriptor vocabulary — channel layout (the name) and
+/// channel layout description (the structure: order, mask, per-channel
+/// list), sample / container format, bit-rate mode, EBU R128 loudness,
+/// fingerprint, embedded metadata tags + cover art. Requires the `alloc`
+/// feature (`std` includes it) for the `Other(SmolStr)` escape arms and
+/// the `Vec<u8>` payloads.
 ///
 /// **Derive threshold.** Every open enum here carries `Unwrap` /
 /// `TryUnwrap` for its `Other(SmolStr)` arm. The pair generates three
