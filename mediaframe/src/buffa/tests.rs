@@ -866,15 +866,27 @@ fn channel_layout_round_trip_named_and_other() {
     ChannelLayout::decode_from_slice(&v.encode_to_vec()).unwrap(),
     v
   );
-  let v = ChannelLayout::N5Point1;
+  let v = ChannelLayout::Ch5_1;
   assert_eq!(
     ChannelLayout::decode_from_slice(&v.encode_to_vec()).unwrap(),
     v
   );
-  let v = ChannelLayout::Other(SmolStr::new("22.2"));
+  // A slug outside the roster. `"22.2"` stood here until 0.6.0 named
+  // it: the wire form is the slug, so an escape carrying a slug the
+  // reader now recognises comes back as the *named* variant, not as the
+  // `Other` it was encoded from. Lossless on the wire, a different value
+  // in memory. This one is FFmpeg's rendering of a layout its map has no
+  // name for, so it cannot be promoted out of the escape by a later
+  // release the way `"22.2"` was.
+  let v = ChannelLayout::Other(SmolStr::new("fl+fr+tfl"));
   assert_eq!(
     ChannelLayout::decode_from_slice(&v.encode_to_vec()).unwrap(),
     v
+  );
+  assert_eq!(
+    ChannelLayout::decode_from_slice(&ChannelLayout::Other(SmolStr::new("22.2")).encode_to_vec())
+      .unwrap(),
+    ChannelLayout::Ch22_2
   );
   // Default (Other("")) elides to empty bytes.
   assert!(ChannelLayout::default().encode_to_vec().is_empty());

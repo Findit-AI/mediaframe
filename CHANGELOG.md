@@ -6,6 +6,142 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**Breaking**: `audio::ChannelLayout`'s twelve numeric variants are
+renamed.
+
+- **`audio::ChannelLayout`'s numeric variants take a `Ch` prefix and drop
+  `Point`.** `N5Point1Back` becomes `Ch5_1Back`, `N2Point1` becomes
+  `Ch2_1` — all twelve of them. Slugs, wire form, serde, `buffa` and
+  every stored value are **unchanged**; this renames Rust identifiers
+  only.
+
+  | was | is | was | is |
+  |---|---|---|---|
+  | `N2Point1` | `Ch2_1` | `N5Point1` | `Ch5_1` |
+  | `N3Point0` | `Ch3_0` | `N5Point1Back` | `Ch5_1Back` |
+  | `N3Point0Back` | `Ch3_0Back` | `N6Point0` | `Ch6_0` |
+  | `N3Point1` | `Ch3_1` | `N6Point1` | `Ch6_1` |
+  | `N5Point0` | `Ch5_0` | `N7Point0` | `Ch7_0` |
+  | `N5Point0Back` | `Ch5_0Back` | `N7Point1` | `Ch7_1` |
+
+  That is the whole rename. The other `Ch`-prefixed idents in this
+  release — `Ch3_1_2`, `Ch4_0`, `Ch4_1`, `Ch5_1_2`, `Ch5_1_2Back`,
+  `Ch5_1_4Back`, `Ch6_0Front`, `Ch6_1Back`, `Ch6_1Front`, `Ch7_0Front`,
+  `Ch7_1Wide`, `Ch7_1WideBack`, `Ch7_1_2`, `Ch7_1_4Back`, `Ch7_2_3`,
+  `Ch9_1_4Back`, `Ch9_1_6`, `Ch22_2` — are **new variants**, listed
+  under Added. They never had an `N` spelling to be renamed from, so
+  there is nothing in existing code to search for.
+
+  The `N` was a lexical dodge — `5Point1Back` is not an identifier, so a
+  letter had to go in front, and `N` said nothing. `Ch` says *channels*,
+  and `Ch5_1Back` reads as its layout where `N5Point1Back` reads as a
+  spelling exercise. It is also the prefix `mediadecode` already uses, so
+  the two vocabularies converge on names as well as on slugs.
+
+  **The letter-named variants keep their names**: `Mono`, `Stereo`,
+  `Quad`, `Hexagonal`, `Octagonal`, `Ambisonic1`/`2`/`3` and `Other` are
+  untouched, and the letter-named layouts added this release
+  (`StereoDownmix`, `Binaural`, `QuadSide`, `Hexadecagonal`, `Cube`)
+  arrive without a prefix for the same reason. The prefix exists to make
+  a leading digit legal and these have no leading digit; `ChMono` would
+  stutter against the type name, and renaming `Other` would move the
+  escape arm that `Unwrap`, `TryUnwrap`, `IsVariant`, the roster macro
+  and every `is_other()` call site depend on.
+
+  The `IsVariant` predicates move with the idents: `is_n_5_point_1()` is
+  now `is_ch_5_1()`.
+
+### Added
+
+- **`audio::ChannelLayout` names twenty more layouts**, growing the roster
+  from 20 to 40 so there is one channel-layout vocabulary for this
+  ecosystem instead of two that disagree. `mediadecode`'s
+  `ChannelLayoutKind` named a different set of 38 and read `"5.0"` /
+  `"5.1"` as the *side* layouts, where this crate reads them as FFmpeg
+  does — the back ones. The union settles that in favour of FFmpeg.
+
+  The new layouts, spelled as FFmpeg's `channel_layout_map[]` spells
+  them:
+
+  | slug | FFmpeg constant | slug | FFmpeg constant |
+  |---|---|---|---|
+  | `downmix` | `STEREO_DOWNMIX` | `7.0(front)` | `7POINT0_FRONT` |
+  | `quad(side)` | `2_2` | `7.1(wide)` | `7POINT1_WIDE_BACK` |
+  | `3.1.2` | `3POINT1POINT2` | `7.1(wide-side)` | `7POINT1_WIDE` |
+  | `4.0` | `4POINT0` | `7.1.2` | `7POINT1POINT2` |
+  | `4.1` | `4POINT1` | `7.1.4` | `7POINT1POINT4_BACK` |
+  | `5.1.2(back)` | `5POINT1POINT2_BACK` | `7.2.3` | `7POINT2POINT3` |
+  | `5.1.4` | `5POINT1POINT4_BACK` | `9.1.4` | `9POINT1POINT4_BACK` |
+  | `6.0(front)` | `6POINT0_FRONT` | `22.2` | `22POINT2` |
+  | `6.1(back)` | `6POINT1_BACK` | `hexadecagonal` | `HEXADECAGONAL` |
+  | `6.1(front)` | `6POINT1_FRONT` | `cube` | `CUBE` |
+
+  Slugs are FFmpeg's, not `mediadecode`'s. Taking `mediadecode`'s would
+  have imported its ambiguity along with its coverage: it spells the
+  side 5.1 `"5.1"` and the back one `"5.1-back"`, inverting FFmpeg, and
+  it crosses the 7.1-wide pair the same way. Every slug here is what
+  `av_channel_layout_describe` prints for that constant in libavutil
+  9.0.1, and the full 37-row map is transcribed into the tests.
+
+  Three things make these arms look wrong and are not:
+
+  * The unqualified name belongs to the **back** layout for 5.0, 5.1 and
+    7.1(wide) — but to the **side** layout for 5.1.2, where the back one
+    is qualified `"5.1.2(back)"`.
+  * `_BACK` in `5POINT1POINT4_BACK`, `7POINT1POINT4_BACK` and
+    `9POINT1POINT4_BACK` marks a top-back *height* pair, not surround
+    placement, and never reaches the slug: they are `"5.1.4"`, `"7.1.4"`
+    and `"9.1.4"`.
+  * `2_1` and `2_2` are named `"3.0(back)"` and `"quad(side)"`, and
+    their idents follow the slug rather than the constant — `2_1` as an
+    ident is the real `2POINT1`'s.
+
+  `AV_CH_LAYOUT_7POINT1_TOP_BACK` gets no variant: it is a deprecated
+  alias of `5POINT1POINT2_BACK`, one mask under two names.
+
+  **Growing the roster shrinks the escape.** A value held as
+  `Other("22.2")` now reads back as the named variant. The wire form is
+  the slug, so nothing serialized changes and nothing on disk needs
+  migrating — but the two values are not `Eq`, so code matching
+  `Other(s) if s == "22.2"` (or any of the other nineteen new slugs)
+  stops matching.
+
+- **`audio::ChannelLayout` names the last three**, closing the roster at
+  40 named layouts plus `Ambisonic1`/`2`/`3` — **43** entries in
+  `ROSTER`.
+
+  | slug | FFmpeg constant | layout |
+  |---|---|---|
+  | `5.1.2` | `5POINT1POINT2` | FL+FR+FC+LFE+SL+SR+TFL+TFR |
+  | `9.1.6` | `9POINT1POINT6` | 9.1.4 plus the top *side* pair (16ch) |
+  | `binaural` | `BINAURAL` | BIL+BIR |
+
+  These three were in neither this crate's roster nor `mediadecode`'s, so
+  the union alone left them out — and a vocabulary carrying
+  `"5.1.2(back)"` but not `"5.1.2"`, or `"9.1.4"` but not `"9.1.6"`,
+  reads as an accident rather than as a decision.
+
+  **`Binaural` is not a stereo pair.** Binaural audio is rendered for
+  headphones with the head-related transfer function already applied, so
+  each channel is what one *ear* receives rather than what one *speaker*
+  emits; playing it over loudspeakers, or folding it down to `Mono`,
+  destroys the spatial cue it exists to carry. FFmpeg gives it channel
+  ids of its own (`BIL`/`BIR`) instead of reusing `FL`/`FR`, and this
+  vocabulary keeps that distinction rather than treating it as another
+  two-channel layout.
+
+  With these, **every entry in FFmpeg n9.0's `channel_layout_map[]` is
+  named** — all forty, pinned by `the_map_is_transcribed_in_full`, which
+  turns "the whole map is transcribed" from a comment into a checked
+  claim and makes a future FFmpeg's new layout arrive as a red test
+  rather than as silence. `Other` now carries only what the map cannot
+  name at all: custom channel orderings, ambisonic groupings beyond
+  third order, and whatever a later release adds.
+
+  The escape-shrinking note above applies to these three as well —
+  `Other("binaural")`, `Other("9.1.6")` and `Other("5.1.2")` now read
+  back as named variants.
+
 ## [0.5.0] - 2026-08-20
 
 A vocabulary window: two closed enums stop pretending they might grow, one

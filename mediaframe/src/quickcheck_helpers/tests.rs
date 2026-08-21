@@ -332,7 +332,7 @@ fn one_name_is_one_value_whatever_its_case() {
 ///
 /// FFmpeg hands the unqualified `"5.0"` / `"5.1"` to the **back**-speaker
 /// layouts, so a seed list carrying only the short spellings generates
-/// `N5Point0Back` / `N5Point1Back` and never their side siblings —
+/// `Ch5_0Back` / `Ch5_1Back` and never their side siblings —
 /// which is the state 0.4.0's slug swap left behind until the two
 /// qualified spellings were seeded alongside. Assert all four, so
 /// trimming the list silently narrows nothing.
@@ -347,10 +347,10 @@ fn reachability_channel_layout_reaches_both_five_point_pairs() {
   });
 
   for wanted in [
-    ChannelLayout::N5Point0,
-    ChannelLayout::N5Point0Back,
-    ChannelLayout::N5Point1,
-    ChannelLayout::N5Point1Back,
+    ChannelLayout::Ch5_0,
+    ChannelLayout::Ch5_0Back,
+    ChannelLayout::Ch5_1,
+    ChannelLayout::Ch5_1Back,
   ] {
     assert!(
       seen.contains(&wanted),
