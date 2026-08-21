@@ -56,11 +56,12 @@ fn structs_round_trip() {
   round_trip(&(TrackDisposition::DEFAULT | TrackDisposition::FORCED));
 }
 
-/// The channel household's two records carry three different wire shapes
-/// in one map, and each one is its field type's own: `order` as the
-/// closed enum's `u32` code, `known_kind` as the open vocabulary's slug,
-/// `custom_channels` as an array of maps. A derive inherits the field
-/// types' impls, and this is what proves it did.
+/// The channel household's two records carry several wire shapes in one
+/// map, and each is its field type's own: `order` through the closed
+/// law, `known_kind` through the open one, `custom_channels` as an array
+/// of maps. A derive inherits the field types' impls — including their
+/// leg split, since the derive hands the same serializer down — and this
+/// is what proves it did.
 #[test]
 fn the_channel_records_carry_each_field_in_its_own_shape() {
   use crate::audio::{ChannelLayoutDescription, ChannelOrder, ChannelSpec};
@@ -79,9 +80,20 @@ fn the_channel_records_carry_each_field_in_its_own_shape() {
     .with_text("5.1(side)");
   assert_eq!(
     serde_json::to_string(&described).unwrap(),
-    r#"{"order":1,"channels":6,"known_kind":"5.1(side)","native_mask":63,"custom_channels":[],"text":"5.1(side)"}"#
+    r#"{"order":"native","channels":6,"known_kind":"5.1(side)","native_mask":63,"custom_channels":[],"text":"5.1(side)"}"#
   );
   round_trip(&described);
+
+  // The leg split reaches a *nested* field: the same record is a name in
+  // JSON and a code in postcard, because the derive passes the format's
+  // own `is_human_readable` down to `order`'s impl rather than picking a
+  // shape at the record's level.
+  let binary = postcard::to_allocvec(&described).unwrap();
+  assert_eq!(binary[0], ChannelOrder::Native.to_u32() as u8);
+  assert_eq!(
+    postcard::from_bytes::<ChannelLayoutDescription>(&binary).unwrap(),
+    described
+  );
 
   let custom = ChannelLayoutDescription::new(2)
     .with_order(ChannelOrder::Custom)
@@ -93,16 +105,23 @@ fn the_channel_records_carry_each_field_in_its_own_shape() {
 
   // The record inherits its fields' refusals: `known_kind` is an open
   // vocabulary and absorbs an unknown slug, but `order` is closed and an
-  // out-of-range code fails the whole map rather than softening to
-  // `Unspecified`.
+  // unrecognised name fails the whole map rather than softening to
+  // `Unspecified`. A bare code fails here too — this document is
+  // human-readable, so `order` is on the slug leg.
   assert!(
     serde_json::from_str::<ChannelLayoutDescription>(
-      r#"{"order":9,"channels":2,"known_kind":"unknown","native_mask":null,"custom_channels":[],"text":""}"#
+      r#"{"order":"interleaved","channels":2,"known_kind":"unknown","native_mask":null,"custom_channels":[],"text":""}"#
+    )
+    .is_err()
+  );
+  assert!(
+    serde_json::from_str::<ChannelLayoutDescription>(
+      r#"{"order":1,"channels":2,"known_kind":"unknown","native_mask":null,"custom_channels":[],"text":""}"#
     )
     .is_err()
   );
   let odd: ChannelLayoutDescription = serde_json::from_str(
-    r#"{"order":0,"channels":2,"known_kind":"zzlayout","native_mask":null,"custom_channels":[],"text":""}"#,
+    r#"{"order":"unspecified","channels":2,"known_kind":"zzlayout","native_mask":null,"custom_channels":[],"text":""}"#,
   )
   .unwrap();
   assert_eq!(odd.known_kind(), &ChannelLayout::other("zzlayout"));
@@ -187,40 +206,123 @@ fn sample_format_rides_the_slug_wire() {
   round_trip(&other);
 }
 
-/// Strictly-closed coded enums (no escape arm) must REJECT unknown
-/// wire codes instead of silently mapping them to the default. Previously
-/// `from_u32(999)` quietly returned `Embedded` / `Cbr`, so corrupt input
-/// looked like valid data on the consumer side.
+/// The **slug leg** of the closed law: a human-readable format carries
+/// the `as_str()` name, reads it back through `FromStr`, and is strict
+/// at that door — an unrecognised name is a serde error, never collapsed
+/// onto the default the way `from_u32` would collapse a code.
 #[test]
-fn closed_coded_enums_reject_unknown_codes() {
+fn closed_coded_enums_ride_the_slug_leg_where_a_human_reads_it() {
   use crate::audio::{BitRateMode, ChannelOrder};
 
+  assert_eq!(serde_json::to_string(&BitRateMode::Cbr).unwrap(), "\"cbr\"");
+  assert_eq!(serde_json::to_string(&BitRateMode::Abr).unwrap(), "\"abr\"");
   for m in [BitRateMode::Cbr, BitRateMode::Vbr, BitRateMode::Abr] {
     round_trip(&m);
   }
 
-  // Out-of-range codes are rejected — not canonicalised to the default.
-  assert!(serde_json::from_str::<BitRateMode>("999").is_err());
-  assert!(serde_json::from_str::<BitRateMode>("3").is_err());
-
-  // `ChannelOrder` mirrors FFmpeg's `AVChannelOrder`, whose four members
-  // are the whole code space, so the same rule applies: a code outside
-  // `0..=3` is a corrupt read and must not decode to `Unspecified` the
-  // way the lenient `from_u32` door would.
+  assert_eq!(
+    serde_json::to_string(&ChannelOrder::Unspecified).unwrap(),
+    "\"unspecified\""
+  );
+  assert_eq!(
+    serde_json::to_string(&ChannelOrder::Ambisonic).unwrap(),
+    "\"ambisonic\""
+  );
   for &o in ChannelOrder::ROSTER {
     round_trip(&o);
   }
+
+  // Case folds — one name per value, not one spelling. Folding a
+  // spelling is not inventing a value, which is the line strictness is
+  // drawn on.
   assert_eq!(
-    serde_json::to_string(&ChannelOrder::Ambisonic).unwrap(),
-    "3"
+    serde_json::from_str::<BitRateMode>("\"CBR\"").unwrap(),
+    BitRateMode::Cbr
   );
   assert_eq!(
-    serde_json::from_str::<ChannelOrder>("0").unwrap(),
-    ChannelOrder::Unspecified
+    serde_json::from_str::<ChannelOrder>("\"Native\"").unwrap(),
+    ChannelOrder::Native
   );
-  assert!(serde_json::from_str::<ChannelOrder>("4").is_err());
-  assert!(serde_json::from_str::<ChannelOrder>("999").is_err());
+}
+
+/// Both halves of "strict" on the slug leg: a name this vocabulary
+/// cannot spell is refused, and a *number* is refused outright. The two
+/// legs are alternatives, not a chain of fallbacks — a human-readable
+/// document carrying a bare code here is malformed, not merely terse.
+#[test]
+fn the_slug_leg_refuses_an_unknown_name_and_refuses_a_number() {
+  use crate::audio::{BitRateMode, ChannelOrder};
+
+  assert!(serde_json::from_str::<BitRateMode>("\"constant\"").is_err());
+  assert!(serde_json::from_str::<BitRateMode>("\"\"").is_err());
+  assert!(serde_json::from_str::<ChannelOrder>("\"interleaved\"").is_err());
+  assert!(serde_json::from_str::<ChannelOrder>("\"\"").is_err());
+
+  // A number is not a name. `1` is `Vbr`'s code and `Native`'s code, and
+  // the slug leg refuses both — the numeric door is the binary leg, not
+  // this one.
+  assert!(serde_json::from_str::<BitRateMode>("1").is_err());
+  assert!(serde_json::from_str::<ChannelOrder>("1").is_err());
+  assert!(serde_json::from_str::<ChannelOrder>("0").is_err());
+
+  // Neither door collapses onto the default, which is exactly what the
+  // lenient `from_u32` would have done with the same code.
+  assert_eq!(BitRateMode::from_u32(999), BitRateMode::Cbr);
   assert_eq!(ChannelOrder::from_u32(999), ChannelOrder::Unspecified);
+}
+
+/// The **code leg**: a format that is not `is_human_readable` carries
+/// the `to_u32()` code instead, reads it back through `try_from_u32`,
+/// and is strict there too — an out-of-range code is a serde error.
+///
+/// `postcard` is the binary format under test. It is already a
+/// dev-dependency (`sample_format_postcard_binary_roundtrip` below uses
+/// it) and it declares `is_human_readable() == false` on *both* its
+/// serializer and its deserializer, which is the whole of what this leg
+/// keys on. A hand-rolled stub serializer would test the macro against
+/// this crate's own idea of a binary format; a real one tests it against
+/// a format that exists.
+#[test]
+fn closed_coded_enums_ride_the_code_leg_where_only_a_machine_reads_it() {
+  use crate::audio::{BitRateMode, ChannelOrder};
+
+  // The wire is the varint code, not the name.
+  assert_eq!(
+    postcard::to_allocvec(&BitRateMode::Abr).unwrap(),
+    ::std::vec![2u8]
+  );
+  assert_eq!(
+    postcard::to_allocvec(&ChannelOrder::Ambisonic).unwrap(),
+    ::std::vec![3u8]
+  );
+  assert_eq!(
+    postcard::to_allocvec(&ChannelOrder::Unspecified).unwrap(),
+    ::std::vec![0u8]
+  );
+
+  for m in [BitRateMode::Cbr, BitRateMode::Vbr, BitRateMode::Abr] {
+    let bytes = postcard::to_allocvec(&m).unwrap();
+    assert_eq!(postcard::from_bytes::<BitRateMode>(&bytes).unwrap(), m);
+  }
+  for &o in ChannelOrder::ROSTER {
+    let bytes = postcard::to_allocvec(&o).unwrap();
+    assert_eq!(postcard::from_bytes::<ChannelOrder>(&bytes).unwrap(), o);
+  }
+
+  // Out-of-range codes are refused — not canonicalised to the default.
+  assert!(postcard::from_bytes::<BitRateMode>(&[3u8]).is_err());
+  assert!(postcard::from_bytes::<ChannelOrder>(&[4u8]).is_err());
+
+  // And the two legs really are different shapes for one value: what
+  // JSON writes as a name, postcard writes as a code.
+  assert_eq!(
+    serde_json::to_string(&ChannelOrder::Custom).unwrap(),
+    "\"custom\""
+  );
+  assert_eq!(
+    postcard::to_allocvec(&ChannelOrder::Custom).unwrap(),
+    ::std::vec![2u8]
+  );
 }
 
 /// `TrackOrigin` left the coded wire in 0.5.0: it is an open vocabulary

@@ -87,9 +87,12 @@ impl ChannelOrder {
 
   /// Strict counterpart to [`Self::from_u32`]: returns [`None`] for any
   /// code outside the enumerated set instead of silently mapping it to
-  /// the default. Used by the strict deserialize path so adversarial /
-  /// corrupt wire values fail loudly rather than masquerading as
-  /// [`Self::Unspecified`].
+  /// the default. This is the read door of the **binary** serde leg —
+  /// the one a format that is not `is_human_readable` takes — so
+  /// adversarial / corrupt wire values fail loudly rather than
+  /// masquerading as [`Self::Unspecified`]. A human-readable format
+  /// carries the slug instead, and refuses an unrecognised name through
+  /// [`FromStr`](core::str::FromStr).
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub const fn try_from_u32(v: u32) -> Option<Self> {
     match v {

@@ -6,8 +6,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-**Breaking**: `audio::ChannelLayout`'s twelve numeric variants are
-renamed.
+**Breaking**, on two counts: `audio::ChannelLayout`'s twelve numeric
+variants are renamed, and `audio::BitRateMode`'s `serde` wire changes
+shape in human-readable formats.
+
+- **`audio::BitRateMode` carries its name where a human will read it.**
+  Its `serde` representation was the `u32` code in every format; it is
+  now the canonical slug wherever `Serializer::is_human_readable()` — so
+  a JSON value written as `1` is now written as `"vbr"`. **Stored JSON
+  from 0.5.0 does not read back**: the slug leg refuses a bare integer
+  outright, so a persisted `0` is a deserialization error rather than a
+  silent `Cbr`. Binary formats are **unaffected** — postcard, bincode and
+  anything else declaring itself non-human-readable still carry the
+  `to_u32()` code, byte for byte as before. `buffa` is a separate codec
+  and is untouched.
+
+  This is a law, not a special case, and it applies to every
+  strictly-closed coded enum the crate has:
+
+  | leg | shape | read side |
+  |---|---|---|
+  | `is_human_readable()` | the `as_str()` slug | `FromStr` — an unrecognised **name** is an error, and a *number* is refused: a number is not a name |
+  | binary | the `to_u32()` code | `try_from_u32` — an out-of-range **code** is an error |
+
+  Both legs stay strict in the same sense they were: an input this
+  vocabulary cannot name is refused, never collapsed onto the default
+  variant the way `from_u32` would collapse it. The slug leg folds ASCII
+  case (`"CBR"` is `"cbr"`), because folding a *spelling* is not
+  inventing a *value*.
+
+  **Open vocabularies are unchanged** and stay on their single slug wire
+  under every format. The asymmetry is not an oversight: an open
+  vocabulary's `Other(SmolStr)` holds a name with no code behind it, so a
+  numeric leg would have nothing to write for the one value the escape
+  exists to carry. A closed vocabulary has no such value — every member
+  has both spellings — so the format gets to choose, and a binary format
+  has no reason to pay for a string it cannot read anyway.
 
 - **`audio::ChannelLayout`'s numeric variants take a `Ch` prefix and drop
   `Point`.** `N5Point1Back` becomes `Ch5_1Back`, `N2Point1` becomes
@@ -190,13 +224,18 @@ renamed.
   and `ROSTER` comes from the roster macro, so completeness is a compile
   error rather than a counted test.
 
-  `ChannelOrder` **serializes as its `u32` code**, not as its slug —
-  `mediadecode` sent the slug. It joins `audio::BitRateMode` in the
-  strictly-closed group, and the line between the two groups is whether
-  the code space is closed. This one's is: it mirrors FFmpeg's
-  `AVChannelOrder`, four members with no vendor range, so an integer
-  outside `0..=3` is a corrupt read rather than a name this build has
-  not heard of, and it is refused instead of decoded as `Unspecified`.
+  `ChannelOrder` joins `audio::BitRateMode` in the **strictly-closed**
+  serde group, so it takes both legs described under Breaking above:
+  `"native"` in JSON, the code `1` in a binary format. `mediadecode`
+  sent the slug in every format, and the human-readable leg keeps that
+  spelling exactly — what changes is that a binary peer no longer pays
+  for a string it cannot read.
+
+  What puts it in that group at all is that its code space really is
+  closed: it mirrors FFmpeg's `AVChannelOrder`, four members with no
+  vendor range, so an integer outside `0..=3` is a corrupt read rather
+  than a name this build has not heard of, and it is refused instead of
+  decoded as `Unspecified`.
 
   The `buffa` codec gains its first **repeated** field
   (`custom_channels`), one length-delimited `ChannelSpec` per element.
