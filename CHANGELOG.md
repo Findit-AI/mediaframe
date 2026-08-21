@@ -6,46 +6,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-**Breaking**: every numeric `audio::ChannelLayout` variant is renamed.
+**Breaking**: `audio::ChannelLayout`'s twelve numeric variants are
+renamed.
 
 - **`audio::ChannelLayout`'s numeric variants take a `Ch` prefix and drop
   `Point`.** `N5Point1Back` becomes `Ch5_1Back`, `N2Point1` becomes
-  `Ch2_1`, and so on for all 28 numeric variants. Slugs, wire form,
-  serde, `buffa` and every stored value are **unchanged** — this renames
-  Rust identifiers only.
+  `Ch2_1` — all twelve of them. Slugs, wire form, serde, `buffa` and
+  every stored value are **unchanged**; this renames Rust identifiers
+  only.
 
   | was | is | was | is |
   |---|---|---|---|
-  | `N2Point1` | `Ch2_1` | `N6Point1` | `Ch6_1` |
-  | `N3Point0` | `Ch3_0` | `N6Point1Back` | `Ch6_1Back` |
-  | `N3Point0Back` | `Ch3_0Back` | `N6Point1Front` | `Ch6_1Front` |
-  | `N3Point1` | `Ch3_1` | `N7Point0` | `Ch7_0` |
-  | `N3Point1Point2` | `Ch3_1_2` | `N7Point0Front` | `Ch7_0Front` |
-  | `N4Point0` | `Ch4_0` | `N7Point1` | `Ch7_1` |
-  | `N4Point1` | `Ch4_1` | `N7Point1Wide` | `Ch7_1Wide` |
-  | `N5Point0` | `Ch5_0` | `N7Point1WideBack` | `Ch7_1WideBack` |
-  | `N5Point0Back` | `Ch5_0Back` | `N7Point1Point2` | `Ch7_1_2` |
-  | `N5Point1` | `Ch5_1` | `N7Point1Point4Back` | `Ch7_1_4Back` |
-  | `N5Point1Back` | `Ch5_1Back` | `N7Point2Point3` | `Ch7_2_3` |
-  | `N5Point1Point2Back` | `Ch5_1_2Back` | `N9Point1Point4Back` | `Ch9_1_4Back` |
-  | `N5Point1Point4Back` | `Ch5_1_4Back` | `N22Point2` | `Ch22_2` |
-  | `N6Point0` | `Ch6_0` | | |
-  | `N6Point0Front` | `Ch6_0Front` | | |
+  | `N2Point1` | `Ch2_1` | `N5Point1` | `Ch5_1` |
+  | `N3Point0` | `Ch3_0` | `N5Point1Back` | `Ch5_1Back` |
+  | `N3Point0Back` | `Ch3_0Back` | `N6Point0` | `Ch6_0` |
+  | `N3Point1` | `Ch3_1` | `N6Point1` | `Ch6_1` |
+  | `N5Point0` | `Ch5_0` | `N7Point0` | `Ch7_0` |
+  | `N5Point0Back` | `Ch5_0Back` | `N7Point1` | `Ch7_1` |
+
+  That is the whole rename. The other `Ch`-prefixed idents in this
+  release — `Ch3_1_2`, `Ch4_0`, `Ch4_1`, `Ch5_1_2`, `Ch5_1_2Back`,
+  `Ch5_1_4Back`, `Ch6_0Front`, `Ch6_1Back`, `Ch6_1Front`, `Ch7_0Front`,
+  `Ch7_1Wide`, `Ch7_1WideBack`, `Ch7_1_2`, `Ch7_1_4Back`, `Ch7_2_3`,
+  `Ch9_1_4Back`, `Ch9_1_6`, `Ch22_2` — are **new variants**, listed
+  under Added. They never had an `N` spelling to be renamed from, so
+  there is nothing in existing code to search for.
 
   The `N` was a lexical dodge — `5Point1Back` is not an identifier, so a
   letter had to go in front, and `N` said nothing. `Ch` says *channels*,
-  and `Ch5_1_2Back` reads as its layout where `N5Point1Point2Back` reads
-  as a spelling exercise. It is also the prefix `mediadecode` already
-  uses, so the two vocabularies converge on names as well as on slugs.
+  and `Ch5_1Back` reads as its layout where `N5Point1Back` reads as a
+  spelling exercise. It is also the prefix `mediadecode` already uses, so
+  the two vocabularies converge on names as well as on slugs.
 
-  **Letter-named variants are unchanged**: `Mono`, `Stereo`,
-  `StereoDownmix`, `Quad`, `QuadSide`, `Hexagonal`, `Octagonal`,
-  `Hexadecagonal`, `Cube`, `Ambisonic1`/`2`/`3` and `Other` keep their
-  names. The prefix exists to make a leading digit legal, and these have
-  no leading digit; `ChMono` would stutter against the type name, and
-  renaming `Other` would move the escape arm that `Unwrap`, `TryUnwrap`,
-  `IsVariant`, the roster macro and every `is_other()` call site depend
-  on.
+  **The letter-named variants keep their names**: `Mono`, `Stereo`,
+  `Quad`, `Hexagonal`, `Octagonal`, `Ambisonic1`/`2`/`3` and `Other` are
+  untouched, and the letter-named layouts added this release
+  (`StereoDownmix`, `Binaural`, `QuadSide`, `Hexadecagonal`, `Cube`)
+  arrive without a prefix for the same reason. The prefix exists to make
+  a leading digit legal and these have no leading digit; `ChMono` would
+  stutter against the type name, and renaming `Other` would move the
+  escape arm that `Unwrap`, `TryUnwrap`, `IsVariant`, the roster macro
+  and every `is_other()` call site depend on.
 
   The `IsVariant` predicates move with the idents: `is_n_5_point_1()` is
   now `is_ch_5_1()`.
