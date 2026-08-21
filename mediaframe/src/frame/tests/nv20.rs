@@ -1,7 +1,9 @@
 use crate::frame::{WidthAlignment, WidthAlignmentRequirement};
 
-use super::super::{Nv20BeFrame, Nv20Frame, Nv20FrameError, Nv20FramePlane, Nv20LeFrame};
-use super::util::{be_encoded_u16_buf, le_encoded_u16_buf};
+use super::{
+  super::{Nv20BeFrame, Nv20Frame, Nv20FrameError, Nv20FramePlane, Nv20LeFrame},
+  util::{be_encoded_u16_buf, le_encoded_u16_buf},
+};
 use std::vec;
 
 // 8×4 NV20 frame: Y is 8 u16/row × 4 rows; UV is half-width (4 pairs =

@@ -1,5 +1,7 @@
-use super::util::{be_encoded_u16_buf, le_encoded_u16_buf};
-use super::*;
+use super::{
+  util::{be_encoded_u16_buf, le_encoded_u16_buf},
+  *,
+};
 use std::{vec, vec::Vec};
 
 // ---- GbrpHighBitFrame (3-plane) tests ------------------------------------
