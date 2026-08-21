@@ -1,5 +1,7 @@
-use super::util::{be_encoded_u16_buf, le_encoded_u16_buf};
-use super::*;
+use super::{
+  util::{be_encoded_u16_buf, le_encoded_u16_buf},
+  *,
+};
 use crate::PixelSink;
 use core::convert::Infallible;
 use std::vec;

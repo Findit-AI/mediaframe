@@ -1,5 +1,8 @@
 use super::*;
-use crate::{PixelSink, frame::V410BeFrame, frame::V410Frame};
+use crate::{
+  PixelSink,
+  frame::{V410BeFrame, V410Frame},
+};
 use core::convert::Infallible;
 
 struct CountingSink {
