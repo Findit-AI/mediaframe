@@ -104,10 +104,56 @@ fn reachability_small_closed_coded_enums_hit_all_named() {
   // needs no hasher.
   use ::std::collections::BTreeSet;
   let mut br: BTreeSet<u32> = BTreeSet::new();
+  let mut co: BTreeSet<u32> = BTreeSet::new();
   drive_per_round(0x12C0DE5_u64, 2048, |u| {
     br.insert(crate::audio::BitRateMode::arbitrary(u).unwrap().to_u32());
+    co.insert(crate::audio::ChannelOrder::arbitrary(u).unwrap().to_u32());
   });
   assert_eq!(br.len(), 3, "BitRateMode coverage: {br:?}");
+  assert_eq!(co.len(), 4, "ChannelOrder coverage: {co:?}");
+}
+
+/// The channel household's two records have no invariant across their
+/// fields, so the generator draws each one independently — and the
+/// incoherent combinations that draw makes reachable are the point.
+/// A generator that only produced well-formed FFmpeg layouts would leave
+/// exactly the values a consumer is most likely to mishandle unreachable.
+#[test]
+fn reachability_channel_records_reach_their_incoherent_combinations() {
+  use crate::audio::{ChannelLayoutDescription, ChannelOrder, ChannelSpec};
+
+  let mut indices = 0u32;
+  let mut raw_ids = 0u32;
+  let mut labelled = false;
+  let mut custom_without_channels = false;
+  let mut native_without_mask = false;
+  let mut populated = false;
+  let mut described = false;
+  drive_per_round(0xC4A11E1_u64, 2048, |u| {
+    let spec = ChannelSpec::arbitrary(u).unwrap();
+    indices |= spec.index();
+    raw_ids |= spec.raw_id();
+    labelled |= !spec.label().is_empty();
+
+    let d = ChannelLayoutDescription::arbitrary(u).unwrap();
+    custom_without_channels |= d.order() == ChannelOrder::Custom && d.custom_channels().is_empty();
+    native_without_mask |= d.order() == ChannelOrder::Native && d.native_mask().is_none();
+    populated |= !d.custom_channels().is_empty();
+    described |= !d.text().is_empty();
+  });
+  assert_ne!(indices, 0, "spec index never left zero");
+  assert_ne!(raw_ids, 0, "spec raw_id never left zero");
+  assert!(labelled, "spec label was never populated");
+  assert!(
+    custom_without_channels,
+    "a Custom order with no channel list is unreachable"
+  );
+  assert!(
+    native_without_mask,
+    "a Native order with no mask is unreachable"
+  );
+  assert!(populated, "custom_channels was never non-empty");
+  assert!(described, "text was never populated");
 }
 
 /// `TrackOrigin` became an open string enum in 0.5.0, so it generates

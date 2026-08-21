@@ -64,10 +64,55 @@ fn smoke_yields_values_for_representative_types() {
 fn reachability_small_coded_enums_hit_all_named() {
   use ::std::collections::HashSet;
   let mut br: HashSet<crate::audio::BitRateMode> = HashSet::new();
+  let mut co: HashSet<crate::audio::ChannelOrder> = HashSet::new();
   drive(64, 2048, |g| {
     br.insert(crate::audio::BitRateMode::arbitrary(g));
+    co.insert(crate::audio::ChannelOrder::arbitrary(g));
   });
   assert_eq!(br.len(), 3, "BitRateMode coverage: {br:?}");
+  assert_eq!(co.len(), 4, "ChannelOrder coverage: {co:?}");
+}
+
+/// The `quickcheck` half of the channel-record coverage
+/// `arbitrary_impls` gives, drawn the same way and for the same reason:
+/// every field independently, so the incoherent combinations the type
+/// permits stay reachable.
+#[test]
+fn reachability_channel_records_reach_their_incoherent_combinations() {
+  use crate::audio::{ChannelLayoutDescription, ChannelOrder, ChannelSpec};
+
+  let mut indices = 0u32;
+  let mut raw_ids = 0u32;
+  let mut labelled = false;
+  let mut custom_without_channels = false;
+  let mut native_without_mask = false;
+  let mut populated = false;
+  let mut described = false;
+  drive(16, 2048, |g| {
+    let spec = ChannelSpec::arbitrary(g);
+    indices |= spec.index();
+    raw_ids |= spec.raw_id();
+    labelled |= !spec.label().is_empty();
+
+    let d = ChannelLayoutDescription::arbitrary(g);
+    custom_without_channels |= d.order() == ChannelOrder::Custom && d.custom_channels().is_empty();
+    native_without_mask |= d.order() == ChannelOrder::Native && d.native_mask().is_none();
+    populated |= !d.custom_channels().is_empty();
+    described |= !d.text().is_empty();
+  });
+  assert_ne!(indices, 0, "spec index never left zero");
+  assert_ne!(raw_ids, 0, "spec raw_id never left zero");
+  assert!(labelled, "spec label was never populated");
+  assert!(
+    custom_without_channels,
+    "a Custom order with no channel list is unreachable"
+  );
+  assert!(
+    native_without_mask,
+    "a Native order with no mask is unreachable"
+  );
+  assert!(populated, "custom_channels was never non-empty");
+  assert!(described, "text was never populated");
 }
 
 /// `TrackOrigin` became an open string enum in 0.5.0 — named variants

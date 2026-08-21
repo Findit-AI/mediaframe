@@ -20,18 +20,28 @@
 //! - **`TrackDisposition`** is the one numeric wire left: it is a bit set,
 //!   not a name vocabulary, so it serializes as its `u32` bits.
 //! - **Strictly-closed coded enums (no `Other` arm)** —
-//!   [`crate::audio::BitRateMode`] — serialize as their `u32` code but
+//!   [`crate::audio::BitRateMode`], [`crate::audio::ChannelOrder`] —
+//!   serialize as their `u32` code but
 //!   **reject** unknown wire codes as serde errors instead of silently
 //!   collapsing them to the default variant (which `from_u32` would do).
 //!   This is intentional: a corrupt or out-of-range value on the wire
-//!   must fail loudly rather than masquerade as `Cbr`. The check is
+//!   must fail loudly rather than masquerade as `Cbr` / `Unspecified`.
+//!   The check is
 //!   backed by the type's `try_from_u32(v: u32) -> Option<Self>` method.
 //!   [`crate::subtitle::TrackOrigin`] left this group in 0.5.0 when it
 //!   gained an `Other` arm: an open vocabulary has no closed code space
 //!   to police, so it moved to the slug wire above.
 //!
+//!   `ChannelOrder` belongs here rather than on the slug wire because
+//!   the code space really is closed: it mirrors FFmpeg's
+//!   `AVChannelOrder`, which has four members and no vendor range, so
+//!   every integer outside `0..=3` is a corrupt read rather than a name
+//!   this build has not heard of.
+//!
 //! The plain data structs (`color::Info`, `frame::Dimensions`,
-//! `audio::Tags`, …) derive serde at their definition site; the
+//! `audio::Tags`, `audio::ChannelSpec`,
+//! `audio::ChannelLayoutDescription`, …) derive serde at their
+//! definition site; the
 //! validated structs (`capture::GeoLocation`, `audio::Fingerprint`,
 //! `audio::CoverArt`, `frame::WhiteBalance`,
 //! `frame::ColorCorrectionMatrix`) route deserialize through their
@@ -184,9 +194,12 @@ serde_via_str!(crate::audio::ContainerFormat);
 // ── Strictly-closed coded enums (no `Unknown` escape) ──
 // Use `serde_via_code_strict!` — adversarial / unknown wire codes are
 // rejected as serde errors, not silently canonicalised to the default
-// (which `from_u32` would do for `BitRateMode::from_u32(999) == Cbr`).
+// (which `from_u32` would do for `BitRateMode::from_u32(999) == Cbr`
+// and `ChannelOrder::from_u32(999) == Unspecified`).
 #[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_code_strict!(crate::audio::BitRateMode);
+#[cfg(any(feature = "std", feature = "alloc"))]
+serde_via_code_strict!(crate::audio::ChannelOrder);
 
 #[cfg(all(test, feature = "std"))]
 mod tests;

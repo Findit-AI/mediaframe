@@ -56,6 +56,65 @@ fn structs_round_trip() {
   round_trip(&(TrackDisposition::DEFAULT | TrackDisposition::FORCED));
 }
 
+/// The channel household's two records carry three different wire shapes
+/// in one map, and each one is its field type's own: `order` as the
+/// closed enum's `u32` code, `known_kind` as the open vocabulary's slug,
+/// `custom_channels` as an array of maps. A derive inherits the field
+/// types' impls, and this is what proves it did.
+#[test]
+fn the_channel_records_carry_each_field_in_its_own_shape() {
+  use crate::audio::{ChannelLayoutDescription, ChannelOrder, ChannelSpec};
+
+  let spec = ChannelSpec::new(2, 5).with_label("FL");
+  assert_eq!(
+    serde_json::to_string(&spec).unwrap(),
+    r#"{"index":2,"raw_id":5,"label":"FL"}"#
+  );
+  round_trip(&spec);
+
+  let described = ChannelLayoutDescription::new(6)
+    .with_order(ChannelOrder::Native)
+    .with_known_kind(ChannelLayout::Ch5_1)
+    .with_native_mask(Some(0x3F))
+    .with_text("5.1(side)");
+  assert_eq!(
+    serde_json::to_string(&described).unwrap(),
+    r#"{"order":1,"channels":6,"known_kind":"5.1(side)","native_mask":63,"custom_channels":[],"text":"5.1(side)"}"#
+  );
+  round_trip(&described);
+
+  let custom = ChannelLayoutDescription::new(2)
+    .with_order(ChannelOrder::Custom)
+    .with_custom_channels(::std::vec![
+      ChannelSpec::new(0, 1).with_label("FL"),
+      ChannelSpec::new(1, 2).with_label("FR"),
+    ]);
+  round_trip(&custom);
+
+  // The record inherits its fields' refusals: `known_kind` is an open
+  // vocabulary and absorbs an unknown slug, but `order` is closed and an
+  // out-of-range code fails the whole map rather than softening to
+  // `Unspecified`.
+  assert!(
+    serde_json::from_str::<ChannelLayoutDescription>(
+      r#"{"order":9,"channels":2,"known_kind":"unknown","native_mask":null,"custom_channels":[],"text":""}"#
+    )
+    .is_err()
+  );
+  let odd: ChannelLayoutDescription = serde_json::from_str(
+    r#"{"order":0,"channels":2,"known_kind":"zzlayout","native_mask":null,"custom_channels":[],"text":""}"#,
+  )
+  .unwrap();
+  assert_eq!(odd.known_kind(), &ChannelLayout::other("zzlayout"));
+
+  // `serde(default)` keeps a sparse document readable — an omitted field
+  // falls back to the type's own absent value.
+  let sparse: ChannelLayoutDescription = serde_json::from_str(r#"{"channels":2}"#).unwrap();
+  assert_eq!(sparse, ChannelLayoutDescription::new(2));
+  let sparse_spec: ChannelSpec = serde_json::from_str(r#"{"raw_id":7}"#).unwrap();
+  assert_eq!(sparse_spec, ChannelSpec::new(0, 7));
+}
+
 #[test]
 fn rational_deserialize_rejects_out_of_range_fields() {
   // The derived `Deserialize` assigns fields directly, so it is a
@@ -134,7 +193,7 @@ fn sample_format_rides_the_slug_wire() {
 /// looked like valid data on the consumer side.
 #[test]
 fn closed_coded_enums_reject_unknown_codes() {
-  use crate::audio::BitRateMode;
+  use crate::audio::{BitRateMode, ChannelOrder};
 
   for m in [BitRateMode::Cbr, BitRateMode::Vbr, BitRateMode::Abr] {
     round_trip(&m);
@@ -143,6 +202,25 @@ fn closed_coded_enums_reject_unknown_codes() {
   // Out-of-range codes are rejected — not canonicalised to the default.
   assert!(serde_json::from_str::<BitRateMode>("999").is_err());
   assert!(serde_json::from_str::<BitRateMode>("3").is_err());
+
+  // `ChannelOrder` mirrors FFmpeg's `AVChannelOrder`, whose four members
+  // are the whole code space, so the same rule applies: a code outside
+  // `0..=3` is a corrupt read and must not decode to `Unspecified` the
+  // way the lenient `from_u32` door would.
+  for &o in ChannelOrder::ROSTER {
+    round_trip(&o);
+  }
+  assert_eq!(
+    serde_json::to_string(&ChannelOrder::Ambisonic).unwrap(),
+    "3"
+  );
+  assert_eq!(
+    serde_json::from_str::<ChannelOrder>("0").unwrap(),
+    ChannelOrder::Unspecified
+  );
+  assert!(serde_json::from_str::<ChannelOrder>("4").is_err());
+  assert!(serde_json::from_str::<ChannelOrder>("999").is_err());
+  assert_eq!(ChannelOrder::from_u32(999), ChannelOrder::Unspecified);
 }
 
 /// `TrackOrigin` left the coded wire in 0.5.0: it is an open vocabulary
