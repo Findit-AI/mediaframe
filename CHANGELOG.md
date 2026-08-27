@@ -6,6 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-28
+
+**Breaking:** the public dependency `mediatime` crosses 0.3 → 0.4.
+
+### Changed
+
+- **`mediatime` 0.3 → 0.4.** Upstream is additive only — one commit, adding
+  `Duration` (the unsigned counterpart to `SignedDuration`) plus its
+  `core::time::Duration` and `SignedDuration` conversions; `mediatime`'s own
+  changelog says plainly that `Timebase`'s public surface is unchanged, and
+  neither `SignedDuration` nor the new `Duration` exists in this crate's
+  dependency graph at all. `Timestamp` is the *only* `mediatime` type this
+  crate's public API carries — `frame::TimestampedFrame`'s `pts`/`duration`
+  fields and its `pts`/`duration`/`with_pts`/`maybe_pts`/`set_pts`/
+  `update_pts`/`with_duration`/`maybe_duration`/`set_duration`/
+  `update_duration` accessors and builders — and `Timestamp` itself did not
+  change. Still marked **Breaking**, matching how this crate treated
+  `mediatime` 0.1 → 0.2 and 0.2 → 0.3: a public dependency crossing an
+  incompatible Cargo SemVer class (0.x's minor digit is the compatibility
+  boundary) breaks a caller holding a `mediatime 0.3` value against this
+  crate's `0.4`-typed signatures, regardless of how much of `mediatime`'s own
+  surface actually moved — the 0.1 → 0.2 release proved the same point in the
+  other direction, staying **Breaking** despite touching only one test's
+  literal. Verified empirically here, not just argued: `cargo check` (default
+  features, `--all-features`, and both no-alloc/`alloc` no_std tier floors),
+  `cargo test --all-features`, and `cargo clippy --all-features -- -D
+  warnings` all pass with no source change required — zero fallout in this
+  crate's own source.
+
 ## [0.6.0] - 2026-08-21
 
 **Breaking**, on two counts: `audio::ChannelLayout`'s twelve numeric
