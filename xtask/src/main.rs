@@ -32,9 +32,19 @@
 //!     enumerate) are exempt from FFmpeg coverage and additionally
 //!     asserted disjoint from the vendored FFmpeg colour codes.
 //!
-//! The vendored files are plain text (not the FFmpeg header verbatim),
-//! which sidesteps the LGPL question that would apply to checking in
-//! `pixfmt.h` itself.
+//! - `cargo xtask gen-lang` — regenerates
+//!   `mediaframe/src/lang/registry/table.rs` from the two vendored BCP 47
+//!   registries (`xtask/vendor/language-subtag-registry.txt` and
+//!   `xtask/vendor/iso639-2.txt`). `cargo xtask check` renders the same
+//!   text in memory and diffs it byte for byte, and `cargo xtask sync`
+//!   re-fetches both files from their authorities. See [`lang`], where the
+//!   two-file argument is made in full.
+//!
+//! The FFmpeg vendored files are plain text (not the FFmpeg header
+//! verbatim), which sidesteps the LGPL question that would apply to
+//! checking in `pixfmt.h` itself. The two BCP 47 registries are vendored
+//! verbatim — both are published as public-domain data by their
+//! registrars.
 
 use std::{
   collections::{BTreeMap, BTreeSet},
@@ -80,6 +90,12 @@ const CODEC_RS: &str = "mediaframe/src/codec/mod.rs";
 /// generator emits two files and `check` verifies both.
 const CODEC_TESTS_RS: &str = "mediaframe/src/codec/tests.rs";
 
+/// The BCP 47 language registries — the fourth vendored authority, and the
+/// only one that generates a whole Rust module rather than checking a
+/// hand-written one. Its vendored files, generator and freshness diff all
+/// live in [`lang`], which `check` / `sync` / `gen-lang` call into.
+mod lang;
+
 /// The mediaframe codec enums and their corresponding FFmpeg media
 /// type (`AVMEDIA_TYPE_*`, lowercased).
 const CODEC_ENUMS: &[(&str, &str)] = &[
@@ -104,9 +120,10 @@ fn main() -> ExitCode {
     .nth(1)
     .unwrap_or_else(|| "help".to_string());
   match cmd.as_str() {
-    "check" | "check-pixel-format" | "check-codec" => check(),
-    "sync" | "sync-pixel-format" | "sync-codec" => sync(),
+    "check" | "check-pixel-format" | "check-codec" | "check-lang" => check(),
+    "sync" | "sync-pixel-format" | "sync-codec" | "sync-lang" => sync(),
     "gen-codec" => gen_codec(),
+    "gen-lang" => gen_lang(),
     "help" | "--help" | "-h" => {
       print_help();
       ExitCode::SUCCESS
@@ -123,15 +140,20 @@ fn print_help() {
   eprintln!(
     "mediaframe xtask\n\n\
          Subcommands:\n  \
-         check    Verify mediaframe against vendored FFmpeg tables:\n           \
+         check    Verify mediaframe against the vendored tables:\n           \
                     - PixelFormat slugs ({VENDOR_PATH})\n           \
                     - Colour-enum codes ({COLOR_VENDOR_PATH})\n           \
-                    - Codec short names ({CODEC_VENDOR_PATH})\n  \
-         sync       Fetch FFmpeg {FFMPEG_TAG} (pixfmt.h + codec_desc.c) and\n             \
-                    regenerate the vendored files deterministically\n  \
+                    - Codec short names ({CODEC_VENDOR_PATH})\n           \
+                    - The BCP 47 language table ({lang_table})\n  \
+         sync       Fetch FFmpeg {FFMPEG_TAG} (pixfmt.h + codec_desc.c) and the\n             \
+                    two BCP 47 registries, and regenerate the vendored files\n             \
+                    deterministically\n  \
          gen-codec  Regenerate mediaframe/src/codec/mod.rs from the vendored\n             \
                     table ({CODEC_VENDOR_PATH}) via quote + prettyplease\n  \
-         help       Show this help\n"
+         gen-lang   Regenerate {lang_table} from the two\n             \
+                    vendored BCP 47 registries\n  \
+         help       Show this help\n",
+    lang_table = lang::TABLE_RS
   );
 }
 
@@ -155,7 +177,9 @@ fn check() -> ExitCode {
   let color_ok = check_color(&root);
   println!();
   let codec_ok = check_codec(&root);
-  if pf_ok && color_ok && codec_ok {
+  println!();
+  let lang_ok = lang::check(&root);
+  if pf_ok && color_ok && codec_ok && lang_ok {
     ExitCode::SUCCESS
   } else {
     ExitCode::FAILURE
@@ -1177,6 +1201,11 @@ fn sync() -> ExitCode {
     kbody.len()
   );
 
+  if let Err(e) = lang::sync(&workspace_root()) {
+    eprintln!("{e}");
+    return ExitCode::FAILURE;
+  }
+
   ExitCode::SUCCESS
 }
 
@@ -1521,6 +1550,22 @@ fn gen_codec() -> ExitCode {
     tests.len()
   );
   ExitCode::SUCCESS
+}
+
+/// Regenerate `mediaframe/src/lang/registry/table.rs` from the two vendored
+/// BCP 47 registries. The freshness gate is `cargo xtask check`, which
+/// renders the same text in memory and diffs it against what is on disk.
+fn gen_lang() -> ExitCode {
+  match lang::generate(&workspace_root()) {
+    Ok(bytes) => {
+      println!("Wrote {} ({bytes} bytes)", lang::TABLE_RS);
+      ExitCode::SUCCESS
+    }
+    Err(e) => {
+      eprintln!("{e}");
+      ExitCode::FAILURE
+    }
+  }
 }
 
 /// Build the **expected** content of `mediaframe/src/codec/mod.rs` from

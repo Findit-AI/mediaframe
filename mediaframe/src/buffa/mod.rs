@@ -220,8 +220,8 @@
 //!   distinguished on the wire** in this codec; both round-trip to
 //!   `None`. A future codec revision can switch to wrapper messages
 //!   if the distinction becomes load-bearing. `language` is the
-//!   placeholder BCP-47 SmolStr; the `TODO(lang)` comment on the
-//!   Rust type tracks the swap to `Option<Language>`.
+//!   canonical BCP 47 tag as a string; the empty string means the
+//!   `Option<LanguageId>` was `None`.
 //!
 //! ## Subtitle + disposition
 //!
@@ -266,7 +266,7 @@
 //! Device      { string make = 1; string model = 2; }     // proto3 zero-elision (empty == absent)
 //! GeoLocation { double lat = 1; double lon = 2;          // lat/lon ALWAYS encoded
 //!               float altitude = 3; }                     // altitude emitted iff Some
-//! Language    { string value = 1; }                      // BCP-47 canonical tag; "und" elides
+//! LanguageId  { string value = 1; }                      // BCP 47 canonical tag; never elides
 //! ```
 //!
 //! - **`Device`** — two empty strings == proto-zero, so proto3
@@ -279,16 +279,26 @@
 //!   uses presence encoding (emitted iff `Some`, including for
 //!   `Some(0.0)` so sea-level distinct from absent altitude). Same
 //!   defensive stance as `SampleAspectRatio`.
-//! - **`Language`** — encoded as the BCP-47 canonical tag via
-//!   `to_bcp47()`. Default is `"und"` (ISO 639-3 undetermined),
-//!   which is the in-rust sentinel for "no usable tag"; the wire
-//!   uses default-elision (an absent field decodes to `und`). An
-//!   invalid wire string silently coerces to `Language::default()`
-//!   (`und`) — `buffa::DecodeError` in 0.6 has no general
-//!   "invalid value" arm, and the type's sentinel is the right
-//!   fallback.
+//! - **`LanguageId`** — encoded as the canonical BCP 47 tag, which is
+//!   what `Display` writes and `LanguageId::new` reads back. Default
+//!   is `"und"` (ISO 639-3 undetermined), the value a muxer writes
+//!   when it looked and could not tell; the wire uses default-elision
+//!   (an absent field decodes to `und`), and since `"und"` is not the
+//!   empty string the encoder always writes it.
+//!
+//!   A wire string the door refuses coerces to `LanguageId::default()`
+//!   (`und`) — `buffa::DecodeError` has no general "invalid value" arm,
+//!   and the type's sentinel is the right fallback. That path is much
+//!   NARROWER than it used to be: the door is WIDE IN, so an mkv's
+//!   `ger` reaches `de`, a variant or private-use tail rides the
+//!   fourth seat verbatim, and only a structurally impossible tag
+//!   (`en-US-!!`, `日本語`) still falls back.
 
 use core::num::NonZeroI64;
+// `LanguageId`'s wire form is the canonical tag its `Display` writes, and the
+// `ToString` that reaches it is not in the prelude on a `no_std` + `alloc`
+// build — which the `buffa` feature is, since it implies `alloc` and not `std`.
+use std::string::ToString;
 
 use ::buffa::{
   DecodeContext, DecodeError, DefaultInstance, EncodeSink, Message, SizeCache,
@@ -319,7 +329,7 @@ use crate::{
     DEN_ONE, Dimensions, FieldOrder, FrameRate, Rational, Rect, Rotation, SampleAspectRatio,
     StereoMode,
   },
-  lang::Language,
+  lang::LanguageId,
   pixel_format::PixelFormat,
 };
 
@@ -2316,7 +2326,7 @@ impl Message for Tags {
       size += 1 + uint32_encoded_len(self.disc_total() as u32) as u32;
     }
     if let Some(lang) = self.language() {
-      size += 1 + string_encoded_len(&lang.to_bcp47()) as u32;
+      size += 1 + string_encoded_len(&lang.to_string()) as u32;
     }
     size
   }
@@ -2372,7 +2382,7 @@ impl Message for Tags {
     }
     if let Some(lang) = self.language() {
       Tag::new(13, WireType::LengthDelimited).encode(buf);
-      encode_string(&lang.to_bcp47(), buf);
+      encode_string(&lang.to_string(), buf);
     }
   }
 
@@ -2418,14 +2428,14 @@ impl Message for Tags {
           }
           13 => {
             // An empty field-13 string means "no language tag" (`None`);
-            // a non-empty value parses as BCP-47, coercing an unparseable
-            // tag to `Language::default()` (`und`) — the same lenient
-            // semantics the standalone `Language` codec uses (buffa 0.6's
-            // `DecodeError` has no general "invalid value" arm).
+            // a non-empty value goes through the whole-tag door, coercing a
+            // tag it refuses to `LanguageId::default()` (`und`) — the same
+            // lenient semantics the standalone `LanguageId` codec uses
+            // (`buffa::DecodeError` has no general "invalid value" arm).
             self.update_language(if s.is_empty() {
               None
             } else {
-              Some(Language::from_bcp47(&s).unwrap_or_default())
+              Some(LanguageId::new(&s).unwrap_or_default())
             });
           }
           _ => unreachable!(),
@@ -2873,28 +2883,27 @@ impl Message for GeoLocation {
 }
 
 // ----------------------------------------------------------------------------
-// Language — { string value = 1; }
+// LanguageId — { string value = 1; }
 //
-// Encodes the canonical BCP-47 string at field #1. proto3
-// zero-elision applies to the empty string; since `Language::default()`
-// is the BCP-47 `"und"` tag (non-empty), the encoder always writes
-// it. On decode, an absent field (empty buffer / unknown-field skip)
-// seeds back to `Default` = `"und"`. A wire value that fails BCP-47
-// parsing is rejected as `DecodeError::Other`.
+// Encodes the canonical BCP 47 tag at field #1. proto3 zero-elision
+// applies to the empty string; since `LanguageId::default()` is the
+// `"und"` tag (non-empty), the encoder always writes it. On decode, an
+// absent field (empty buffer / unknown-field skip) seeds back to
+// `Default` = `"und"`.
 // ----------------------------------------------------------------------------
 
 #[cfg(any(feature = "std", feature = "alloc"))]
-impl DefaultInstance for Language {
+impl DefaultInstance for LanguageId {
   fn default_instance() -> &'static Self {
-    static VALUE: buffa::__private::OnceBox<Language> = buffa::__private::OnceBox::new();
-    VALUE.get_or_init(|| buffa::alloc::boxed::Box::new(Language::default()))
+    static VALUE: buffa::__private::OnceBox<LanguageId> = buffa::__private::OnceBox::new();
+    VALUE.get_or_init(|| buffa::alloc::boxed::Box::new(LanguageId::default()))
   }
 }
 
 #[cfg(any(feature = "std", feature = "alloc"))]
-impl Message for Language {
+impl Message for LanguageId {
   fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
-    let tag = self.to_bcp47();
+    let tag = self.to_string();
     if tag.is_empty() {
       0
     } else {
@@ -2903,7 +2912,7 @@ impl Message for Language {
   }
 
   fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
-    let tag = self.to_bcp47();
+    let tag = self.to_string();
     if !tag.is_empty() {
       Tag::new(1, WireType::LengthDelimited).encode(buf);
       encode_string(&tag, buf);
@@ -2926,15 +2935,14 @@ impl Message for Language {
           });
         }
         let s = decode_string(buf)?;
-        // A wire value that doesn't parse as BCP-47 is mapped to
-        // `Language::default()` (the ISO 639-3 `"und"`
-        // "undetermined" sentinel) rather than failing the decode —
-        // that is the same semantics the type uses in-rust for
-        // "no usable language tag", and keeps the decoder total.
-        // The `DecodeError` enum in buffa 0.6 has no general
-        // "invalid value" arm, so silent coercion to the
+        // A wire value the whole-tag door refuses is mapped to
+        // `LanguageId::default()` (the ISO 639-3 `"und"` "undetermined"
+        // sentinel) rather than failing the decode — that is the same
+        // semantics the type uses in-rust for "no usable language tag",
+        // and keeps the decoder total. `buffa::DecodeError` has no
+        // general "invalid value" arm, so silent coercion to the
         // already-existing sentinel is the least-bad choice.
-        *self = Language::from_bcp47(&s).unwrap_or_default();
+        *self = LanguageId::new(&s).unwrap_or_default();
       }
       _ => skip_field_depth(tag, buf, ctx.depth())?,
     }
@@ -2942,7 +2950,7 @@ impl Message for Language {
   }
 
   fn clear(&mut self) {
-    *self = Language::default();
+    *self = LanguageId::default();
   }
 }
 

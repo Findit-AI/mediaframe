@@ -76,8 +76,8 @@
 //! validated structs (`capture::GeoLocation`, `audio::Fingerprint`,
 //! `audio::CoverArt`, `frame::WhiteBalance`,
 //! `frame::ColorCorrectionMatrix`) route deserialize through their
-//! checking constructors there too. `lang::Language` carries a bespoke BCP-47
-//! string impl in its module.
+//! checking constructors there too. The `lang` household carries bespoke
+//! canonical-text impls for all four of its types in its own module.
 
 /// Implements `Serialize` / `Deserialize` for an *open* enum via its
 /// canonical string slug (`as_str()` to serialize, [`FromStr`] to parse).

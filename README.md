@@ -94,11 +94,15 @@ speak to without agreeing on anything heavier.
   image-based `HdmvPgs` / …) + `TrackOrigin`
   (`Embedded` / `Sidecar` / `External`). Pure stream-descriptor
   vocabulary — no per-cue content. Requires the `alloc` feature.
-- **`lang`** — validated BCP-47 `Language` tag (language subtag +
-  optional script + optional region), wrapping `icu_locale_core`'s
-  `TinyAsciiStr`-backed subtag types so the value is `Copy` /
-  heap-free. Validates via `LanguageIdentifier::try_from_bytes`.
-  Requires the `alloc` feature.
+- **`lang`** — BCP 47 language identity: three validated subtag types
+  (`Language`, `ScriptSubtag`, `Region`) and the lossless whole tag that
+  composes them (`LanguageId` — language, script, region, and everything
+  past the region held verbatim). Every fold is a column of a registry
+  vendored under `xtask/vendor/` and generated into `lang::registry`, so
+  an mkv's `ger` and an mp4's `deu` are both `de`, `iw` is `he`, `BU` is
+  `MM`, and `en-Latn` composes as `en` while `zh-Hans` composes as
+  itself. A structurally valid subtag the registry has never heard of is
+  admitted rather than refused. Requires the `alloc` feature.
 - **`disposition`** — `TrackDisposition` bitflags mirroring FFmpeg's
   `AV_DISPOSITION_*` (`DEFAULT`, `FORCED`, `HEARING_IMPAIRED`, …).
   Bit values are append-only, never renumbered; unknown bits
@@ -129,9 +133,11 @@ speak to without agreeing on anything heavier.
   - Strictly-closed coded enums (`subtitle::TrackOrigin`,
     `audio::BitRateMode`) — the `to_u32()` integer, but unknown codes are
     **rejected** as serde errors rather than collapsing to the default.
-  - `lang::Language` — its BCP-47 string. Validated structs (`GeoLocation`
-    / `Fingerprint` / `CoverArt`) deserialize through their checking
-    constructors.
+  - The `lang` household (`Language`, `ScriptSubtag`, `Region`,
+    `LanguageId`) — its canonical text, read back through the type's own
+    door, so a document holding `GER` deserializes to the same value one
+    holding `de` does. Validated structs (`GeoLocation` / `Fingerprint` /
+    `CoverArt`) deserialize through their checking constructors.
 
   Orthogonal to the capability tiers (no-alloc Copy types included). Off
   by default — enable with `--features serde`.
@@ -157,7 +163,8 @@ speak to without agreeing on anything heavier.
 ```toml
 [dependencies]
 # Lean — codec + color + pixel_format + frame primitives.
-# Adds `mediatime` + `derive_more` + `smol_str` (codec `Other` arm).
+# Adds `mediatime` + `derive_more` + `smol_str` (codec `Other` arm)
+# + `smol-bytes` (the `lang` household's subtag text seat).
 mediaframe = "0.8"
 ```
 

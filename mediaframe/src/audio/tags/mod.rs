@@ -3,7 +3,7 @@
 
 use smol_str::SmolStr;
 
-use crate::lang::Language;
+use crate::lang::LanguageId;
 
 /// Embedded media-metadata tags carried alongside an audio stream.
 ///
@@ -21,17 +21,18 @@ use crate::lang::Language;
 ///   are 1-based and a release year is never `0`, so `0` is unambiguous —
 ///   and it matches the proto3 zero-elision the buffa wire codec applies
 ///   to these fields (a `0` is not written and decodes back to `0`).
-/// - **`language`** is `Option<Language>`: `None` = no language tag,
-///   `Some(Language)` = a parsed BCP-47 tag (which may itself be the
+/// - **`language`** is `Option<LanguageId>`: `None` = no language tag,
+///   `Some(LanguageId)` = a parsed BCP 47 tag (which may itself be the
 ///   `und` "undetermined" value — distinct from "tag absent").
 ///
-/// **`language` normalization** — [`Language`] models the BCP-47
-/// *language / script / region* subtags only; a tag carrying a *variant*
-/// (`de-CH-1901`) or *extension* (`-u-…`) is accepted but normalized to
-/// its language/script/region core, and an unparseable wire value decodes
-/// to `und`. Embedded-metadata language tags are language/script/region in
-/// practice, so this is lossless for real input; callers needing the
-/// verbatim tag should not route it through `Tags`.
+/// **`language` canonicalisation** — [`LanguageId`] is LOSSLESS: a variant
+/// (`de-CH-1901`), an extension (`-u-co-phonebk`) or a private-use
+/// sequence (`-x-lorem`) is carried verbatim in the tag's fourth seat and
+/// rendered back exactly. What the door DOES change is spelling, and every
+/// fold is a column of a vendored registry: an mkv's `ger` and an mp4's
+/// `deu` both become `de`, `iw` becomes `he`, and `en-Latn` composes as
+/// `en` because the registry says `en` implies Latin. See the
+/// [`lang`](crate::lang) module for the whole table.
 // `serde(default)` keeps sparse / older-schema JSON deserializable: missing
 // fields fall back to the type-level `Default` impl (`Tags::new()` — all
 // fields absent), matching the absent-vs-present convention above.
@@ -64,12 +65,12 @@ pub struct Tags {
   disc_number: u16,
   /// Total discs in the release; `0` means absent.
   disc_total: u16,
-  /// Parsed BCP-47 language tag; `None` means no language tag present.
+  /// Parsed BCP 47 language tag; `None` means no language tag present.
   // golden-rule §9: an `Option` serde field skip-serializes when `None` —
   // absent language is an omitted key, never `"language":null`. The
   // container `serde(default)` restores it on the way back.
   #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-  language: Option<Language>,
+  language: Option<LanguageId>,
 }
 
 impl Default for Tags {
@@ -162,10 +163,16 @@ impl Tags {
   pub const fn disc_total(&self) -> u16 {
     self.disc_total
   }
-  /// Parsed BCP-47 language tag (`None` if no language tag is present).
+  /// Parsed BCP 47 language tag (`None` if no language tag is present).
+  ///
+  /// A BORROW, where every other accessor on this type hands back a copy.
+  /// [`LanguageId`]'s three bounded seats are each `Copy` inline ASCII, but
+  /// its fourth — the lossless tail — is heap-backed, which is what makes
+  /// the whole identity `Clone` and not `Copy`. `.cloned()` is the owned
+  /// value.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn language(&self) -> Option<Language> {
-    self.language
+  pub const fn language(&self) -> Option<&LanguageId> {
+    self.language.as_ref()
   }
 
   /// Sets the title (consuming builder).
@@ -253,16 +260,26 @@ impl Tags {
     self
   }
   /// Sets the language tag to `Some(v)` (consuming builder).
+  ///
+  /// Not `const`, and the boundary is exactly this: **does the overwrite
+  /// drop a `Utf8Bytes`?** Assigning over this field drops the
+  /// `Option<LanguageId>` that was there, and a `LanguageId` may hold a
+  /// heap-backed tail — so the drop glue is real and cannot run at compile
+  /// time (`E0493`). Read against this type's other setters the rule is the
+  /// same one: the `u16` fields overwrite a value with no destructor and
+  /// stay `const`, and the `SmolStr` fields drop a possibly-heap-backed
+  /// string and never were. It is the tail, and only the tail, that puts
+  /// `language` on the second list.
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn with_language(mut self, v: Language) -> Self {
+  pub fn with_language(mut self, v: LanguageId) -> Self {
     self.language = Some(v);
     self
   }
   /// Assigns the raw language wrapper (consuming builder).
   #[must_use]
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn maybe_language(mut self, v: Option<Language>) -> Self {
+  pub fn maybe_language(mut self, v: Option<LanguageId>) -> Self {
     self.language = v;
     self
   }
@@ -341,19 +358,19 @@ impl Tags {
   }
   /// Sets the language tag to `Some(v)` in place.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn set_language(&mut self, v: Language) -> &mut Self {
+  pub fn set_language(&mut self, v: LanguageId) -> &mut Self {
     self.language = Some(v);
     self
   }
   /// Assigns the raw language wrapper in place.
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn update_language(&mut self, v: Option<Language>) -> &mut Self {
+  pub fn update_language(&mut self, v: Option<LanguageId>) -> &mut Self {
     self.language = v;
     self
   }
   /// Clears the language tag (`None`).
   #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn clear_language(&mut self) -> &mut Self {
+  pub fn clear_language(&mut self) -> &mut Self {
     self.language = None;
     self
   }
