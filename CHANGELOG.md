@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-30
+
 ### Added
 
 - **`lang` is a household, not a type** — four public types where there was
