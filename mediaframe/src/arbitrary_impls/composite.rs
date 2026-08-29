@@ -23,7 +23,8 @@
 //                                 with `int_in_range` then `.expect`)
 //
 //   LANGUAGE:
-//     - lang::Language           (from_bcp47(<curated tag>) — `u.choose`)
+//     - lang::{Language, ScriptSubtag, Region, LanguageId}
+//                                 (new(<curated subtag/tag>) — `u.choose`)
 
 impl<'a> ::arbitrary::Arbitrary<'a> for crate::audio::ChannelSpec {
   fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
@@ -175,10 +176,10 @@ impl<'a> ::arbitrary::Arbitrary<'a> for crate::audio::Tags {
       .with_track_total(<u16 as ::arbitrary::Arbitrary>::arbitrary(u)?)
       .with_disc_number(<u16 as ::arbitrary::Arbitrary>::arbitrary(u)?)
       .with_disc_total(<u16 as ::arbitrary::Arbitrary>::arbitrary(u)?)
-      // `language` is `Option<Language>` — 50/50 `None` / `Some(<curated
-      // BCP-47 tag>)`, reusing the `Language` arbitrary impl in this module.
+      // `language` is `Option<LanguageId>` — 50/50 `None` / `Some(<curated
+      // BCP 47 tag>)`, reusing the `LanguageId` arbitrary impl in this module.
       .maybe_language(if <bool as ::arbitrary::Arbitrary>::arbitrary(u)? {
-        Some(<crate::lang::Language as ::arbitrary::Arbitrary>::arbitrary(u)?)
+        Some(<crate::lang::LanguageId as ::arbitrary::Arbitrary>::arbitrary(u)?)
       } else {
         None
       });
@@ -221,11 +222,17 @@ impl<'a> ::arbitrary::Arbitrary<'a> for crate::capture::GeoLocation {
   }
 }
 
-impl<'a> ::arbitrary::Arbitrary<'a> for crate::lang::Language {
+impl<'a> ::arbitrary::Arbitrary<'a> for crate::lang::LanguageId {
   fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
-    // Curated BCP-47 tags that `Language::from_bcp47` accepts — covers
-    // language-only, language+region, language+script+region, and the
-    // `und` sentinel.
+    // Curated BCP 47 tags the whole-tag door accepts — language-only,
+    // language+region, language+script+region, the `und` sentinel, and a
+    // lossless tail, which is the seat this type has and its predecessor
+    // did not.
+    //
+    // CANONICAL spellings only. `Arbitrary` feeds round-trip suites, and a
+    // fold at the door would make a rendered-then-reparsed value differ from
+    // the generated one — which is the fold working and would read as a codec
+    // bug. The dirty spellings are pinned in the household's own tests.
     const TAGS: &[&str] = &[
       "und",
       "en",
@@ -239,8 +246,40 @@ impl<'a> ::arbitrary::Arbitrary<'a> for crate::lang::Language {
       "ar",
       "ru",
       "ko",
+      "de-CH-1901",
+      "en-US-x-lorem",
     ];
     let tag: &&str = u.choose(TAGS)?;
-    Ok(crate::lang::Language::from_bcp47(tag).expect("curated BCP-47 tag must parse"))
+    Ok(crate::lang::LanguageId::new(tag).expect("curated BCP 47 tag must parse"))
+  }
+}
+
+impl<'a> ::arbitrary::Arbitrary<'a> for crate::lang::Language {
+  fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
+    const SUBTAGS: &[&str] = &[
+      "und", "en", "de", "fr", "es", "zh", "ja", "yue", "ar", "qaa",
+    ];
+    let subtag: &&str = u.choose(SUBTAGS)?;
+    Ok(crate::lang::Language::new(subtag).expect("curated language subtag must parse"))
+  }
+}
+
+impl<'a> ::arbitrary::Arbitrary<'a> for crate::lang::ScriptSubtag {
+  fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
+    const SUBTAGS: &[&str] = &[
+      "Latn", "Hans", "Hant", "Cyrl", "Arab", "Jpan", "Zxxx", "Zzzz",
+    ];
+    let subtag: &&str = u.choose(SUBTAGS)?;
+    Ok(crate::lang::ScriptSubtag::new(subtag).expect("curated script subtag must parse"))
+  }
+}
+
+impl<'a> ::arbitrary::Arbitrary<'a> for crate::lang::Region {
+  fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
+    // BOTH region grammars: ISO 3166-1 country codes and UN M.49 area codes,
+    // the second of which a letters-only roster would never reach.
+    const SUBTAGS: &[&str] = &["US", "DE", "TW", "CN", "BR", "ZZ", "419", "001", "150"];
+    let subtag: &&str = u.choose(SUBTAGS)?;
+    Ok(crate::lang::Region::new(subtag).expect("curated region subtag must parse"))
   }
 }

@@ -6,6 +6,203 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`lang` is a household, not a type** — four public types where there was
+  one, and a vendored registry behind every fold they apply:
+
+  - **`lang::Language`** — a primary language subtag in the shortest
+    spelling BCP 47 has for it (`de`, `zh`, `yue`, `und`), WIDE IN: any
+    ASCII case, and either ISO 639-2 alphabet. An mkv writes the
+    bibliographic `ger` and an mp4 the terminological `deu`; both are `de`
+    here, in one hop, and `iw` is `he` by the registry's own
+    `Preferred-Value`. Publishes `name()`, `is_registered()`,
+    `is_deprecated()`, `is_private_use()` and `suppressed_script()`, plus
+    the `UND` constant and `is_undetermined()`.
+  - **`lang::ScriptSubtag`** — an ISO 15924 subtag in the registry's own
+    Titlecase (`Latn`, `Hans`, `Hant`), with `ZXXX` / `ZZZZ` named. `Hans`
+    and `Hant` are two values and nothing folds them: this is the metadata
+    layer, and its job is to carry what the file declared.
+  - **`lang::Region`** — the one type with TWO grammars, because BCP 47
+    gives a region two: ISO 3166-1 country codes and UN M.49 area codes
+    (`419` is *Latin America and the Caribbean*, and its leading zeros are
+    part of the code). `BU` folds onto `MM`; the five deprecated regions
+    the registry names no successor for keep their own spelling, because a
+    state that dissolved into several has none to fold onto.
+  - **`lang::LanguageId`** — the whole identity, in FOUR seats: the three
+    subtags plus everything past the region held VERBATIM. `zh_Hans_CN` is
+    `zh-Hans-CN`, `i-klingon` is `tlh`, `GER-latn-de` is `de-DE`, and
+    `en-Latn` composes as `en` while `zh-Hans` composes as itself — the
+    registry's `Suppress-Script` column doing the work a hand-written fold
+    would have had to guess at for all 134 languages that have one.
+
+  **Zero language knowledge is written in the crate.** Two authority files
+  are vendored under `xtask/vendor/` — the IANA language-subtag-registry
+  and the ISO 639-2 registrar's own table — and `cargo xtask gen-lang`
+  turns them into `lang::registry::table` (8275 languages, 224 scripts,
+  303 regions, 26 grandfathered tags and four fold tables). `cargo xtask
+  check` renders the same text in memory and diffs it byte for byte,
+  beside the pixel-format, colour and codec checks it already ran, so a
+  stale table or a hand-edited one fails the same gate. The generator
+  audits its own premises before emitting — that every fold is one hop,
+  that the two files agree, that every `Suppress-Script` names a
+  registered script, and that a region is still the only subtag kind with
+  individually registered private-use rows.
+
+  The second file exists because the first cannot answer the question:
+  BCP 47 takes a language's two-letter code where one exists and never
+  registers the three-letter one beside it, so the whole ISO 639-2 alpha-3
+  space for a major language is ABSENT from the IANA registry — and that
+  is exactly the space a container writes.
+
+  `lang::registry` is public, and what it is for is the question the
+  types' own methods cannot answer: **why** a value came out the way it
+  did. A tag that arrived as `ger-Latn-DE` and canonicalised to `de-DE`
+  took two folds and a suppression, and `alpha3`, `language_preferred` and
+  `language_suppress_script` are the three rows that performed them.
+
+  **The three subtag types are `Copy`.** BCP 47 bounds each of them — a
+  language at eight ASCII letters, a script at four, a region at two
+  letters or three digits — so each is stored as a fixed byte buffer with
+  a length and nothing else: `Language` is 9 bytes, `ScriptSubtag` 5,
+  `Region` 4, against the 64 a heap-backed text seat costs. A clone is a
+  register move, equality is a fixed-width comparison, and none of the
+  three can allocate. `LanguageId` measures 88 bytes, 64 of which are its
+  one remaining heap-backed seat.
+
+  That seat is the tail, and it is the reason the exception exists:
+  variants, extensions and the private-use sequence have no width the
+  grammar bounds, so `rest` is a `smol_bytes::Utf8Bytes` and `LanguageId`
+  is `Clone` rather than `Copy`. Because the other three seats are `Copy`,
+  `LanguageId::language()`, `::script()` and `::region()` hand back
+  **values**; only `::rest()` hands back a borrow. All four are `const fn`.
+
+  The derived `Ord` is byte-for-byte the text's order, padding included:
+  every byte a subtag can hold is `0x30` or above, so a shorter subtag's
+  first unused byte sorts below anything a longer one could have there —
+  which is what `str` does when one operand runs out. Asserted across the
+  whole registry rather than sampled, since the pairs that could break it
+  are the ones where one spelling prefixes the other.
+
+  All four types carry `serde` (as their canonical text, read back through
+  the type's own door so it CANONICALISES rather than merely validating),
+  `arbitrary` and `quickcheck`; `LanguageId` additionally carries the
+  `buffa` message row its predecessor had. All four also carry
+  `TryFrom<&str>` and `TryFrom<Utf8Bytes>`, each a delegation to the same
+  door `FromStr` walks.
+
+  The family arrived from `ingraph::primitives::lang` under that crate's
+  #428, whole and with no behaviour changed — its 68 tests came with it
+  and pass unchanged. What did NOT come is the SCORING composite
+  (`DetectedLanguage`, an identity with a confidence beside it): identity
+  is a vocabulary question and belongs here, scoring is a retrieval
+  question and stays where the retrieval framework is.
+
+### Removed
+
+**Breaking.** `lang::Language` used to be a wrapper over three
+`icu_locale_core` subtag types, and it is gone. The name is now the
+primary language SUBTAG (see Added); the whole tag is `lang::LanguageId`.
+
+The old type was **lossy by construction**, which is why it is retired
+outright rather than deprecated: it validated a full BCP 47 identifier and
+then kept only language/script/region, discarding every variant, extension
+and private-use subtag. `de-CH-1901` and `de-CH` were one value, and
+`en-US-x-lorem` came back as `en-US`. It also had no registry behind it,
+so a container's `ger` was not German — it was a language subtag the
+type happily held and nothing downstream could match against `de`.
+
+Gone with it: `Language::try_new`, `Language::from_bcp47`,
+`Language::to_bcp47`, `Language::new`, `Language::default`,
+`Language::language/script/region` (as `&str` accessors),
+`Language::is_undetermined` (the whole-tag reading), and `LanguageError`.
+
+| was | now |
+|---|---|
+| `Language::from_bcp47(s)` | `LanguageId::new(s)` |
+| `s.parse::<Language>()` | `s.parse::<LanguageId>()` |
+| `Language::try_new(l, s, r)` | `LanguageId::compose(Language::new(l)?, …)` |
+| `Language::to_bcp47()` | `LanguageId::to_string()` (`Display`) |
+| `Language::default()` | `LanguageId::default()` — still the `und` tag |
+| `.language()` → `&str` | `.language()` → `&Language`, then `.as_str()` |
+| `.script()` → `Option<&str>` | `.script()` → `Option<&ScriptSubtag>` |
+| `.region()` → `Option<&str>` | `.region()` → `Option<&Region>` |
+| `.is_undetermined()` | `.language().is_undetermined()` |
+| `LanguageError` | `ParseLanguageIdError` (and the three seats' own) |
+
+`LanguageId` is **`Clone`, not `Copy`** — its lossless tail is heap-backed
+— which moves `audio::Tags` with it:
+
+- `Tags::language()` returns `Option<&LanguageId>` where it returned
+  `Option<Language>` by value. It is still `const`.
+- `Tags::with_language`, `maybe_language`, `set_language`,
+  `update_language` and `clear_language` are **no longer `const`**. The
+  boundary is exactly *does this overwrite drop a `Utf8Bytes`*: assigning
+  over the field drops the `Option<LanguageId>` that was there, whose tail
+  may be heap-backed, so the drop glue is real and cannot run at compile
+  time (`E0493`). The type's `u16` setters overwrite a value with no
+  destructor and stay `const`; its `SmolStr` setters never were. Their
+  signatures otherwise only swap `Language` for `LanguageId`.
+
+There is **no public by-parts constructor**. `LanguageId::compose` is
+`pub(crate)`, because it trusts its tail — a bare text seat carries nothing
+that says it went through the envelope — and a public constructor with that
+hole could mint an identity whose rendering does not parse back. The public
+road from parts is to spell the seats and walk the standard door, which
+validates all four in one pass.
+
+The `buffa` wire form is unchanged in SHAPE — `Tags` field 13 and the
+standalone message are still one canonical tag string, and an absent field
+still decodes to `und`. What narrowed is the fallback: the door is wide
+in, so the tags that used to coerce silently to `und` (a variant, a
+private-use sequence, an alpha-3 language code) now decode to the value
+they name, and only a structurally impossible tag still falls back.
+
+The serde form is unchanged for every tag the old type could represent,
+and is now lossless for the ones it could not.
+
+### Changed
+
+- **Dependencies**: `icu_locale_core` is dropped and `smol-bytes = "0.1"`
+  takes its place at the `alloc` tier, which is a net reduction — the icu
+  crate pulled `tinystr`, `zerovec`, `writeable`, `litemap` and
+  `potential_utf` behind it. `smol-bytes` supplies `Utf8Bytes`, the text
+  seat each subtag holds: short subtags ride its inline representation, so
+  no subtag this crate constructs allocates.
+
+  It is deliberately not `SmolStr`, which is what the rest of the crate's
+  open vocabularies spell their `Other` escape with. A subtag is not an
+  escape — it is a value with a grammar — and what it is measured against
+  is the retrieval layer that stores it, where `Utf8Bytes` is the text
+  seat a row is addressed by.
+
+- **`simdutf8 = "0.1"`** joins at the `alloc` tier (zero dependencies of its
+  own, `no_std` with `default-features = false`), and with it a standing law
+  for byte-to-text conversion in this crate:
+
+  1. at a **validation boundary** — bytes whose origin proves nothing —
+     validation runs through `simdutf8`, not `core::str::from_utf8`;
+  2. where UTF-8 validity is **proven by provenance**, the conversion is
+     `from_utf8_unchecked` and the `unsafe` block carries a `SAFETY` note
+     naming that provenance exactly.
+
+  A census found **no validation boundary anywhere in the library**: every
+  door in this crate takes `&str`, so the only byte-to-text conversions are
+  the two in the `lang` household, and both are provenance-proven (a case
+  fold's output buffer, copied from a `&str` the door had already refused
+  unless it was ASCII alphanumeric). Both are now `unsafe` — **the first two
+  `unsafe` blocks in this crate** — and `simdutf8` is what checks their
+  claim: each sits under a `debug_assert!`, so the provenance argument is
+  re-verified on every debug build, every `cargo test`, and every `miri` and
+  sanitizer lane, over all 8275 registered languages the suite walks.
+
+- **`cargo xtask` grows a fourth vendored authority.** `check` now runs a
+  byte-for-byte freshness diff on the generated language table beside its
+  three FFmpeg checks; `sync` re-fetches the two BCP 47 registries beside
+  `pixfmt.h` and `codec_desc.c`; and `gen-lang` regenerates the table. No
+  workflow change was needed — the `xtask-check` job already runs
+  `cargo xtask check`.
+
 ## [0.8.0] - 2026-08-29
 
 ### Added

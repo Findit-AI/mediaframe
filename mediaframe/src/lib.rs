@@ -239,9 +239,17 @@ pub mod frame;
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod image;
-/// Validated BCP-47 language tag wrapping `icu_locale_core` subtags
-/// (`Copy`, heap-free representation; `to_bcp47() -> String` and
-/// `Display` need the allocator).
+/// BCP 47 language identity — the three validated subtag types
+/// ([`lang::Language`], [`lang::ScriptSubtag`], [`lang::Region`]) and the
+/// lossless whole tag that composes them ([`lang::LanguageId`]), read
+/// against the two registries vendored under `xtask/vendor/` and generated
+/// into [`lang::registry`].
+///
+/// Every fold a container's dirty tag needs is a column of a published
+/// file rather than a rule written here: an mkv's `ger` and an mp4's `deu`
+/// are both German, `iw` is `he`, `BU` is `MM`, and `en-Latn` composes as
+/// `en` while `zh-Hans` composes as itself. Requires the `alloc` feature
+/// (`std` includes it) for the `Utf8Bytes` text seat each subtag holds.
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod lang;

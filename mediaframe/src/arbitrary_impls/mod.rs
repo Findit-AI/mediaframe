@@ -11,7 +11,8 @@
 //   coded.rs     — the FFmpeg-coded name vocabularies + colour / frame /
 //                  pixel-format / disposition structs and enums.
 //   composite.rs — audio composite metadata (Loudness/Fingerprint/CoverArt/Tags),
-//                  capture (Device/GeoLocation), lang::Language.
+//                  capture (Device/GeoLocation), lang (Language/ScriptSubtag/
+//                  Region/LanguageId).
 
 mod coded;
 mod composite;

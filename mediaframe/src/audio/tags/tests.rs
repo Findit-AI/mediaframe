@@ -1,7 +1,7 @@
 use super::*;
 
-fn en_us() -> Language {
-  Language::from_bcp47("en-US").unwrap()
+fn en_us() -> LanguageId {
+  LanguageId::new("en-US").expect("a language tag")
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn with_builders_roundtrip_every_field() {
   assert_eq!(t.track_total(), 12);
   assert_eq!(t.disc_number(), 1);
   assert_eq!(t.disc_total(), 2);
-  assert_eq!(t.language(), Some(en_us()));
+  assert_eq!(t.language(), Some(&en_us()));
 }
 
 #[test]
@@ -82,10 +82,10 @@ fn numeric_zero_is_the_absent_sentinel() {
 fn language_vocabulary_covers_set_update_clear() {
   let mut t = Tags::new();
   t.set_language(en_us());
-  assert_eq!(t.language(), Some(en_us()));
-  let fr = Language::from_bcp47("fr-FR").unwrap();
-  t.update_language(Some(fr));
-  assert_eq!(t.language(), Some(fr));
+  assert_eq!(t.language(), Some(&en_us()));
+  let fr = LanguageId::new("fr-FR").expect("a language tag");
+  t.update_language(Some(fr.clone()));
+  assert_eq!(t.language(), Some(&fr));
   t.clear_language();
   assert_eq!(t.language(), None);
   let t = Tags::new().with_language(en_us()).maybe_language(None);

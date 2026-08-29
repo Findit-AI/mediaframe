@@ -10,7 +10,8 @@
 //!   coded.rs     — closed FFmpeg-coded enums w/ `from_u32` + colour / frame /
 //!                  pixel-format / disposition structs and enums.
 //!   composite.rs — audio composite metadata (Loudness/Fingerprint/CoverArt/Tags),
-//!                  capture (Device/GeoLocation), lang::Language.
+//!                  capture (Device/GeoLocation), lang (Language/ScriptSubtag/
+//!                  Region/LanguageId).
 //!
 //! These helpers do **not** route through `arbitrary::Unstructured` — they
 //! consume `quickcheck::Gen` directly. The two `Arbitrary` features

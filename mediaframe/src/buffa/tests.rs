@@ -1178,7 +1178,7 @@ fn audio_tags_round_trip() {
     .with_year(1999)
     .with_track_number(3)
     .with_track_total(12)
-    .with_language(crate::lang::Language::from_bcp47("en-US").unwrap());
+    .with_language(crate::lang::LanguageId::new("en-US").unwrap());
   let b = t.encode_to_vec();
   assert_eq!(Tags::decode_from_slice(&b).unwrap(), t);
   // Default round-trips.
@@ -1257,37 +1257,133 @@ fn geo_location_round_trip_null_island_and_populated() {
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[test]
 fn language_round_trip_und_and_populated() {
-  use crate::lang::Language;
+  use crate::lang::LanguageId;
 
-  // Default = "und"; non-empty BCP-47 tag, so it IS encoded.
-  let und = Language::default();
+  // Default = "und"; a non-empty tag, so it IS encoded.
+  let und = LanguageId::default();
   let b = und.encode_to_vec();
   assert!(!b.is_empty());
-  assert_eq!(Language::decode_from_slice(&b).unwrap(), und);
+  assert_eq!(LanguageId::decode_from_slice(&b).unwrap(), und);
   // An absent field on the wire (empty buffer) re-seeds to default.
-  assert_eq!(Language::decode_from_slice(&[]).unwrap(), und);
+  assert_eq!(LanguageId::decode_from_slice(&[]).unwrap(), und);
 
-  for tag in ["en", "en-US", "zh-Hant-TW"] {
-    let l = Language::from_bcp47(tag).unwrap();
+  // The last two are the seats the retired triple could not carry: a variant
+  // and a private-use sequence, both held verbatim through the round trip.
+  for tag in ["en", "en-US", "zh-Hant-TW", "de-CH-1901", "en-US-x-lorem"] {
+    let l = LanguageId::new(tag).unwrap();
     let b = l.encode_to_vec();
-    assert_eq!(Language::decode_from_slice(&b).unwrap(), l);
+    assert_eq!(LanguageId::decode_from_slice(&b).unwrap(), l);
+    assert_eq!(l.to_string(), tag, "the wire form is the canonical tag");
+  }
+}
+
+/// **A FOLD THAT WOULD NOT REPARSE NEVER FIRES**, which this codec is the
+/// other surface for: the encode is the rendering and the decode is the door,
+/// so a canonicalisation whose text read back as a DIFFERENT value would
+/// rewrite a stored identity on every read.
+///
+/// `en-Latn-Cyrl` holds `Latn` on the script seat and `Cyrl` on the lossless
+/// tail. Suppressing `Latn` would put `en-Cyrl` on the wire, and the decode
+/// door reads that as the SCRIPT `Cyrl` with an empty tail — so the
+/// suppression is skipped and the wire form keeps the script.
+#[cfg(any(feature = "std", feature = "alloc"))]
+#[test]
+fn language_wire_carries_a_tag_the_suppression_must_not_fold() {
+  use crate::lang::LanguageId;
+
+  for tag in ["en-Latn-Cyrl", "en-Latn-Latn"] {
+    let l = LanguageId::new(tag).unwrap();
+    assert_eq!(
+      l.to_string(),
+      tag,
+      "the script is retained in the wire form"
+    );
+
+    let b = l.encode_to_vec();
+    assert_eq!(LanguageId::decode_from_slice(&b).unwrap(), l);
+  }
+
+  // …and the fold still fires wherever it is reversible.
+  let folded = LanguageId::new("en-Latn-US").unwrap();
+  assert_eq!(folded.to_string(), "en-US");
+  assert_eq!(
+    LanguageId::decode_from_slice(&folded.encode_to_vec()).unwrap(),
+    folded
+  );
+}
+
+/// **A TAG THAT BECOMES GRANDFATHERED THROUGH ANOTHER FOLD IS FOLDED ANYWAY**,
+/// and this codec is the surface where stopping short would cost most: the
+/// encode is the rendering and the decode is the door, so a value whose text
+/// the whole-tag table still folds would come back a DIFFERENT identity on its
+/// first read and be stable ever after.
+///
+/// None of the four is grandfathered as written — `en-Latn-GB-oed` becomes one
+/// when the suppression drops `Latn`, the other three when the alpha-3 fold
+/// rewrites their language subtag — so the wire form is the tag the fold
+/// reaches, and a wire carrying the MIDDLE spelling decodes to the same value.
+#[cfg(any(feature = "std", feature = "alloc"))]
+#[test]
+fn language_wire_folds_a_tag_that_becomes_grandfathered_through_another_fold() {
+  use crate::lang::LanguageId;
+
+  for (sent, canonical) in [
+    ("en-Latn-GB-oed", "en-GB-oxendict"),
+    ("eng-GB-oed", "en-GB-oxendict"),
+    ("nor-bok", "nb"),
+    ("zho-guoyu", "cmn"),
+  ] {
+    let held = LanguageId::new(sent).unwrap();
+    assert_eq!(held.to_string(), canonical, "`{sent}` — the wire form");
+    assert_eq!(
+      LanguageId::decode_from_slice(&held.encode_to_vec()).unwrap(),
+      held,
+      "`{sent}`"
+    );
+
+    // …and the middle spelling, which another writer's wire can carry, decodes
+    // to that same identity rather than to one the next read would move.
+    let mut buf: Vec<u8> = Vec::new();
+    Tag::new(1, WireType::LengthDelimited).encode(&mut buf);
+    encode_varint(sent.len() as u64, &mut buf);
+    buf.extend_from_slice(sent.as_bytes());
+    assert_eq!(
+      LanguageId::decode_from_slice(&buf).unwrap(),
+      held,
+      "`{sent}` — the decode door stopped short"
+    );
   }
 }
 
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[test]
 fn language_wire_garbage_falls_back_to_und() {
-  use crate::lang::Language;
+  use crate::lang::LanguageId;
 
-  // Wire string that doesn't parse as BCP-47 silently coerces to
-  // `Language::default()` (= "und") — see the rationale in the
+  // A wire string the whole-tag door REFUSES silently coerces to
+  // `LanguageId::default()` (= "und") — see the rationale in the
   // module-level doc.
+  //
+  // The refusal has to be STRUCTURAL, which is the fallback path narrowing
+  // with the door widening: `xx-yy-zz-bogus` was this test's garbage under
+  // the retired icu triple and is a perfectly good tag now (an unregistered
+  // language `xx`, the region `YY`, and `zz-bogus` on the lossless tail).
+  let mut buf: Vec<u8> = Vec::new();
+  Tag::new(1, WireType::LengthDelimited).encode(&mut buf);
+  encode_varint("en-US-!!".len() as u64, &mut buf);
+  buf.extend_from_slice("en-US-!!".as_bytes());
+  assert_eq!(
+    LanguageId::decode_from_slice(&buf).unwrap(),
+    LanguageId::default()
+  );
+
+  // …and the tag that used to be garbage now survives the wire whole.
   let mut buf: Vec<u8> = Vec::new();
   Tag::new(1, WireType::LengthDelimited).encode(&mut buf);
   encode_varint("xx-yy-zz-bogus".len() as u64, &mut buf);
   buf.extend_from_slice("xx-yy-zz-bogus".as_bytes());
   assert_eq!(
-    Language::decode_from_slice(&buf).unwrap(),
-    Language::default()
+    LanguageId::decode_from_slice(&buf).unwrap(),
+    LanguageId::new("xx-YY-zz-bogus").unwrap()
   );
 }

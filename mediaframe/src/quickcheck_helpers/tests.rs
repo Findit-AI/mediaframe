@@ -83,7 +83,7 @@ fn smoke_yields_values_for_representative_types() {
     let _ = crate::codec::VideoCodec::arbitrary(g);
     let _ = crate::color::Info::arbitrary(g);
     let _ = crate::frame::FrameRate::arbitrary(g);
-    let _ = crate::lang::Language::arbitrary(g);
+    let _ = crate::lang::LanguageId::arbitrary(g);
     let _ = crate::disposition::TrackDisposition::arbitrary(g);
     let _ = crate::audio::Tags::arbitrary(g);
   });

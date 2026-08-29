@@ -9,7 +9,7 @@
 //!   - audio::{ChannelSpec, ChannelLayoutDescription}
 //!   - audio::{Loudness, Fingerprint, CoverArt, Tags}
 //!   - capture::{Device, GeoLocation}
-//!   - lang::Language
+//!   - lang::{Language, ScriptSubtag, Region, LanguageId}
 
 use ::quickcheck::Arbitrary;
 
@@ -186,10 +186,19 @@ pub(crate) fn geo_location(g: &mut ::quickcheck::Gen) -> crate::capture::GeoLoca
     .expect("lat/lon in-range and altitude finite by construction")
 }
 
-/// `lang::Language` — curated BCP-47 tags that `from_bcp47` accepts: covers
-/// language-only, language+region, language+script+region, and the `und`
-/// sentinel.
-pub(crate) fn language(g: &mut ::quickcheck::Gen) -> crate::lang::Language {
+/// `lang::LanguageId` — curated BCP 47 tags the whole-tag door accepts.
+///
+/// The tags are CANONICAL, and deliberately: `Arbitrary` feeds round-trip
+/// suites, and a fold at the door would make `from(tag) != from(render(from(tag)))`
+/// look like a serde bug when it is the fold working. The dirty spellings
+/// (`ger`, `iw`, `en-Latn`) are pinned in the household's own tests, where
+/// what is being asserted is the fold itself.
+///
+/// Covers language-only, language+region, language+script+region, the `und`
+/// sentinel, and a lossless tail — the fourth seat being the whole reason
+/// this type replaced the icu triple, a generator that never filled it would
+/// leave that seat unexercised by every property test in the crate.
+pub(crate) fn language(g: &mut ::quickcheck::Gen) -> crate::lang::LanguageId {
   const TAGS: &[&str] = &[
     "und",
     "en",
@@ -203,7 +212,38 @@ pub(crate) fn language(g: &mut ::quickcheck::Gen) -> crate::lang::Language {
     "ar",
     "ru",
     "ko",
+    "de-CH-1901",
+    "en-US-x-lorem",
   ];
   let tag: &&str = g.choose(TAGS).expect("non-empty curated TAGS slice");
-  crate::lang::Language::from_bcp47(tag).expect("curated BCP-47 tag must parse")
+  crate::lang::LanguageId::new(tag).expect("curated BCP 47 tag must parse")
+}
+
+/// `lang::Language` — curated primary language subtags, canonical, for
+/// [`language`]'s reason.
+pub(crate) fn language_subtag(g: &mut ::quickcheck::Gen) -> crate::lang::Language {
+  const SUBTAGS: &[&str] = &[
+    "und", "en", "de", "fr", "es", "zh", "ja", "yue", "ar", "qaa",
+  ];
+  let subtag: &&str = g.choose(SUBTAGS).expect("non-empty curated slice");
+  crate::lang::Language::new(subtag).expect("curated language subtag must parse")
+}
+
+/// `lang::ScriptSubtag` — curated ISO 15924 subtags, in the registry's own
+/// Titlecase.
+pub(crate) fn script_subtag(g: &mut ::quickcheck::Gen) -> crate::lang::ScriptSubtag {
+  const SUBTAGS: &[&str] = &[
+    "Latn", "Hans", "Hant", "Cyrl", "Arab", "Jpan", "Zxxx", "Zzzz",
+  ];
+  let subtag: &&str = g.choose(SUBTAGS).expect("non-empty curated slice");
+  crate::lang::ScriptSubtag::new(subtag).expect("curated script subtag must parse")
+}
+
+/// `lang::Region` — curated subtags from BOTH region grammars: ISO 3166-1
+/// country codes and UN M.49 area codes, the second of which is the arm a
+/// letters-only roster would never reach.
+pub(crate) fn region(g: &mut ::quickcheck::Gen) -> crate::lang::Region {
+  const SUBTAGS: &[&str] = &["US", "DE", "TW", "CN", "BR", "ZZ", "419", "001", "150"];
+  let subtag: &&str = g.choose(SUBTAGS).expect("non-empty curated slice");
+  crate::lang::Region::new(subtag).expect("curated region subtag must parse")
 }
