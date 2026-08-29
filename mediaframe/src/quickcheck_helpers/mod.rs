@@ -6,7 +6,7 @@
 //! [`arbitrary_impls`](crate::arbitrary_impls)):
 //!
 //!   strings.rs   — open string enums w/ `Other(SmolStr)` (codec×3, container,
-//!                  subtitle::Format, audio open formats).
+//!                  image, subtitle::Format, audio open formats).
 //!   coded.rs     — closed FFmpeg-coded enums w/ `from_u32` + colour / frame /
 //!                  pixel-format / disposition structs and enums.
 //!   composite.rs — audio composite metadata (Loudness/Fingerprint/CoverArt/Tags),

@@ -206,7 +206,16 @@ impl FromStr for SampleFormat {
 /// slugs losslessly.
 ///
 /// `as_str` returns the file-extension-style slug (`"mp3"`, `"aac"`,
-/// `"flac"`, …).
+/// `"flac"`, …); a handful of variants also have genuine alternate
+/// on-disk spellings (`.aif`, `.wvp`, `.oga`/`.spx`, `.adts`, `.mac`) —
+/// [`Self::extensions`] lists every one, canonical first, and
+/// [`FromStr`](core::str::FromStr) accepts them all, ignore-case.
+///
+/// **`Aifc` is a separate variant, not an `Aiff` alias** — an R5
+/// correction. `.aifc` briefly (R2) lived in `Aiff.extensions()`; that
+/// landing failed this crate's own identical-bytes test, the same class
+/// of mistake `.apl` made one round later on `Ape` — see [`Self::Aifc`]
+/// and [`Self::Aiff`]'s own docs for the byte-level distinction.
 #[cfg_attr(
   feature = "quickcheck",
   derive(::quickcheck_richderive::Arbitrary),
@@ -223,26 +232,121 @@ pub enum ContainerFormat {
   /// [`Self::is_mp3`] uses the cleaner name.
   #[is_variant(ignore)]
   Mp3,
-  /// Raw AAC ADTS / ADIF stream (`.aac`).
+  /// Raw AAC ADTS / ADIF stream (`.aac`; `.adts` is a recognised
+  /// alias). IANA's `audio/aac` registration lists `.adts` alongside
+  /// `.aac`; ffmpeg's own ADTS muxer/demuxer (`adts`) independently
+  /// confirms `.adts` as a real on-disk spelling for the same raw
+  /// bitstream `.aac` names — see the module doc's R3 provenance
+  /// table.
   Aac,
   /// Free Lossless Audio Codec (`.flac`).
   Flac,
-  /// Ogg Vorbis / generic Ogg container (`.ogg`).
+  /// Ogg Vorbis / generic Ogg container (`.ogg`; `.oga` / `.spx` are
+  /// recognised aliases). RFC 5334 §10.3 registers all three under
+  /// `audio/ogg`: `.ogg` is the legacy Vorbis-only spelling (kept
+  /// canonical here — it predates and remains this crate's existing
+  /// choice), `.oga` is the Skeleton-aware general-audio spelling, and
+  /// `.spx` is the legacy Speex-only spelling. mediaframe does not
+  /// split `Ogg` by codec (Vorbis / Opus / Speex / FLAC-in-Ogg all
+  /// live under this one variant, per its own "generic Ogg container"
+  /// framing above), so `.spx` is treated the same way as `.oga`: an
+  /// alternate spelling of the same container, not a second format.
   Ogg,
   /// Opus in Ogg or raw (`.opus`).
   Opus,
   /// RIFF WAVE (`.wav`).
   Wav,
-  /// Audio Interchange File Format (`.aiff` / `.aif`).
+  /// Audio Interchange File Format — uncompressed PCM (`.aiff`;
+  /// `.aif` is a recognised alias, the truncated legacy spelling of the
+  /// identical form).
+  ///
+  /// **No longer includes `.aifc`** (R5 correction — see [`Self::Aifc`]'s
+  /// own doc for why). What remains is a true alias: ExifTool keeps
+  /// `AIF` as a pure `Lookup::Alias` of `AIFF` (byte-identical, spelling
+  /// only), unlike `AIFC` which ExifTool keeps as its own file-type
+  /// entry — that distinction was already correctly recorded in this
+  /// crate's own R2 census; the wrong call was folding `AIFC` in anyway.
   Aiff,
+  /// AIFF-Compressed — Apple's IFF-based container for *compressed*
+  /// audio codecs riding the same chunked-container family as
+  /// [`Self::Aiff`], but not the same on-disk bytes (`.aifc`).
+  ///
+  /// **Not [`Self::Aiff`]** — an R5 correction (Codex R5 HIGH finding,
+  /// per the user's 甲 ruling). Both are `FORM <size> <formType>
+  /// <chunks…>` IFF containers, but the 4-byte `formType` at the fixed
+  /// header offset literally differs — `AIFF` for plain AIFF, `AIFC`
+  /// for this variant, per Apple's own AIFF-C specification
+  /// ("Audio Interchange File Format AIFF-C", Apple Computer, 1991).
+  /// AIFC additionally *requires* an `FVER` (Format Version) chunk plain
+  /// AIFF never carries, and its `COMM` (Common) chunk is a strict
+  /// superset of AIFF's — two extra fields, a 4-byte `compressionType`
+  /// code and a Pascal-string `compressionName`, that plain AIFF's
+  /// `COMM` chunk has no room for. A plain-AIFF reader hits the
+  /// `formType`-and-`COMM` mismatch immediately; this is not a filename
+  /// convention, it is a different required byte layout from the first
+  /// twelve bytes on. ffmpeg's own dedicated `aiff` demuxer/muxer reads
+  /// and writes both forms (compressed COMM-chunk codecs included) under
+  /// one implementation, the same "shared tooling, still a different
+  /// format" shape `.apl` and `.m2ts`/`.3g2` already established
+  /// elsewhere in this sweep — shared tooling is a hint to check, never
+  /// itself the identical-bytes proof.
+  Aifc,
   /// Apple Lossless (ALAC) — usually carried inside `.m4a`,
   /// occasionally `.caf`; this variant is the bare-codec spelling.
+  /// **`.caf` is deliberately not a recognised alias extension of this
+  /// variant** — [`Self::Caf`] already names that container in its own
+  /// right, and treating `.caf` as also-Alac would claim one on-disk
+  /// spelling names two different formats depending on which variant
+  /// asked, unlike the genuine same-format aliases elsewhere in this
+  /// enum.
   Alac,
   /// Windows Media Audio (`.wma`).
   Wma,
-  /// Monkey's Audio (`.ape`).
+  /// Monkey's Audio (`.ape`; `.mac` is a recognised alias — genuinely
+  /// the same bitstream, not just a shared demuxer, and this one is
+  /// verified rather than taken on ffmpeg's extension list alone).
+  ///
+  /// **`.mac` is Monkey's Audio's own original extension.** Per the
+  /// project's own official version history (monkeysaudio.com,
+  /// `versionhistory.html`): v2.40 beta already shipped "a verify mode
+  /// to verify `.mac` files"; **v3.00**: "now uses the extension `.APE`
+  /// instead of `.MAC`" — a pure rename, not a format change; v3.40
+  /// beta then added backward-compatible playback support for "the old
+  /// `.MAC` extension" specifically *because* old `.mac` files remained
+  /// byte-identical Monkey's Audio content. The on-disk format's own
+  /// magic signature never changed across the rename — `"MAC "` (4
+  /// bytes, space included) — which is exactly what ExifTool's file-type
+  /// detector still matches for `APE` today (`head.starts_with(b"MAC ")`,
+  /// no separate rule for either extension).
+  ///
+  /// **Empirically re-verified**, not just documented: a synthetic
+  /// 332-byte file was built from the real Monkey's Audio v3.98+
+  /// `APE_DESCRIPTOR` + `APE_HEADER` layout (`"MAC "` + version 3990 +
+  /// the documented header fields) and probed with `ffprobe` under three
+  /// extensions (`.mac`, `.ape`, an extension ffmpeg has no APE
+  /// association for at all) and both auto-detected and forced
+  /// (`-f ape`) — all five runs produced the *identical* `ape`-demuxer
+  /// diagnostic (`"No frames in the file!"`, i.e. the header parsed
+  /// successfully as valid APE structure; the only failure is the
+  /// deliberately-omitted real audio frame data). Extension played no
+  /// role in any of the five outcomes — the signature alone decided it,
+  /// for `.mac` exactly as it does for `.ape`. This is the same
+  /// ffprobe-through-the-demuxer method that *rejected* `.apl` (below);
+  /// here it accepts `.mac` outright.
+  ///
+  /// **`.apl` is deliberately excluded** (R4 correction — landed in R3,
+  /// then reverted): ffmpeg's `ape` demuxer common-extensions field also
+  /// lists `apl`, but an APE Link file is Monkey's Audio's own per-track
+  /// *sidecar* — split points derived from a CUE sheet against a
+  /// companion `.ape` image — not the compressed bitstream itself.
+  /// ffprobe verified this directly: forced through the `ape` demuxer,
+  /// APL content is rejected (no MAC bitstream signature to probe for).
+  /// ffmpeg's shared demuxer registration was a hint to go check, not
+  /// itself the proof — same "different bytes, shared infrastructure"
+  /// class this module already excludes `.m4v` and `.mp1`/`.mp2` under.
   Ape,
-  /// WavPack (`.wv`).
+  /// WavPack (`.wv`; `.wvp` is a recognised alias — ExifTool's own
+  /// file-type table aliases `WVP` directly to `WV`).
   Wv,
   /// Matroska Audio (`.mka`).
   Mka,
@@ -295,6 +399,7 @@ impl ContainerFormat {
       Self::Opus => "opus",
       Self::Wav => "wav",
       Self::Aiff => "aiff",
+      Self::Aifc => "aifc",
       Self::Alac => "alac",
       Self::Wma => "wma",
       Self::Ape => "ape",
@@ -326,6 +431,7 @@ impl ContainerFormat {
       Self::Opus => "opus",
       Self::Wav => "wav",
       Self::Aiff => "aiff",
+      Self::Aifc => "aifc",
       Self::Alac => "m4a",
       Self::Wma => "wma",
       Self::Ape => "ape",
@@ -334,6 +440,41 @@ impl ContainerFormat {
       Self::M4a => "m4a",
       Self::Caf => "caf",
       Self::Other(_) => "",
+    }
+  }
+
+  /// Every recognised on-disk spelling for this format, canonical first
+  /// (== [`Self::as_extension`]) and aliases after. [`FromStr`] accepts
+  /// every entry, ignore-case — a caller collecting "every spelling this
+  /// format might be saved under" should iterate this rather than call
+  /// [`Self::as_extension`] alone.
+  ///
+  /// Most variants carry exactly one spelling; see each variant's own doc
+  /// for where a listed alias comes from — ExifTool's own file-type
+  /// aliases for most, RFC 5334 §10.3 for `Ogg`'s `.oga`/`.spx`. `Alac`
+  /// deliberately does **not** list `.caf` — see its own doc.
+  ///
+  /// Returns `&[]` for [`Self::Other`] — the open variant carries an
+  /// FFmpeg slug, not a known extension set.
+  #[inline]
+  pub const fn extensions(&self) -> &'static [&'static str] {
+    match self {
+      Self::Mp3 => &["mp3"],
+      Self::Aac => &["aac", "adts"],
+      Self::Flac => &["flac"],
+      Self::Ogg => &["ogg", "oga", "spx"],
+      Self::Opus => &["opus"],
+      Self::Wav => &["wav"],
+      Self::Aiff => &["aiff", "aif"],
+      Self::Aifc => &["aifc"],
+      Self::Alac => &["m4a"],
+      Self::Wma => &["wma"],
+      Self::Ape => &["ape", "mac"],
+      Self::Wv => &["wv", "wvp"],
+      Self::Mka => &["mka"],
+      Self::M4a => &["m4a"],
+      Self::Caf => &["caf"],
+      Self::Other(_) => &[],
     }
   }
   /// The open escape for a slug this vocabulary does not name, ASCII-folded
@@ -352,15 +493,17 @@ roster!(
   ContainerFormat,
   "audio container format",
   [
-    Mp3, Aac, Flac, Ogg, Opus, Wav, Aiff, Alac, Wma, Ape, Wv, Mka, M4a, Caf
+    Mp3, Aac, Flac, Ogg, Opus, Wav, Aiff, Aifc, Alac, Wma, Ape, Wv, Mka,
+    M4a, Caf
   ],
   escape: Other
 );
 
 impl FromStr for ContainerFormat {
   type Err = core::convert::Infallible;
-  /// Recognise a canonical extension-style slug; unknown values
-  /// land in [`Self::Other`] (infallible, lossless).
+  /// Recognise a canonical extension-style slug **or any alias
+  /// extension** from [`Self::extensions`]; unknown values land in
+  /// [`Self::Other`] (infallible, lossless).
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     // An input too long to fold cannot name a variant either, so the
@@ -368,16 +511,17 @@ impl FromStr for ContainerFormat {
     let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
     Ok(match folded {
       b"mp3" => Self::Mp3,
-      b"aac" => Self::Aac,
+      b"aac" | b"adts" => Self::Aac,
       b"flac" => Self::Flac,
-      b"ogg" => Self::Ogg,
+      b"ogg" | b"oga" | b"spx" => Self::Ogg,
       b"opus" => Self::Opus,
       b"wav" => Self::Wav,
-      b"aiff" => Self::Aiff,
+      b"aiff" | b"aif" => Self::Aiff,
+      b"aifc" => Self::Aifc,
       b"alac" => Self::Alac,
       b"wma" => Self::Wma,
-      b"ape" => Self::Ape,
-      b"wv" => Self::Wv,
+      b"ape" | b"mac" => Self::Ape,
+      b"wv" | b"wvp" => Self::Wv,
       b"mka" => Self::Mka,
       b"m4a" => Self::M4a,
       b"caf" => Self::Caf,

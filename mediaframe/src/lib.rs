@@ -230,6 +230,15 @@ pub mod container;
 /// (video / audio / subtitle).
 pub mod disposition;
 pub mod frame;
+/// Still-image vocabulary — standard photo formats (`jpeg`, `png`, `heif`,
+/// …) plus a curated camera-RAW family (`dng`, `cr2`, `nef`, `arw`, …).
+/// Requires the `alloc` feature (`std` includes it) for the
+/// `Other(SmolStr)` escape arm — same tier as [`container`] and [`audio`],
+/// which this household's own module doc explains it exists to sit
+/// beside.
+#[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
+pub mod image;
 /// Validated BCP-47 language tag wrapping `icu_locale_core` subtags
 /// (`Copy`, heap-free representation; `to_bcp47() -> String` and
 /// `Display` need the allocator).

@@ -302,6 +302,37 @@ fn generated_vocabulary_values_round_trip_through_their_name() {
   });
 }
 
+// Reachability — the four R5/R6-promoted variants (`M2ts`/`Threeg2` on
+// `container::Format`, `Aifc` on `audio::ContainerFormat`, `Heic` on
+// `image::Format`) must actually be generated, not merely present in
+// the enum. Codex R6 finding: before their canonical slugs were added
+// to `arb_open_string_enum!`'s curated seed lists, each was reachable
+// only through the 50/50 branch's unconstrained-`String` path landing
+// on an exact multi-character match by chance — negligible odds, not a
+// real coverage guarantee. This test proves the seed-list fix actually
+// closes that gap, for all four at once, so a future promotion that
+// forgets its seed entry fails here rather than silently shipping
+// unreachable.
+#[test]
+fn reachability_r5_r6_promoted_variants_are_generated() {
+  let mut saw_m2ts = false;
+  let mut saw_threeg2 = false;
+  let mut saw_aifc = false;
+  let mut saw_heic = false;
+  drive_per_round(0x0025_1067_u64, 4096, |u| {
+    saw_m2ts |= crate::container::Format::arbitrary(u).unwrap() == crate::container::Format::M2ts;
+    saw_threeg2 |=
+      crate::container::Format::arbitrary(u).unwrap() == crate::container::Format::Threeg2;
+    saw_aifc |=
+      crate::audio::ContainerFormat::arbitrary(u).unwrap() == crate::audio::ContainerFormat::Aifc;
+    saw_heic |= crate::image::Format::arbitrary(u).unwrap() == crate::image::Format::Heic;
+  });
+  assert!(saw_m2ts, "container::Format::M2ts never generated");
+  assert!(saw_threeg2, "container::Format::Threeg2 never generated");
+  assert!(saw_aifc, "audio::ContainerFormat::Aifc never generated");
+  assert!(saw_heic, "image::Format::Heic never generated");
+}
+
 // Arbitrary-generated values must survive a serde round-trip unchanged
 // (Codex round-4/5 findings). Every `arbitrary` impl here generates only
 // *canonical* values: named variants, `Other` slugs that are genuinely

@@ -254,6 +254,8 @@ serde_via_str!(crate::codec::SubtitleCodec);
 #[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_str!(crate::container::Format);
 #[cfg(any(feature = "std", feature = "alloc"))]
+serde_via_str!(crate::image::Format);
+#[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_str!(crate::subtitle::Format);
 #[cfg(any(feature = "std", feature = "alloc"))]
 serde_via_str!(crate::subtitle::TrackOrigin);
