@@ -9,6 +9,7 @@
 //! Owned types:
 //!   - codec::{VideoCodec, AudioCodec, SubtitleCodec}
 //!   - container::Format
+//!   - image::Format
 //!   - subtitle::Format
 //!   - audio::ChannelLayout, audio::SampleFormat, audio::ContainerFormat
 
@@ -30,10 +31,21 @@ qc_open_string_enum!(
   ["srt", "ass", "ssa", "webvtt", "mov_text", "dvb_subtitle"]
 );
 
+// `m2ts`/`3g2` seeded on purpose — R5 promoted `M2ts`/`Threeg2` to their
+// own variants; see the matching note in `arbitrary_impls::strings`.
 qc_open_string_enum!(
   container_format,
   crate::container::Format,
-  ["mp4", "mkv", "webm", "mov", "avi", "mpegts"]
+  ["mp4", "mkv", "webm", "mov", "avi", "mpegts", "m2ts", "3g2"]
+);
+
+// `heic` seeded on purpose — R6 promoted `Heic` to its own variant.
+qc_open_string_enum!(
+  image_format,
+  crate::image::Format,
+  [
+    "jpeg", "png", "heif", "heic", "avif", "tiff", "dng", "cr2", "nef", "arw"
+  ]
 );
 
 qc_open_string_enum!(
@@ -79,8 +91,9 @@ qc_open_string_enum!(
   ]
 );
 
+// `aifc` seeded on purpose — R5 promoted `Aifc` to its own variant.
 qc_open_string_enum!(
   audio_container_format,
   crate::audio::ContainerFormat,
-  ["mp3", "aac", "flac", "wav", "m4a", "opus"]
+  ["mp3", "aac", "flac", "wav", "m4a", "opus", "aifc"]
 );

@@ -6,6 +6,219 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`image::Format`** — a new still-image vocabulary household, the same
+  shape as `container::Format` and `audio::ContainerFormat`: standard
+  photo formats (`Jpeg`, `Png`, `Heif`, `Avif`, `Tiff`, `Webp`, `Gif`,
+  `Bmp`) plus a curated camera-RAW family (`Dng`, `Cr2`, `Cr3`, `Nef`,
+  `Nrw`, `Arw`, `Orf`, `Rw2`, `Raf`, `Pef`, `Srw`, `Rwl`, `Iiq`,
+  `Threefr`, `X3f`, `Mrw`, `Gpr`), with the usual `Other(SmolStr)`
+  lossless escape. `serde` / `arbitrary` / `quickcheck` coverage matches
+  every other open vocabulary in the crate.
+
+  No still-image format existed anywhere in mediaframe before this —
+  container/audio-container-only filtering meant photographs never
+  entered a directory walk built on this crate's rosters. See the
+  module's own doc for the full RAW inclusion/exclusion census and the
+  ExifTool / ffmpeg sources it was checked against.
+
+  **New face**, alongside the usual singular `as_extension()`: `Format`
+  carries a plural `extensions() -> &'static [&'static str]` (canonical
+  spelling first, then every alias) — still-image formats have more
+  genuine multi-spelling extensions (`jpg`/`jpeg`/`jpe`, `tif`/`tiff`,
+  `bmp`/`dib`, `orf`/`ori`) than the video/audio container rosters do,
+  and `FromStr` accepts every one of them, ignore-case. (`Heic`/`Heif`
+  are not such a group — see their own entries below; each is a
+  single-spelling variant, not two aliases of one.)
+
+- **`container::Format` and `audio::ContainerFormat` gain the same
+  `extensions()` face**, for the same reason: an adversarial review of
+  `image::Format`'s new cross-roster disjointness test (below) found it
+  only reached `image::Format`'s aliases, not the two siblings' — several
+  of which already had aliases sitting in doc prose that no code could
+  see (`container::Format::MpegTs`'s `.m2ts`, `::Ogg`'s `.ogx`,
+  `::Threegp`'s `.3g2`, `audio::ContainerFormat::Aiff`'s `.aif`). Both
+  now carry `extensions()`, censused against the same ExifTool table:
+  `container::Format` adds `.qt` (`Mov`), `.mts`/`.m2t` (`MpegTs`,
+  alongside the already-documented `.m2ts`); `audio::ContainerFormat`
+  adds `.aifc` (`Aiff`) and `.wvp` (`Wv`). Full per-variant provenance is
+  in each module's doc comments.
+
+  **`FromStr` behaviour change on these two existing types**: both
+  parsers previously accepted only each variant's `as_str()` slug — for
+  `MpegTs`/`Ogg`/`Threegp` that slug is not even the same spelling as
+  `as_extension()` (`"mpegts"` vs `"ts"`, `"ogg"` vs `"ogv"`), so those
+  variants' own primary on-disk extension, and every alias, previously
+  parsed to `Other(..)` rather than the named variant. Both `FromStr`
+  impls now accept every `extensions()` entry, ignore-case, matching the
+  new face. This is additive in the sense every open vocabulary in this
+  crate is designed to be additive (a value that used to ride the escape
+  now has a name — the crate's stated forward-compatible evolution path,
+  see `lib.rs`), but it is a real, observable parsing-result change on
+  two already-published types; flagged here explicitly rather than
+  folded silently into the new-module bullet above.
+
+  **R2 addendum**: a second adversarial pass caught one more missing
+  alias in the same census — `audio::ContainerFormat::Ogg` gains `.oga`
+  and `.spx` (`extensions()` is now `["ogg", "oga", "spx"]`), both
+  registered alongside the already-canonical `.ogg` by RFC 5334 §10.3
+  under `audio/ogg`. This is the first alias in this crate sourced from
+  an IETF RFC rather than ExifTool's file-type table — a provenance
+  widening applied crate-wide during the same review: IANA's
+  `audio/mpeg` registration also lists `.mp1`/`.mp2` beside `.mp3`, but
+  those are genuinely different MPEG audio layers (I/II vs III), not
+  spelling variants, so `ContainerFormat::Mp3` is unchanged. No other
+  variant in either roster turned up a further citable RFC/IANA alias
+  beyond what R1 already found via ExifTool.
+
+  **R3 addendum**: a third pass found the same class recurring
+  (`audio::ContainerFormat::Aac` was missing IANA/ffmpeg-registered
+  `.adts`) and escalated to an exhaustive per-variant sweep — all 53
+  variants across all three rosters, checked against IANA's media-types
+  registry, ffmpeg's own muxer/demuxer extension tables (queried
+  directly, not from memory), and ExifTool's file-type table. Landed:
+  `ContainerFormat::Aac` gains `.adts`; `container::Format::Mp4` gains
+  `.mpg4` (IANA: `"mp4 and mpg4 are both declared"`);
+  `container::Format::Threegp` gains `.3gpp`/`.3gp2`, reversing an R2
+  exclusion that turned out to be a subjective "unrealistic spelling"
+  call rather than a source-grounded one (IANA's `video/3gpp`
+  registration independently confirms `.3gpp`); `ContainerFormat::Ape`
+  gains `.apl`/`.mac` (ffmpeg's dedicated `ape` demuxer — the one alias
+  pair in this crate sourced purely from ffmpeg, not IANA or ExifTool).
+  Every other variant's sweep result — alias found and landed, or
+  checked-and-none-found, with the source(s) consulted — is recorded
+  per-variant in the module docs and the originating PR's discussion,
+  not asserted in bulk.
+
+  **R4 correction**: a fourth pass caught that `.apl` (landed in R3,
+  above) does not actually pass this crate's own alias test. An APE
+  Link file is Monkey's Audio's own per-track *sidecar* — split points
+  derived from a CUE sheet against a companion `.ape` image — not the
+  compressed bitstream; ffprobe rejects APL content even forced through
+  ffmpeg's `ape` demuxer, which only *lists* `.apl` alongside `.ape` as
+  a matter of demuxer convenience, not identical bytes.
+  `ContainerFormat::Ape.extensions()` is now `["ape", "mac"]` — `.mac`
+  is untouched, it names the same bitstream and was independently
+  unaffected by this finding. A regression test pins `"apl"` (any case)
+  to `Other("apl")` so this cannot silently re-land.
+
+  **Verification pass**: `.mac` carried the identical evidence profile
+  `.apl` had before it failed — a single ffmpeg extension-table listing,
+  unverified at the byte level — so it was checked the same way before
+  R5 dispatch, rather than trusted by the coincidence of surviving R4.
+  Verdict: **keep**, now on stronger grounds than ffmpeg's table alone.
+  Monkey's Audio's own official version history (v3.00: "now uses the
+  extension .APE instead of .MAC") documents `.mac` → `.ape` as a pure
+  developer rename, not a format change, with `.mac`-file support
+  explicitly kept working afterward (v3.40: "Made the Winamp plugin also
+  support the old .MAC extension"). Empirically re-verified too: a
+  synthetic 332-byte file built from the real `APE_DESCRIPTOR` +
+  `APE_HEADER` layout produced byte-identical `ffprobe` behaviour under
+  three different extensions (`.mac`, `.ape`, and one ffmpeg has no APE
+  association for at all), auto-detected and forced alike — the
+  signature decided it every time, extension irrelevant, exactly the
+  test `.apl` failed. No code change; the variant doc now carries this
+  evidence directly rather than a bare source citation.
+
+- **`container::Format::M2ts`** — MPEG-2 Transport Stream in Blu-ray
+  Disc / AVCHD's BDAV framing: 192-byte packets (a 4-byte
+  `TP_extra_header` prepended to every 188-byte MPEG-TS packet), a
+  genuinely different on-disk byte layout from plain `.ts`
+  (`MpegTs`). `extensions()` was `["m2ts", "mts", "m2t"]` at the time
+  this bullet was written — **R7 moved `.m2t` back to `MpegTs`** (see
+  the R7 bullet below); current value is `["m2ts", "mts"]`. **R5
+  correction** (Codex R5 HIGH finding, user-ruled 甲): `.m2ts`/`.mts`/
+  `.m2t` briefly (R1, widened R3) lived in `MpegTs.extensions()` on
+  ExifTool's alias table alone — ExifTool's own table actually names a
+  *fourth*, separate file type (`M2TS`) that those three alias to, not
+  `MpegTs`/plain-`TS`; the R1 reading of that table was the error, not
+  the table itself. `MpegTs.extensions()` was `["ts"]` immediately
+  after this correction — **R7 added `.m2t` back**, so the current
+  value is `["ts", "m2t"]`; re-swept honestly at R5, no alias survived
+  the identical-bytes test once the misattributed three were removed,
+  and `.m2t` only returned once R7's content-detector evidence showed
+  it belonged to `MpegTs`'s 188-byte world after all.
+
+- **`container::Format::Threeg2`** — 3GPP2 (the CDMA2000-lineage
+  sibling standard to 3GPP), a distinct ISOBMFF `major_brand` (`3g2a`)
+  from `Threegp`'s 3GPP-family brands, and a separately-named,
+  dedicated ffmpeg muxer (`3g2`, vs `Threegp`'s own dedicated `3gp`
+  muxer — not a shared implementation the way `Mov`/`Mp4` share one).
+  `extensions()` is `["3g2", "3gp2"]`. **R5 correction**: `.3g2`/
+  `.3gp2` briefly (R1, widened R3) lived in `Threegp.extensions()`;
+  `Threegp.extensions()` is now `["3gp", "3gpp"]` only.
+
+- **`audio::ContainerFormat::Aifc`** — AIFF-Compressed: a different
+  IFF `formType` at the fixed header offset (`AIFC` vs plain `AIFF`'s
+  `AIFF`), a mandatory `FVER` chunk plain AIFF never carries, and a
+  `COMM` chunk with two extra required fields (`compressionType`,
+  `compressionName`) plain AIFF's `COMM` has no room for — a different
+  required byte layout, not a filename convention, per Apple's own
+  AIFF-C specification. `extensions()` is `["aifc"]`. **R5
+  correction**: `.aifc` briefly (R2) lived in `Aiff.extensions()`
+  despite this crate's own R2 census already noting ExifTool keeps
+  `AIFC` as its own file-type entry (not a pure alias like `AIF`) —
+  the census had the right fact and drew the wrong conclusion from it.
+  `Aiff.extensions()` is now `["aiff", "aif"]` only — the one true
+  byte-identical alias remains.
+
+  **The pattern underneath all three**: each was originally justified
+  by a real, correctly-sourced citation (ExifTool's alias table,
+  ffmpeg's shared demuxer, IANA's own registration text) that named a
+  *related* format, not a *spelling* of one — the same "shared
+  tooling/registration is a hint to check, never itself the
+  identical-bytes proof" lesson `.apl` (`Ape`, R4) already taught one
+  round earlier, recurring because the sweep that produced these three
+  predates that lesson. Promoted to their own variants rather than
+  patched as exclusions, per the user's ruling, because they *are* real
+  formats — just not spellings of the ones they were attached to.
+
+- **`image::Format::Heic`** — High Efficiency Image Format, HEVC-coded:
+  requires one of the `heic`/`heix`/`heim`/`heis` ISOBMFF major/
+  compatible brands per IANA's own `image/heic` registration, distinct
+  from `Heif`'s generic `mif1`-brand (any coding) requirement per
+  `image/heif` — the same structurally-signaled-subtype shape already
+  used to keep `Avif` separate. `extensions()` is `["heic"]`.
+  **R6 correction, same class as the R5 promotions** (per the user's R5
+  甲 ruling, applied directly): R3 had collapsed `HEIC`/`HEIF`/`HIF`
+  onto one `Heif` variant on ExifTool's "nearly identical file types"
+  reasoning, without applying the module's own identical-bytes test.
+  `Heif.extensions()` is now `["heif"]` only.
+
+  **`.hif` is excluded from both `Heic` and `Heif`** (R8 correction to
+  R6's own work, directly above — same round-later self-correction
+  pattern as `.m2t` below). R6 routed `.hif` to `Heic` on the strength
+  of Canon — the dominant real-world `.hif` producer — writing
+  `major_brand = 'heix'` (one of the four HEIC-qualifying brands) with
+  HEVC-coded tile data, per independent reverse-engineering
+  documentation of the real byte layout. **That evidence is real, but
+  it proves frequency, not totality**: IANA's own extension field says
+  `.hif` names *either* subtype (`"hif (for subtypes heif and
+  heic)"`) — Canon's dominance means most `.hif` files in the wild are
+  probably `heix`-branded, not that `.hif` *is* `heix`-branded by
+  extension alone. A `FromStr` total mapping from `.hif` to one variant
+  would claim the latter, which the spec itself contradicts — the same
+  identical-bytes reasoning that already keeps `Avif`'s IANA-listed
+  `heif`/`hif` spellings off `Avif`. `.hif` now parses to `Other`,
+  carrying its own name, any case. The Canon evidence stays recorded in
+  `Heic`'s own doc as exactly what a future content-aware door (real
+  `ftyp`-box brand inspection, rather than extension text) would need —
+  mediaframe has no such tier today, so that door is named, not built.
+
+- **`container::Format::MpegTs` / `::M2ts`: `.m2t` moved back to
+  `MpegTs`** (R7 correction to R5's own work — same identical-bytes
+  discipline applied a round later). `MpegTs.extensions()` is now
+  `["ts", "m2t"]`; `M2ts.extensions()` is now `["m2ts", "mts"]`. R5 put
+  `.m2t` on `M2ts` alongside `.m2ts`/`.mts` on ExifTool's *static* alias
+  table alone (`M2T` aliases to the `M2TS` file-type name). ExifTool's
+  actual **content detector** (`M2TS.pm`'s `ProcessM2TS`, read directly
+  from the real Perl source) measures packet stride and picks the
+  FileType from *that*: `$et->SetFileType($tcLen ? 'M2TS' : 'M2T')` —
+  unprefixed 188-byte packets are labelled `M2T`, not `M2TS`, which is
+  reserved for the 4-byte-prefixed 192-byte BDAV form. `.m2t` names the
+  same 188-byte world `.ts` does; it was never `M2ts`'s to begin with.
+
 ## [0.7.0] - 2026-08-28
 
 **Breaking:** the public dependency `mediatime` crosses 0.3 → 0.4.

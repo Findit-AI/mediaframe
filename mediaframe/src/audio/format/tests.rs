@@ -71,8 +71,8 @@ fn audio_format_display_matches_as_str() {
 #[test]
 fn audio_container_round_trips_named_variants() {
   for slug in [
-    "mp3", "aac", "flac", "ogg", "opus", "wav", "aiff", "alac", "wma", "ape", "wv", "mka", "m4a",
-    "caf",
+    "mp3", "aac", "flac", "ogg", "opus", "wav", "aiff", "aifc", "alac", "wma", "ape", "wv", "mka",
+    "m4a", "caf",
   ] {
     let v: ContainerFormat = slug.parse().unwrap();
     assert!(!v.is_other(), "`{slug}` should be a named variant");
@@ -119,6 +119,7 @@ fn audio_container_as_extension_matches_disk_form() {
     (ContainerFormat::Opus, "opus"),
     (ContainerFormat::Wav, "wav"),
     (ContainerFormat::Aiff, "aiff"),
+    (ContainerFormat::Aifc, "aifc"),
     (ContainerFormat::Wma, "wma"),
     (ContainerFormat::Ape, "ape"),
     (ContainerFormat::Wv, "wv"),
@@ -137,6 +138,119 @@ fn audio_container_as_extension_matches_disk_form() {
     ""
   );
 }
+
+/// The extension face's own contract: `as_extension()` is always
+/// `extensions()[0]`, every entry in `extensions()` parses (ignore-case)
+/// back to the same variant, and `Other` carries neither.
+///
+/// **One documented, pre-existing exception**: `Alac.as_extension()` is
+/// `"m4a"` — ALAC has no standalone container, so it reports the shared
+/// one — but `"m4a"` has always parsed to [`ContainerFormat::M4a`] (the
+/// literal match arm `FromStr` picks), never back to `Alac`. This predates
+/// the `extensions()` face entirely; `check` never saw it because it
+/// round-trips through `as_str()` (`"alac"`), not `as_extension()`. Every
+/// OTHER variant's every spelling is asserted to round-trip to itself with
+/// no exception, so a *new* extension/parse drift still fails loudly here.
+#[test]
+fn audio_container_extensions_are_canonical_first_and_every_alias_parses() {
+  for v in ContainerFormat::ROSTER {
+    let exts = v.extensions();
+    assert!(!exts.is_empty(), "{v:?}: extensions() is empty");
+    assert_eq!(
+      exts[0],
+      v.as_extension(),
+      "{v:?}: extensions()[0] must be as_extension()"
+    );
+    for ext in exts {
+      let parsed: ContainerFormat = ext.parse().unwrap();
+      if *v == ContainerFormat::Alac && *ext == "m4a" {
+        assert_eq!(
+          parsed,
+          ContainerFormat::M4a,
+          "the one documented Alac/M4a `.m4a` sharing changed shape"
+        );
+        continue;
+      }
+      assert_eq!(&parsed, v, "extension `{ext}` did not parse back to {v:?}");
+      let shouted: ContainerFormat = ext.to_ascii_uppercase().parse().unwrap();
+      assert_eq!(
+        &shouted, v,
+        "extension `{ext}` (uppercased) did not parse back to {v:?}"
+      );
+    }
+  }
+  assert_eq!(
+    ContainerFormat::Other(SmolStr::new("weird")).extensions(),
+    &[] as &[&str]
+  );
+
+  // The specific multi-spelling groups the variant docs call out, spelled
+  // out explicitly so a trimmed alias list fails loudly here rather than
+  // only in the generic loop above.
+  // R5: `.aifc` belongs to `Aifc`, not `Aiff` — see both variants' own
+  // docs. `Aiff` carries only the true byte-identical alias, `.aif`.
+  assert_eq!(ContainerFormat::Aiff.extensions(), &["aiff", "aif"]);
+  assert_eq!(ContainerFormat::Aifc.extensions(), &["aifc"]);
+  assert_eq!(ContainerFormat::Wv.extensions(), &["wv", "wvp"]);
+  // RFC 5334 §10.3 registers `.ogg`/`.oga`/`.spx` together under
+  // `audio/ogg` — see the variant's own doc.
+  assert_eq!(ContainerFormat::Ogg.extensions(), &["ogg", "oga", "spx"]);
+  // IANA `audio/aac` + ffmpeg's own `adts` muxer/demuxer both name
+  // `.adts` — see the variant's own doc.
+  assert_eq!(ContainerFormat::Aac.extensions(), &["aac", "adts"]);
+  assert_eq!(
+    "adts".parse::<ContainerFormat>().unwrap(),
+    ContainerFormat::Aac
+  );
+  assert_eq!(
+    "ADTS".parse::<ContainerFormat>().unwrap(),
+    ContainerFormat::Aac
+  );
+  // ffmpeg's dedicated `ape` demuxer names `.mac` alongside `.ape` —
+  // see the variant's own doc.
+  assert_eq!(ContainerFormat::Ape.extensions(), &["ape", "mac"]);
+  // `.apl` is deliberately NOT an Ape alias — see the variant's own doc
+  // (R4: APE Link is a sidecar/track-split file, not the bitstream;
+  // ffmpeg's shared demuxer listing was a hint to check, not proof).
+  // Pinned so this cannot silently regress back: `.apl` must land on
+  // the open escape, carrying its own name, not resolve to a variant.
+  assert!(!ContainerFormat::Ape.extensions().contains(&"apl"));
+  assert_eq!(
+    "apl".parse::<ContainerFormat>().unwrap(),
+    ContainerFormat::other("apl")
+  );
+  assert_eq!(
+    "APL".parse::<ContainerFormat>().unwrap(),
+    ContainerFormat::other("apl")
+  );
+  // `.caf` is deliberately NOT an Alac alias — see the variant's own doc.
+  assert_eq!(ContainerFormat::Alac.extensions(), &["m4a"]);
+  assert!(!ContainerFormat::Alac.extensions().contains(&"caf"));
+}
+
+/// R5 regression: `.aifc` was briefly (R2) misattributed to `Aiff` —
+/// the same class of mistake `.apl` made on `Ape` one round later. It
+/// now routes to its own promoted `Aifc` variant, ignore-case, and the
+/// old `Aiff` route is gone — pinned explicitly so a future edit can't
+/// silently fold it back in.
+#[test]
+fn r5_aifc_routes_to_its_own_variant_and_the_aiff_route_is_gone() {
+  for ext in ["aifc", "AIFC", "Aifc"] {
+    let v: ContainerFormat = ext.parse().unwrap();
+    assert_eq!(v, ContainerFormat::Aifc, "`{ext}` must route to Aifc");
+    assert_ne!(v, ContainerFormat::Aiff, "`{ext}` must NOT route to Aiff");
+  }
+  // And the survivors stay exactly where they were.
+  assert_eq!(
+    "aiff".parse::<ContainerFormat>().unwrap(),
+    ContainerFormat::Aiff
+  );
+  assert_eq!(
+    "aif".parse::<ContainerFormat>().unwrap(),
+    ContainerFormat::Aiff
+  );
+}
+
 /// Both audio vocabularies are lowercase-canonical, collision-free once
 /// folded, and read case-insensitively — escape included.
 #[test]

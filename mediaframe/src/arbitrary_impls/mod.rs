@@ -7,7 +7,7 @@
 // resolve naturally.
 //
 //   strings.rs   — open string enums w/ `Other(SmolStr)` (codec×3, container,
-//                  subtitle::Format, audio open formats).
+//                  image, subtitle::Format, audio open formats).
 //   coded.rs     — the FFmpeg-coded name vocabularies + colour / frame /
 //                  pixel-format / disposition structs and enums.
 //   composite.rs — audio composite metadata (Loudness/Fingerprint/CoverArt/Tags),

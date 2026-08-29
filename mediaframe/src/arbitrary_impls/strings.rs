@@ -29,9 +29,25 @@ super::arb_open_string_enum!(
   ["srt", "ass", "ssa", "webvtt", "mov_text", "dvb_subtitle"]
 );
 
+// `m2ts`/`3g2` are seeded on purpose, not just `mpegts`/… — R5 promoted
+// `M2ts`/`Threeg2` to their own variants (structurally distinct from
+// `MpegTs`/`Threegp`, not aliases), and without their own canonical
+// slugs here they'd be reachable only through the unconstrained-string
+// branch's negligible odds. See `reachability_r5_r6_promoted_variants_are_generated`
+// in `arbitrary_impls::tests`.
 super::arb_open_string_enum!(
   crate::container::Format,
-  ["mp4", "mkv", "webm", "mov", "avi", "mpegts"]
+  ["mp4", "mkv", "webm", "mov", "avi", "mpegts", "m2ts", "3g2"]
+);
+
+// `heic` is seeded on purpose, not just `heif` — R6 promoted `Heic` to
+// its own variant (HEVC-brand, distinct from `Heif`'s generic `mif1`
+// brand), same reachability concern as `m2ts`/`3g2`/`aifc` above.
+super::arb_open_string_enum!(
+  crate::image::Format,
+  [
+    "jpeg", "png", "heif", "heic", "avif", "tiff", "dng", "cr2", "nef", "arw"
+  ]
 );
 
 super::arb_open_string_enum!(
@@ -65,9 +81,12 @@ super::arb_open_string_enum!(
   ]
 );
 
+// `aifc` is seeded on purpose, not just the others — R5 promoted `Aifc`
+// to its own variant (distinct `FORM` type from `Aiff`), same
+// reachability concern as `m2ts`/`3g2`/`heic` above.
 super::arb_open_string_enum!(
   crate::audio::ContainerFormat,
-  ["mp3", "aac", "flac", "wav", "m4a", "opus"]
+  ["mp3", "aac", "flac", "wav", "m4a", "opus", "aifc"]
 );
 
 super::arb_open_string_enum!(
