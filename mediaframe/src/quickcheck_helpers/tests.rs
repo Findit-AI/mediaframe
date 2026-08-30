@@ -361,6 +361,8 @@ fn parse_is_idempotent_through_the_text_form() {
     idempotent!(crate::codec::VideoCodec, s);
     idempotent!(crate::codec::AudioCodec, s);
     idempotent!(crate::codec::SubtitleCodec, s);
+    idempotent!(crate::codec::DataCodec, s);
+    idempotent!(crate::codec::AttachmentCodec, s);
     idempotent!(crate::container::Format, s);
     idempotent!(crate::image::Format, s);
     idempotent!(crate::subtitle::Format, s);

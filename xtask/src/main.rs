@@ -96,13 +96,87 @@ const CODEC_TESTS_RS: &str = "mediaframe/src/codec/tests.rs";
 /// live in [`lang`], which `check` / `sync` / `gen-lang` call into.
 mod lang;
 
-/// The mediaframe codec enums and their corresponding FFmpeg media
-/// type (`AVMEDIA_TYPE_*`, lowercased).
+/// The mediaframe codec enums that are vendored from
+/// `xtask/vendor/ffmpeg-codecs.txt`, paired with their FFmpeg media type
+/// (`AVMEDIA_TYPE_*`, lowercased). Drives `check_codec`'s two-way
+/// vendor-table sync (every FFmpeg name has a variant, every variant
+/// names a real FFmpeg codec) and the corresponding slice of
+/// `build_codec_module` / `build_codec_tests`'s output.
+///
+/// [`AttachmentCodec`] is deliberately **not** here — see
+/// [`ATTACHMENT_CODECS`] for why it has no vendored table to sync
+/// against. It still participates in generation (`build_codec_module`,
+/// `build_codec_tests`) and in the freshness diff (`check_codec`'s
+/// Stage 2 rebuilds and byte-compares the *whole* file), just not in
+/// this list's per-media-type vendor coverage loop.
 const CODEC_ENUMS: &[(&str, &str)] = &[
   ("video", "VideoCodec"),
   ("audio", "AudioCodec"),
   ("subtitle", "SubtitleCodec"),
+  ("data", "DataCodec"),
 ];
+
+/// Every codec-enum type name the generator emits, `CODEC_ENUMS`'s four
+/// vendor-backed names plus `AttachmentCodec`. Used where code needs the
+/// full set of `impl <Enum> { pub fn as_str ... }` blocks to parse
+/// (`parse_codec_named_strings`) rather than just the vendor-checked
+/// subset.
+const ALL_CODEC_ENUM_NAMES: &[&str] = &[
+  "VideoCodec",
+  "AudioCodec",
+  "SubtitleCodec",
+  "DataCodec",
+  "AttachmentCodec",
+];
+
+/// `AttachmentCodec`'s roster: FFmpeg codec short names actually
+/// assigned to an `AVMEDIA_TYPE_ATTACHMENT` stream, sorted.
+///
+/// **Not** vendored from `codec_desc.c` like [`CODEC_ENUMS`]'s four
+/// media types. `libavcodec/codec_desc.c` at FFmpeg n9.0 carries
+/// **zero** descriptors with `.type = AVMEDIA_TYPE_ATTACHMENT` — checked
+/// directly (`grep AVMEDIA_TYPE_ATTACHMENT libavcodec/codec_desc.c`
+/// against both the pinned n9.0 source and a fresh FFmpeg `master`
+/// checkout returns nothing, either version). The `codec_id.h` comment
+/// `/* other specific kind of codecs (generally used for attachments) */`
+/// that precedes `AV_CODEC_ID_TTF` and its neighbours describes their
+/// historical grouping, not an `AVMEDIA_TYPE_ATTACHMENT` classification:
+/// `codec_desc.c` actually types `ttf` / `scte_35` / `epg` / `otf` /
+/// `klv` / `dvd_nav_packet` / `timed_id3` / `bin_data` / `smpte_2038` /
+/// `smpte_436m_anc` as `AVMEDIA_TYPE_DATA` (see `DataCodec`, which
+/// carries all of them) and `bintext` / `xbin` / `idf` as
+/// `AVMEDIA_TYPE_VIDEO`.
+///
+/// The one place FFmpeg itself assigns a codec id to an
+/// `AVMEDIA_TYPE_ATTACHMENT` stream is `libavformat/matroskadec.c`'s
+/// `mkv_mime_tags` table (the Matroska/WebM demuxer is also the only
+/// FFmpeg demuxer that ever sets `codecpar->codec_type =
+/// AVMEDIA_TYPE_ATTACHMENT` with a specific, non-`NONE` codec id — APE
+/// tag binary attachments (`libavformat/apetag.c`) take the same stream
+/// role but leave `codec_id` at `AV_CODEC_ID_NONE`):
+///
+/// ```c
+/// static const CodecMime mkv_mime_tags[] = {
+///     {"application/x-truetype-font", AV_CODEC_ID_TTF},
+///     {"application/x-font"         , AV_CODEC_ID_TTF},
+///     {"application/vnd.ms-opentype", AV_CODEC_ID_OTF},
+///     {"binary"                     , AV_CODEC_ID_BIN_DATA},
+///     {""                           , AV_CODEC_ID_NONE}
+/// };
+/// ```
+///
+/// Three distinct codec ids result: `ttf`, `otf`, `bin_data` — this
+/// list transcribes their `codec_desc.c` short names verbatim (the two
+/// MIME types that both target `AV_CODEC_ID_TTF` collapse to one entry).
+/// Every one of the three also has a same-named, same-string `DataCodec`
+/// variant: it is genuinely the same FFmpeg codec id wearing two
+/// different track-role hats, not a coincidence or a bug to dedupe.
+///
+/// Bumping `FFMPEG_TAG` does not regenerate this list — there is no
+/// `cargo xtask sync` step that reaches `matroskadec.c`. Re-derive it
+/// by hand (repeat the `codec_desc.c` + `matroskadec.c` census in this
+/// doc comment) on a deliberate FFmpeg version bump.
+const ATTACHMENT_CODECS: &[&str] = &["bin_data", "otf", "ttf"];
 
 /// The five FFmpeg colour C enums to parse, paired with the
 /// `AVCOL_*` / `AVCHROMA_*` prefix to strip and the mediaframe
@@ -143,13 +217,15 @@ fn print_help() {
          check    Verify mediaframe against the vendored tables:\n           \
                     - PixelFormat slugs ({VENDOR_PATH})\n           \
                     - Colour-enum codes ({COLOR_VENDOR_PATH})\n           \
-                    - Codec short names ({CODEC_VENDOR_PATH})\n           \
+                    - Codec short names ({CODEC_VENDOR_PATH}) plus the\n           \
+                      hand-curated AttachmentCodec roster (ATTACHMENT_CODECS)\n           \
                     - The BCP 47 language table ({lang_table})\n  \
          sync       Fetch FFmpeg {FFMPEG_TAG} (pixfmt.h + codec_desc.c) and the\n             \
                     two BCP 47 registries, and regenerate the vendored files\n             \
                     deterministically\n  \
          gen-codec  Regenerate mediaframe/src/codec/mod.rs from the vendored\n             \
-                    table ({CODEC_VENDOR_PATH}) via quote + prettyplease\n  \
+                    table ({CODEC_VENDOR_PATH}) plus ATTACHMENT_CODECS, via\n             \
+                    quote + prettyplease\n  \
          gen-lang   Regenerate {lang_table} from the two\n             \
                     vendored BCP 47 registries\n  \
          help       Show this help\n",
@@ -470,7 +546,9 @@ fn check_codec(root: &Path) -> bool {
   // FFmpeg side: media_type -> { codec name }.
   let ffmpeg = parse_codec_vendored(&vendor);
   // mediaframe side: enum-name -> { named-variant -> canonical short string }.
-  let mediaframe = parse_codec_named_strings(&codec_rs);
+  // All five codec enums, not just `CODEC_ENUMS`'s four vendor-backed ones —
+  // `AttachmentCodec`'s Stage 1b below needs its `as_str()` arms too.
+  let mediaframe = parse_codec_named_strings(&codec_rs, ALL_CODEC_ENUM_NAMES);
 
   let mut ok = true;
   let mut total_named = 0usize;
@@ -552,6 +630,65 @@ fn check_codec(root: &Path) -> bool {
     }
   }
 
+  // Stage 1b: `AttachmentCodec` vs. `ATTACHMENT_CODECS` — the same
+  // two-way diff as the loop above, but against the hand-curated
+  // `matroskadec.c`-derived roster rather than a vendored `codec_desc.c`
+  // media type (see `ATTACHMENT_CODECS`'s doc comment for why no
+  // `xtask/vendor/ffmpeg-codecs.txt` entry backs it).
+  {
+    let expected: BTreeSet<&str> = ATTACHMENT_CODECS.iter().copied().collect();
+    let empty = BTreeMap::new();
+    let mf_named = mediaframe.get("AttachmentCodec").unwrap_or(&empty);
+
+    let mut missing_from_list: BTreeMap<&String, &String> = BTreeMap::new();
+    for (variant, canonical) in mf_named {
+      if !expected.contains(canonical.as_str()) {
+        missing_from_list.insert(variant, canonical);
+      }
+    }
+    let mf_canonicals: BTreeSet<&String> = mf_named.values().collect();
+    let missing_from_mediaframe: BTreeSet<&str> = expected
+      .iter()
+      .filter(|n| !mf_canonicals.iter().any(|c| c.as_str() == **n))
+      .copied()
+      .collect();
+
+    println!(
+      "  AttachmentCodec: {} named variant(s); {} hand-curated `mkv_mime_tags` codec(s)",
+      mf_named.len(),
+      expected.len()
+    );
+    total_named += mf_named.len();
+
+    if !missing_from_list.is_empty() {
+      eprintln!(
+        "FAIL: {} mediaframe `AttachmentCodec` named variant(s) NOT found in \
+              `ATTACHMENT_CODECS`:",
+        missing_from_list.len()
+      );
+      for (variant, canonical) in &missing_from_list {
+        eprintln!("    AttachmentCodec::{variant} → \"{canonical}\"");
+      }
+      eprintln!(
+        "Action: either fix `as_str()` or drop the variant — `ATTACHMENT_CODECS` is the \
+                  hand-curated source of truth (see its doc comment)."
+      );
+      ok = false;
+    }
+    if !missing_from_mediaframe.is_empty() {
+      eprintln!(
+        "FAIL: {} `ATTACHMENT_CODECS` entry(ies) NOT covered by mediaframe \
+              `AttachmentCodec`:",
+        missing_from_mediaframe.len()
+      );
+      for canonical in &missing_from_mediaframe {
+        eprintln!("    \"{canonical}\"");
+      }
+      eprintln!("Action: run `cargo xtask gen-codec` to regenerate {CODEC_RS}.");
+      ok = false;
+    }
+  }
+
   // Stage 2: generation freshness. Build the codec module the same way
   // `gen-codec` would and diff against the on-disk file — catches edits to
   // the vendored table that haven't been propagated through `gen-codec`,
@@ -599,7 +736,7 @@ fn check_codec(root: &Path) -> bool {
   println!("FFmpeg pinned: {FFMPEG_TAG}");
   println!(
     "mediaframe   : {total_named} named codec variant(s) across {} enum(s)",
-    CODEC_ENUMS.len()
+    ALL_CODEC_ENUM_NAMES.len()
   );
   if ok {
     println!(
@@ -703,12 +840,20 @@ fn parse_codec_vendored(text: &str) -> BTreeMap<String, BTreeSet<String>> {
   out
 }
 
-/// Parse the three `mediaframe::codec::<Enum>::as_str()` match blocks and
-/// emit `enum-name → { variant-ident → canonical-short-string }`. The
+/// Parse `enum_names`' `mediaframe::codec::<Enum>::as_str()` match blocks
+/// and emit `enum-name → { variant-ident → canonical-short-string }`. The
 /// `Self::Other(s) => s.as_str()` arm is skipped.
-fn parse_codec_named_strings(rs: &str) -> BTreeMap<String, BTreeMap<String, String>> {
+///
+/// Takes the name list explicitly rather than reading [`CODEC_ENUMS`]
+/// directly: `AttachmentCodec` needs its `as_str()` parsed too, and it
+/// is not in `CODEC_ENUMS` (no vendored media type backs it — see
+/// [`ATTACHMENT_CODECS`]). Callers pass [`ALL_CODEC_ENUM_NAMES`].
+fn parse_codec_named_strings(
+  rs: &str,
+  enum_names: &[&str],
+) -> BTreeMap<String, BTreeMap<String, String>> {
   let mut out: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
-  for (_, enum_name) in CODEC_ENUMS {
+  for enum_name in enum_names {
     // Locate `impl <EnumName> {` then the `pub fn as_str(&self) -> &str`
     // body that follows. We accept any whitespace between the `impl` and
     // the as_str body; the match arms are scanned line-by-line.
@@ -1536,14 +1681,16 @@ fn gen_codec() -> ExitCode {
       return ExitCode::FAILURE;
     }
   }
-  let (v, a, s) = counts;
+  let (v, a, s, d, t) = counts;
   println!(
-    "Wrote {} codec variants ({} video + {} audio + {} subtitle) to {} ({} bytes) \
-     and its suite to {} ({} bytes)",
-    v + a + s,
+    "Wrote {} codec variants ({} video + {} audio + {} subtitle + {} data + {} attachment) \
+     to {} ({} bytes) and its suite to {} ({} bytes)",
+    v + a + s + d + t,
     v,
     a,
     s,
+    d,
+    t,
     out_path.display(),
     module.len(),
     tests_path.display(),
@@ -1582,8 +1729,9 @@ fn build_codec_rs(root: &Path) -> Result<(String, String), String> {
   build_codec_rs_with_counts(root).map(|(_, module, tests)| (module, tests))
 }
 
-/// Named codec counts by media type: `(video, audio, subtitle)`.
-type CodecCounts = (usize, usize, usize);
+/// Named codec counts by media type: `(video, audio, subtitle, data,
+/// attachment)`.
+type CodecCounts = (usize, usize, usize, usize, usize);
 
 /// Everything `gen-codec` produces: the counts, `codec/mod.rs`, and its
 /// sibling `codec/tests.rs`.
@@ -1631,6 +1779,19 @@ fn build_codec_rs_with_counts(root: &Path) -> Result<GeneratedCodec, String> {
   let video = by_type.remove("video").unwrap_or_default();
   let audio = by_type.remove("audio").unwrap_or_default();
   let subtitle = by_type.remove("subtitle").unwrap_or_default();
+  let data = by_type.remove("data").unwrap_or_default();
+
+  // `AttachmentCodec` has no vendored media type to `.remove()` — its
+  // roster is the hand-curated `ATTACHMENT_CODECS` const (see its doc
+  // comment). Reshaped into the same `CodecsWithProps` shape so it can
+  // go through the identical `build_codec_enum` path as the other four;
+  // none of its entries carry FFmpeg `.props` (`codec_desc.c` has no
+  // `AVMEDIA_TYPE_ATTACHMENT` descriptors to read `.props` from), so
+  // every value is an empty set.
+  let attachment: CodecsWithProps = ATTACHMENT_CODECS
+    .iter()
+    .map(|&name| (name.to_string(), BTreeSet::new()))
+    .collect();
 
   let edition = read_mediaframe_edition(root)?;
   let render = |ts: TokenStream| -> Result<String, String> {
@@ -1638,9 +1799,31 @@ fn build_codec_rs_with_counts(root: &Path) -> Result<GeneratedCodec, String> {
       .map_err(|e| format!("internal error: generated token stream is not parseable: {e}"))?;
     run_rustfmt(&prettyplease::unparse(&parsed), &edition)
   };
-  let module = render(build_codec_module(&video, &audio, &subtitle))?;
-  let tests = render(build_codec_tests(&video, &audio, &subtitle))?;
-  Ok(((video.len(), audio.len(), subtitle.len()), module, tests))
+  let module = render(build_codec_module(
+    &video,
+    &audio,
+    &subtitle,
+    &data,
+    &attachment,
+  ))?;
+  let tests = render(build_codec_tests(
+    &video,
+    &audio,
+    &subtitle,
+    &data,
+    &attachment,
+  ))?;
+  Ok((
+    (
+      video.len(),
+      audio.len(),
+      subtitle.len(),
+      data.len(),
+      attachment.len(),
+    ),
+    module,
+    tests,
+  ))
 }
 
 /// Read the `edition = "<year>"` field from `mediaframe/Cargo.toml`.
@@ -1762,49 +1945,61 @@ fn build_codec_module(
   video: &CodecsWithProps,
   audio: &CodecsWithProps,
   subtitle: &CodecsWithProps,
+  data: &CodecsWithProps,
+  attachment: &CodecsWithProps,
 ) -> TokenStream {
-  let video_enum = build_codec_enum("VideoCodec", "video", video, false);
-  let audio_enum = build_codec_enum("AudioCodec", "audio", audio, false);
-  let subtitle_enum = build_codec_enum("SubtitleCodec", "subtitle", subtitle, true);
+  let video_enum = build_codec_enum("VideoCodec", "video", video, false, false);
+  let audio_enum = build_codec_enum("AudioCodec", "audio", audio, false, false);
+  let subtitle_enum = build_codec_enum("SubtitleCodec", "subtitle", subtitle, true, true);
+  let data_enum = build_codec_enum("DataCodec", "data", data, true, false);
+  let attachment_enum = build_codec_enum("AttachmentCodec", "attachment", attachment, true, false);
 
   // Module-level docs (inner-doc attributes — `prettyplease` renders them
-  // as `//!` lines on output). The pinned tag and the three variant counts
-  // are interpolated rather than spelled out: a hand-written "n8.1" or a
+  // as `//!` lines on output). The pinned tag and the variant counts are
+  // interpolated rather than spelled out: a hand-written "n8.1" or a
   // hand-written "(281)" is a fact about the vendored table that no longer
   // regenerates with it, and both had gone stale by the n9.0 bump.
   let generated_from =
     format!(" **Generated** from `xtask/vendor/ffmpeg-codecs.txt` (FFmpeg {FFMPEG_TAG}");
-  let derive_threshold = format!(
-    " pair; [`VideoCodec`] ({}) and [`AudioCodec`] ({}) do not. The line is",
-    video.len(),
-    audio.len()
+  let small_enums = format!(
+    " [`SubtitleCodec`] ({}), [`DataCodec`] ({}), and [`AttachmentCodec`]",
+    subtitle.len(),
+    data.len()
   );
-  let subtitle_pair = format!(
-    " one reachable payload arm. [`SubtitleCodec`] ({} variants) carries the",
-    subtitle.len()
+  let large_enums = format!(
+    " ({}) are small enough to carry the pair; [`VideoCodec`] ({})",
+    attachment.len(),
+    video.len()
   );
+  let audio_count = format!(" and [`AudioCodec`] ({}) do not. The line is", audio.len());
   let module_doc: Vec<TokenStream> = [
-    " Stream-descriptor **codec** vocabulary for video, audio, and subtitle",
-    " tracks.",
+    " Stream-descriptor **codec** vocabulary for video, audio, subtitle,",
+    " data, and attachment tracks.",
     "",
     generated_from.as_str(),
-    " `libavcodec/codec_desc.c`) by `cargo xtask gen-codec`. Every codec",
-    " FFmpeg knows under media types `video` / `audio` / `subtitle` has",
-    " a named variant here; the `Other(SmolStr)` arm remains a lossless",
-    " escape for codecs added in a future FFmpeg release before this file",
-    " is regenerated.",
+    " `libavcodec/codec_desc.c`) by `cargo xtask gen-codec` — except",
+    " [`AttachmentCodec`], whose roster comes from a different FFmpeg",
+    " source; see its own doc comment for why. Every codec FFmpeg knows",
+    " under media types `video` / `audio` / `subtitle` / `data` has a",
+    " named variant here; the `Other(SmolStr)` arm remains a lossless",
+    " escape for codecs added in a future FFmpeg release before this",
+    " file is regenerated (or, for `AttachmentCodec`, before",
+    " `ATTACHMENT_CODECS` is re-derived by hand).",
     "",
     " Regenerate in two steps:",
     " 1. `cargo xtask sync`       — refreshes the vendored table.",
     " 2. `cargo xtask gen-codec`  — regenerates this file from it.",
     "",
     " `cargo xtask check` verifies every named variant's canonical string",
-    " exists in the vendored table — CI gate against drift.",
+    " exists in the vendored table (or, for `AttachmentCodec`, in",
+    " `ATTACHMENT_CODECS`) — CI gate against drift.",
     "",
     " **Derive threshold.** `Unwrap` / `TryUnwrap` generate three methods",
     " per variant, so an enum in the hundreds pays that in compile time for",
-    subtitle_pair.as_str(),
-    derive_threshold.as_str(),
+    " one reachable payload arm.",
+    small_enums.as_str(),
+    large_enums.as_str(),
+    audio_count.as_str(),
     " variant count, not principle — reach for `Other(_)` on the large two",
     " with a `match` or [`IsVariant`](derive_more::IsVariant)'s `is_other`.",
   ]
@@ -1826,6 +2021,10 @@ fn build_codec_module(
 
     #subtitle_enum
 
+    #data_enum
+
+    #attachment_enum
+
     #[cfg(test)]
     mod tests;
   }
@@ -1835,9 +2034,14 @@ fn build_codec_enum(
   type_name: &str,
   media_type: &str,
   codecs: &CodecsWithProps,
+  wants_unwrap: bool,
   is_subtitle: bool,
 ) -> TokenStream {
   let enum_ident = format_ident!("{}", type_name);
+  // `AttachmentCodec` alone has no `codec_desc.c` media type behind it
+  // (see `ATTACHMENT_CODECS`'s doc comment) — its enum-level prose says
+  // so instead of claiming FFmpeg media-type coverage it doesn't have.
+  let is_attachment = type_name == "AttachmentCodec";
 
   // The `quickcheck` feature derives `quickcheck_richderive::Arbitrary` on
   // each codec enum, routing generation through a per-type helper fn
@@ -1891,29 +2095,42 @@ fn build_codec_enum(
   let roster_doc =
     format!(" Every {media_type} codec this vocabulary names, in declaration order.");
 
-  let other_doc = format!(" The open escape for a codec name FFmpeg {FFMPEG_TAG} does not carry,");
+  let other_doc = if is_attachment {
+    " The open escape for a codec id not in `ATTACHMENT_CODECS`,".to_string()
+  } else {
+    format!(" The open escape for a codec name FFmpeg {FFMPEG_TAG} does not carry,")
+  };
 
-  let enum_doc = format!(
-    " {} codec family — every codec FFmpeg {FFMPEG_TAG} knows under media type `{}`.\n\n \
+  let enum_doc = if is_attachment {
+    " Attachment codec family — the FFmpeg codec ids `libavformat/matroskadec.c`'s \
+     `mkv_mime_tags` table assigns to an `AVMEDIA_TYPE_ATTACHMENT` stream \
+     (`ATTACHMENT_CODECS`; see its doc comment for the full census — \
+     `libavcodec/codec_desc.c` has no `AVMEDIA_TYPE_ATTACHMENT` media type to \
+     enumerate here the way `DataCodec` and the other vendored enums are).\n\n \
      `#[non_exhaustive]` keeps future additions non-breaking; the `Other(SmolStr)` \
-     arm is the lossless escape for codecs added upstream before this file is \
-     regenerated.",
-    type_name.strip_suffix("Codec").unwrap_or(type_name),
-    media_type
-  );
+     arm is the lossless escape for an attachment codec id this list does not \
+     (yet) name."
+      .to_string()
+  } else {
+    format!(
+      " {} codec family — every codec FFmpeg {FFMPEG_TAG} knows under media type `{}`.\n\n \
+       `#[non_exhaustive]` keeps future additions non-breaking; the `Other(SmolStr)` \
+       arm is the lossless escape for codecs added upstream before this file is \
+       regenerated.",
+      type_name.strip_suffix("Codec").unwrap_or(type_name),
+      media_type
+    )
+  };
 
-  // Subtitle `is_image_based()` is sourced from the vendored `.props` set
-  // (FFmpeg's `AV_CODEC_PROP_BITMAP_SUB` flag), not a hand-maintained
-  // constant. Returns `Option<bool>`: `Some(true)` for bitmap subtitles,
-  // `Some(false)` for known-text subtitles, `None` for `Other(_)` because
-  // an unknown codec name has no FFmpeg `.props` record we can consult.
   // `Unwrap` / `TryUnwrap` generate three methods per variant, so the two
-  // 200-plus-variant codec enums would pay ~1500 generated methods in
-  // compile time for one reachable payload arm. `SubtitleCodec` has a few
-  // dozen variants and carries the same single `Other(SmolStr)`, so it gets
-  // the pair; `VideoCodec` and `AudioCodec` are exempt. The rule is written
-  // on the module (with the live counts), not left implicit here.
-  let unwrap_derives = if is_subtitle {
+  // 200-plus-variant codec enums (`VideoCodec`, `AudioCodec`) would pay
+  // ~1500 generated methods in compile time for one reachable payload
+  // arm (`Other`). `SubtitleCodec`, `DataCodec`, and `AttachmentCodec`
+  // are all small enough (a few dozen variants or fewer) that the same
+  // pair is cheap, so `wants_unwrap` is true for all three. The rule is
+  // written on the module (with the live counts), not left implicit
+  // here.
+  let unwrap_derives = if wants_unwrap {
     quote! {
       #[derive(Unwrap, TryUnwrap)]
       #[unwrap(ref, ref_mut)]
@@ -1922,6 +2139,18 @@ fn build_codec_enum(
   } else {
     quote! {}
   };
+
+  // Subtitle `is_image_based()` is sourced from the vendored `.props` set
+  // (FFmpeg's `AV_CODEC_PROP_BITMAP_SUB` flag), not a hand-maintained
+  // constant. Returns `Option<bool>`: `Some(true)` for bitmap subtitles,
+  // `Some(false)` for known-text subtitles, `None` for `Other(_)` because
+  // an unknown codec name has no FFmpeg `.props` record we can consult.
+  // Subtitle-specific: `DataCodec` and `AttachmentCodec` carry no
+  // `.props`-derived predicate — neither vendors `.props` (`DataCodec`'s
+  // FFmpeg entries carry none; `AttachmentCodec` isn't vendored from
+  // `codec_desc.c` at all), and there is no analogous question to ask of
+  // a data or attachment codec the way "is this bitmap or text" applies
+  // to subtitles.
 
   let extra_impl = if is_subtitle {
     let mut bitmap_idents: Vec<Ident> = Vec::new();
@@ -2068,19 +2297,32 @@ fn build_codec_tests(
   video: &CodecsWithProps,
   audio: &CodecsWithProps,
   subtitle: &CodecsWithProps,
+  data: &CodecsWithProps,
+  attachment: &CodecsWithProps,
 ) -> TokenStream {
   // Embed the (media_type, short_name) pairs as a const inside the
   // generated module rather than `include_str!`ing the workspace-only
   // `xtask/vendor/*.txt`. The vendored file lives in the `xtask` crate
   // which is excluded from `cargo publish`, so any `include_str!` that
   // traverses `../..` would break on the packaged source. Embedding
-  // keeps the in-crate test suite hermetic.
+  // keeps the in-crate test suite hermetic. `attachment`'s pairs are not
+  // FFmpeg-vendored (see `ATTACHMENT_CODECS`'s doc comment) but are
+  // embedded the same way, so `vendored_of("attachment")` and the
+  // roster-completeness check below work identically for all five.
   let pair_arms = video
     .keys()
     .map(|n| quote! { ("video", #n) })
     .chain(audio.keys().map(|n| quote! { ("audio", #n) }))
-    .chain(subtitle.keys().map(|n| quote! { ("subtitle", #n) }));
-  let (video_len, audio_len, subtitle_len) = (video.len(), audio.len(), subtitle.len());
+    .chain(subtitle.keys().map(|n| quote! { ("subtitle", #n) }))
+    .chain(data.keys().map(|n| quote! { ("data", #n) }))
+    .chain(attachment.keys().map(|n| quote! { ("attachment", #n) }));
+  let (video_len, audio_len, subtitle_len, data_len, attachment_len) = (
+    video.len(),
+    audio.len(),
+    subtitle.len(),
+    data.len(),
+    attachment.len(),
+  );
   quote! {
     use super::*;
       // Bring `ToString` into scope explicitly. Under `feature = "std"`
@@ -2140,6 +2382,46 @@ fn build_codec_tests(
       }
 
       #[test]
+      fn every_data_codec_round_trips_to_named_variant() {
+        let mut n = 0usize;
+        for name in vendored_of("data") {
+          let c: DataCodec = name.parse().unwrap();
+          assert!(!c.is_other(), "data `{name}` should parse to a named variant");
+          assert_eq!(c.as_str(), name, "round-trip mismatch for `{name}`");
+          n += 1;
+        }
+        assert!(n > 0, "vendored data list is empty?");
+      }
+
+      #[test]
+      fn every_attachment_codec_round_trips_to_named_variant() {
+        let mut n = 0usize;
+        for name in vendored_of("attachment") {
+          let c: AttachmentCodec = name.parse().unwrap();
+          assert!(!c.is_other(), "attachment `{name}` should parse to a named variant");
+          assert_eq!(c.as_str(), name, "round-trip mismatch for `{name}`");
+          n += 1;
+        }
+        assert!(n > 0, "ATTACHMENT_CODECS is empty?");
+      }
+
+      /// `ttf`, `otf`, and `bin_data` are the three codec ids `DataCodec`
+      /// and `AttachmentCodec` share — the same FFmpeg codec id wearing
+      /// two different track-role hats (see `ATTACHMENT_CODECS`'s doc
+      /// comment). Confirms the overlap is real rather than one enum
+      /// silently missing a name the other carries.
+      #[test]
+      fn attachment_codecs_are_also_named_data_codecs() {
+        for name in vendored_of("attachment") {
+          let a: AttachmentCodec = name.parse().unwrap();
+          let d: DataCodec = name.parse().unwrap();
+          assert!(!a.is_other());
+          assert!(!d.is_other(), "`{name}` should also be a named DataCodec variant");
+          assert_eq!(a.as_str(), d.as_str());
+        }
+      }
+
+      #[test]
       fn unknown_codec_preserves_string_through_other() {
         let v: VideoCodec = "definitely_not_a_real_codec_xyz".parse().unwrap();
         assert!(v.is_other());
@@ -2171,10 +2453,11 @@ fn build_codec_tests(
       /// spelling of a known codec is that codec, and an uppercase
       /// spelling of an unknown one is stored lowercase, so one name is
       /// one value under the derived `Eq` / `Hash`.
-      /// `SubtitleCodec` is the third open enum on the `Unwrap` /
-      /// `TryUnwrap` pair; the two 200-plus-variant codec enums stay
-      /// exempt on compile-time grounds, which is why this names only
-      /// the subtitle one.
+      /// `SubtitleCodec`, `DataCodec`, and `AttachmentCodec` are the open
+      /// enums on the `Unwrap` / `TryUnwrap` pair (see the module doc's
+      /// derive threshold); the two 200-plus-variant codec enums stay
+      /// exempt on compile-time grounds, which is why this names those
+      /// three and not `VideoCodec` / `AudioCodec`.
       #[test]
       fn subtitle_codec_unwrap_other_borrowed_view() {
         let v = SubtitleCodec::other("vendor_sub");
@@ -2184,11 +2467,29 @@ fn build_codec_tests(
       }
 
       #[test]
+      fn data_codec_unwrap_other_borrowed_view() {
+        let v = DataCodec::other("vendor_data");
+        assert_eq!(v.unwrap_other_ref().as_str(), "vendor_data");
+        assert!(v.try_unwrap_other_ref().is_ok());
+        assert!(DataCodec::BinData.try_unwrap_other_ref().is_err());
+      }
+
+      #[test]
+      fn attachment_codec_unwrap_other_borrowed_view() {
+        let v = AttachmentCodec::other("vendor_attachment");
+        assert_eq!(v.unwrap_other_ref().as_str(), "vendor_attachment");
+        assert!(v.try_unwrap_other_ref().is_ok());
+        assert!(AttachmentCodec::Ttf.try_unwrap_other_ref().is_err());
+      }
+
+      #[test]
       fn codec_lookup_and_escape_both_fold() {
         assert_eq!("H264".parse(), Ok(VideoCodec::H264));
         assert_eq!("HeVc".parse(), Ok(VideoCodec::Hevc));
         assert_eq!("AAC".parse(), Ok(AudioCodec::Aac));
         assert_eq!("SRT".parse(), Ok(SubtitleCodec::Srt));
+        assert_eq!("KLV".parse(), Ok(DataCodec::Klv));
+        assert_eq!("OTF".parse(), Ok(AttachmentCodec::Otf));
 
         let v: VideoCodec = "VENDOR_Codec".parse().unwrap();
         assert!(v.is_other());
@@ -2225,7 +2526,10 @@ fn build_codec_tests(
       /// `match` witness beside each declaration — a codec added by a
       /// regeneration cannot reach the roster without passing `E0004`
       /// first, and cannot reach the *right place* in it without matching
-      /// the vendored order asserted here.
+      /// the vendored order asserted here. `AttachmentCodec` goes through
+      /// the identical helper — `vendored_of("attachment")` walks
+      /// `ATTACHMENT_CODECS`' embedded pairs rather than a `codec_desc.c`
+      /// table, but the completeness contract this asserts is the same.
       #[test]
       fn rosters_match_the_vendored_tables() {
         fn check<T>(roster: &'static [T], media: &'static str, expected_len: usize)
@@ -2255,6 +2559,8 @@ fn build_codec_tests(
         check::<VideoCodec>(VideoCodec::ROSTER, "video", #video_len);
         check::<AudioCodec>(AudioCodec::ROSTER, "audio", #audio_len);
         check::<SubtitleCodec>(SubtitleCodec::ROSTER, "subtitle", #subtitle_len);
+        check::<DataCodec>(DataCodec::ROSTER, "data", #data_len);
+        check::<AttachmentCodec>(AttachmentCodec::ROSTER, "attachment", #attachment_len);
       }
 
       /// No roster carries the open escape — it holds names this build
@@ -2264,6 +2570,8 @@ fn build_codec_tests(
         assert!(VideoCodec::ROSTER.iter().all(|c| !c.is_other()));
         assert!(AudioCodec::ROSTER.iter().all(|c| !c.is_other()));
         assert!(SubtitleCodec::ROSTER.iter().all(|c| !c.is_other()));
+        assert!(DataCodec::ROSTER.iter().all(|c| !c.is_other()));
+        assert!(AttachmentCodec::ROSTER.iter().all(|c| !c.is_other()));
       }
 
       #[test]
@@ -2271,6 +2579,8 @@ fn build_codec_tests(
         assert_eq!(VideoCodec::H264.to_string(), "h264");
         assert_eq!(AudioCodec::Opus.to_string(), "opus");
         assert_eq!(SubtitleCodec::Webvtt.to_string(), "webvtt");
+        assert_eq!(DataCodec::Klv.to_string(), "klv");
+        assert_eq!(AttachmentCodec::BinData.to_string(), "bin_data");
         assert_eq!(
           VideoCodec::Other(SmolStr::new("custom_codec")).to_string(),
           "custom_codec"

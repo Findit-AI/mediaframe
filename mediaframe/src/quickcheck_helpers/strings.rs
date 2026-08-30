@@ -7,7 +7,7 @@
 //! routed through `FromStr`**, so every generated value is canonical.
 //!
 //! Owned types:
-//!   - codec::{VideoCodec, AudioCodec, SubtitleCodec}
+//!   - codec::{VideoCodec, AudioCodec, SubtitleCodec, DataCodec, AttachmentCodec}
 //!   - container::Format
 //!   - image::Format
 //!   - subtitle::Format
@@ -29,6 +29,21 @@ qc_open_string_enum!(
   subtitle_codec,
   crate::codec::SubtitleCodec,
   ["srt", "ass", "ssa", "webvtt", "mov_text", "dvb_subtitle"]
+);
+
+qc_open_string_enum!(
+  data_codec,
+  crate::codec::DataCodec,
+  ["klv", "timed_id3", "scte_35", "bin_data", "ttf", "otf"]
+);
+
+// The full roster seeded on purpose — `AttachmentCodec` only has three
+// named variants (see `ATTACHMENT_CODECS` in `xtask/src/main.rs`), so
+// there is no "representative sample" distinct from "all of them".
+qc_open_string_enum!(
+  attachment_codec,
+  crate::codec::AttachmentCodec,
+  ["ttf", "otf", "bin_data"]
 );
 
 // `m2ts`/`3g2` seeded on purpose — R5 promoted `M2ts`/`Threeg2` to their
