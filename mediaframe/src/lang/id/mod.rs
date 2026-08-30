@@ -460,7 +460,12 @@ fn tail(text: &str) -> Result<Utf8Bytes, ParseLanguageIdError> {
 /// that lookup use a stack buffer rather than allocating a lower-cased copy of every tag that comes
 /// through the door. `the_grandfathered_table_fits_the_lookup_buffer` is the pin that keeps the
 /// shortcut from silently missing a tag the registry adds.
-const GRANDFATHERED_MAX: usize = 16;
+///
+/// `pub(super)` rather than private: it is also the width the generated registry's `GRANDFATHERED`
+/// key column is stored inline at, which is `subtag::MAX`'s reason for the same visibility — a
+/// table's row width is not `id`'s secret once something outside the type needs to store the same
+/// tag shape.
+pub(super) const GRANDFATHERED_MAX: usize = 16;
 
 /// The replacement the registry names for a grandfathered tag, or [`None`] for a tag that is not
 /// grandfathered or is grandfathered without one.

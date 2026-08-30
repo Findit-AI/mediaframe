@@ -921,6 +921,7 @@ fn render(root: &Path) -> Result<String, String> {
     "Every registered primary language subtag, with the first `Description` the registry gives it.",
     "Membership here IS registration: `Language::is_registered` is this lookup answering `Some`.",
     &tables.languages,
+    Some("MAX"),
   );
   pairs(
     &mut out,
@@ -929,6 +930,7 @@ fn render(root: &Path) -> Result<String, String> {
     "The registry's `Preferred-Value`. A deprecated subtag ABSENT from here has no replacement and \
      folds to itself.",
     &tables.language_preferred,
+    Some("MAX"),
   );
   pairs(
     &mut out,
@@ -937,6 +939,7 @@ fn render(root: &Path) -> Result<String, String> {
     "The registry's `Suppress-Script`. `en` implies `Latn`, so `en-Latn` composes as `en`; `zh` is \
      ABSENT, so `zh-Hans` composes as itself.",
     &tables.language_suppress_script,
+    Some("MAX"),
   );
   words(
     &mut out,
@@ -960,6 +963,7 @@ fn render(root: &Path) -> Result<String, String> {
      47 cannot supply it. Both the bibliographic and the terminological code of a pair are here, \
      each pointing straight at the two-letter code: `ger` and `deu` both answer `de`.",
     &tables.alpha3,
+    Some("MAX"),
   );
   pairs(
     &mut out,
@@ -967,6 +971,7 @@ fn render(root: &Path) -> Result<String, String> {
     "Every registered script subtag, with the first `Description` the registry gives it.",
     "ISO 15924, in the registry's own Titlecase.",
     &tables.scripts,
+    Some("WIDTH"),
   );
   bounds(
     &mut out,
@@ -980,6 +985,7 @@ fn render(root: &Path) -> Result<String, String> {
     "Every registered region subtag, with the first `Description` the registry gives it.",
     "Two grammars in one table: ISO 3166-1 alpha-2 in upper case, and UN M.49 as three digits.",
     &tables.regions,
+    Some("AREA"),
   );
   pairs(
     &mut out,
@@ -988,6 +994,7 @@ fn render(root: &Path) -> Result<String, String> {
     "`BU` folds onto `MM`. A deprecated region ABSENT from here has no replacement and stays \
      itself.",
     &tables.region_preferred,
+    Some("AREA"),
   );
   words(
     &mut out,
@@ -1022,6 +1029,7 @@ fn render(root: &Path) -> Result<String, String> {
     "A whole TAG rather than a subtag, which is what makes this table `LanguageId`'s and not \
      `Language`'s.",
     &tables.grandfathered,
+    Some("GRANDFATHERED_MAX"),
   );
   words(
     &mut out,
@@ -1088,20 +1096,56 @@ fn header(tables: &Tables, out: &mut String) {
      pub const FILE_DATE: &str = {:?};\n\n",
     tables.file_date
   );
+
+  for line in wrapped(
+    "The family's own inline ASCII seats — `MAX` (language), `WIDTH` (script), `AREA` (region) \
+     and `GRANDFATHERED_MAX` (a whole grandfathered tag) — each already the width its own type is \
+     stored at, so a key column that rides one is stored the same way the value it was read from \
+     is.",
+  ) {
+    let _ = writeln!(out, "// {line}");
+  }
+  let _ = writeln!(
+    out,
+    "use crate::lang::{{\n  id::GRANDFATHERED_MAX,\n  region::AREA,\n  script::WIDTH,\n  \
+     subtag::{{Ascii, MAX}},\n}};\n"
+  );
 }
 
-/// One `&[(&str, &str)]` table.
+/// One `&[(K, &str)]` table, `K` being `&str` or, where `key_seat` names one, the family's own
+/// inline `Ascii<N>` seat.
+///
+/// `key_seat` is the LOCAL NAME (after this file's own `use`, see [`header`]) of the `usize`
+/// constant the key column is stored inline at — `MAX` for a language-shaped key, `WIDTH` for a
+/// script, `AREA` for a region, `GRANDFATHERED_MAX` for a whole grandfathered tag. This generator
+/// never reads that constant's VALUE: `mediaframe`'s own `Ascii::literal` asserts a key fits it at
+/// that CRATE's compile time, which is what turns "the registry grew a key past its seat" into a
+/// build failure there rather than a silent truncation here.
 fn pairs(
   out: &mut String,
   name: &str,
   summary: &str,
   detail: &str,
   rows: &BTreeMap<String, String>,
+  key_seat: Option<&str>,
 ) {
   doc(out, name, summary, detail, rows.len());
-  let _ = writeln!(out, "pub(crate) static {name}: &[(&str, &str)] = &[");
-  for (key, value) in rows {
-    let _ = writeln!(out, "({key:?}, {value:?}),");
+  match key_seat {
+    Some(seat) => {
+      let _ = writeln!(
+        out,
+        "pub(crate) static {name}: &[(Ascii<{seat}>, &str)] = &["
+      );
+      for (key, value) in rows {
+        let _ = writeln!(out, "(Ascii::literal({key:?}), {value:?}),");
+      }
+    }
+    None => {
+      let _ = writeln!(out, "pub(crate) static {name}: &[(&str, &str)] = &[");
+      for (key, value) in rows {
+        let _ = writeln!(out, "({key:?}, {value:?}),");
+      }
+    }
   }
   let _ = writeln!(out, "];\n");
 }

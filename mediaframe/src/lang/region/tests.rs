@@ -202,12 +202,13 @@ fn a_canonical_region_is_a_fixpoint_and_the_fold_collides_nothing() {
   let mut reached: BTreeMap<String, &str> = BTreeMap::new();
 
   for (subtag, _) in registry::table::REGIONS {
+    let subtag = subtag.as_str();
     let held = admitted(subtag);
 
     match registry::region_preferred(subtag) {
       Some(preferred) => assert_eq!(held.as_str(), preferred, "`{subtag}`"),
       None => {
-        assert_eq!(held.as_str(), *subtag, "`{subtag}` is not a fixpoint");
+        assert_eq!(held.as_str(), subtag, "`{subtag}` is not a fixpoint");
         assert_eq!(
           reached.insert(String::from(held.as_str()), subtag),
           None,

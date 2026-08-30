@@ -51,6 +51,8 @@ mod tests;
 
 pub use table::FILE_DATE;
 
+use super::subtag::Ascii;
+
 /// How many primary language subtags the vendored registry holds.
 ///
 /// The reserved private-use RANGE is not one of them: it is a single record spelling `qaa..qtz`,
@@ -299,9 +301,28 @@ pub fn is_grandfathered(tag: &str) -> bool {
 /// [`BTreeMap`](std::collections::BTreeMap), so the order is a property of how they are emitted
 /// rather than a claim about them — which is what makes this a search rather than a scan over eight
 /// thousand rows.
-fn paired(table: &'static [(&'static str, &'static str)], key: &str) -> Option<&'static str> {
+///
+/// GENERIC over the key column's own inline seat width, `N`: each table rides its family's own
+/// `Ascii<N>` (language, script, region or the whole grandfathered tag), and `N` is inferred from
+/// `table`'s own type at every call site rather than chosen here. A `key` wider than `N` cannot
+/// equal any row — every row's key already fits `N`, or the table would not have compiled — so it
+/// answers [`None`] on the length alone, before a search or a fold.
+///
+/// The comparison stays `key`'s own text order: [`Ascii`]'s derived `Ord` is PINNED to agree with
+/// `str`'s by `lang::tests::the_derived_order_is_the_texts_order_across_the_registry`, so a probe
+/// built from `key`'s own bytes — [`Ascii::verbatim`], which folds nothing — sorts exactly where
+/// `key` itself would have, and the table stays searchable by the same order it was emitted in.
+fn paired<const N: usize>(
+  table: &'static [(Ascii<N>, &'static str)],
+  key: &str,
+) -> Option<&'static str> {
+  if key.len() > N {
+    return None;
+  }
+
+  let probe = Ascii::<N>::verbatim(key);
   table
-    .binary_search_by(|(candidate, _)| (*candidate).cmp(key))
+    .binary_search_by(|(candidate, _)| candidate.cmp(&probe))
     .ok()
     .map(|at| table[at].1)
 }

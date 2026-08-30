@@ -209,6 +209,7 @@ fn a_canonical_subtag_is_a_fixpoint_and_the_fold_collides_nothing() {
   let mut reached: BTreeMap<String, &str> = BTreeMap::new();
 
   for (subtag, _) in registry::table::LANGUAGES {
+    let subtag = subtag.as_str();
     let held = admitted(subtag);
 
     match registry::language_preferred(subtag) {
@@ -216,7 +217,7 @@ fn a_canonical_subtag_is_a_fixpoint_and_the_fold_collides_nothing() {
       // exactly what the registry says.
       Some(preferred) => assert_eq!(held.as_str(), preferred, "`{subtag}`"),
       None => {
-        assert_eq!(held.as_str(), *subtag, "`{subtag}` is not a fixpoint");
+        assert_eq!(held.as_str(), subtag, "`{subtag}` is not a fixpoint");
         assert_eq!(
           reached.insert(String::from(held.as_str()), subtag),
           None,
@@ -243,6 +244,7 @@ fn a_canonical_subtag_is_a_fixpoint_and_the_fold_collides_nothing() {
 #[test]
 fn every_iso_639_2_code_reaches_a_registered_language() {
   for (code, shortest) in registry::table::ALPHA3 {
+    let code = code.as_str();
     let held = admitted(code);
 
     assert_eq!(held.as_str(), *shortest, "`{code}`");
