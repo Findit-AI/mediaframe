@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-30
+
 ### Changed
 
 - **The generated lang registry's pair-table key columns move onto the
