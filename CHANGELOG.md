@@ -6,6 +6,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The generated lang registry's pair-table key columns move onto the
+  family's inline `Ascii<N>` seat instead of `&str`** — `Language`'s
+  (`LANGUAGES`, `LANGUAGE_PREFERRED`, `LANGUAGE_SUPPRESS_SCRIPT`, `ALPHA3`),
+  `ScriptSubtag`'s (`SCRIPTS`), `Region`'s (`REGIONS`, `REGION_PREFERRED`),
+  and `GRANDFATHERED` on its own existing 16-byte whole-tag buffer width.
+  Every key already fit its family's seat; the comparison stays `key`'s own
+  text order (`Ascii`'s derived `Ord` over a zero-padded buffer, PINNED to
+  agree with `str` by the crate's own ordering sweep over all 8275 registered
+  languages), so every lookup's binary search and every answer are unchanged.
+
+  **Measured, not forecast.** Relocations across the eight compacted pair
+  tables (9276 rows) drop from 18,552 to 9,276 — exactly half, since every
+  row loses one `&str` fat pointer's worth of relocation regardless of its
+  seat width. Static size drops only ~4.0 KiB (296,832 → 292,752 bytes,
+  measured via `size_of` on the actual row types) — far short of an earlier
+  ~90KB forecast: tuple alignment pads `(Ascii<8>, &str)` back up to the same
+  32 bytes `(&str, &str)` already was, so the four language-seat tables (94%
+  of all rows) round-trip at zero byte savings each, and `GRANDFATHERED`'s
+  16-byte seat is a small net regression (+8 bytes/row, on the same padding
+  rule). Only the narrower `SCRIPTS` / `REGIONS` / `REGION_PREFERRED` rows
+  (531 of 9276) see the full 8 bytes/row the inline seat promises.
+
 ## [0.9.0] - 2026-08-30
 
 ### Added
