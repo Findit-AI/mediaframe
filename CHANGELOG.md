@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-08-31
+
 ### Added
 
 - **`codec::DataCodec` and `codec::AttachmentCodec`** — the two
