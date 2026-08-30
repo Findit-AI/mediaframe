@@ -27,21 +27,44 @@ use super::{
 /// `binary_search` over an unsorted slice does not fail, it answers `Err` for rows that are there.
 #[test]
 fn every_pair_table_is_sorted() {
+  // Grouped by the KEY column's own inline seat width rather than in one list: `LANGUAGES`,
+  // `LANGUAGE_PREFERRED`, `LANGUAGE_SUPPRESS_SCRIPT` and `ALPHA3` ride the language seat, `SCRIPTS`
+  // its own, `REGIONS`/`REGION_PREFERRED` the region seat and `GRANDFATHERED` the whole-tag one —
+  // four different `Ascii<N>` types, so one array literal can no longer hold every table the way it
+  // held eight `&str`-keyed ones. Each group still asserts the SAME property, on the SAME tables.
   for (name, table) in [
     ("LANGUAGES", table::LANGUAGES),
     ("LANGUAGE_PREFERRED", table::LANGUAGE_PREFERRED),
     ("LANGUAGE_SUPPRESS_SCRIPT", table::LANGUAGE_SUPPRESS_SCRIPT),
     ("ALPHA3", table::ALPHA3),
-    ("SCRIPTS", table::SCRIPTS),
-    ("REGIONS", table::REGIONS),
-    ("REGION_PREFERRED", table::REGION_PREFERRED),
-    ("GRANDFATHERED", table::GRANDFATHERED),
   ] {
     assert!(
       table.windows(2).all(|pair| pair[0].0 < pair[1].0),
       "{name} is not sorted, so its lookups are not lookups"
     );
   }
+
+  assert!(
+    table::SCRIPTS.windows(2).all(|pair| pair[0].0 < pair[1].0),
+    "SCRIPTS is not sorted, so its lookups are not lookups"
+  );
+
+  for (name, table) in [
+    ("REGIONS", table::REGIONS),
+    ("REGION_PREFERRED", table::REGION_PREFERRED),
+  ] {
+    assert!(
+      table.windows(2).all(|pair| pair[0].0 < pair[1].0),
+      "{name} is not sorted, so its lookups are not lookups"
+    );
+  }
+
+  assert!(
+    table::GRANDFATHERED
+      .windows(2)
+      .all(|pair| pair[0].0 < pair[1].0),
+    "GRANDFATHERED is not sorted, so its lookups are not lookups"
+  );
 
   for (name, table) in [
     ("LANGUAGE_DEPRECATED", table::LANGUAGE_DEPRECATED),
@@ -62,12 +85,15 @@ fn every_pair_table_is_sorted() {
 #[test]
 fn every_registered_subtag_is_found_by_its_own_subtag() {
   for (subtag, name) in table::LANGUAGES {
+    let subtag = subtag.as_str();
     assert_eq!(language_name(subtag), Some(*name), "language `{subtag}`");
   }
   for (subtag, name) in table::SCRIPTS {
+    let subtag = subtag.as_str();
     assert_eq!(script_name(subtag), Some(*name), "script `{subtag}`");
   }
   for (subtag, name) in table::REGIONS {
+    let subtag = subtag.as_str();
     assert_eq!(region_name(subtag), Some(*name), "region `{subtag}`");
   }
 
@@ -88,6 +114,7 @@ fn every_registered_subtag_is_found_by_its_own_subtag() {
 #[test]
 fn a_preferred_value_prefers_nothing_itself() {
   for (subtag, preferred) in table::LANGUAGE_PREFERRED {
+    let subtag = subtag.as_str();
     assert!(
       language_name(preferred).is_some(),
       "`{subtag}` prefers `{preferred}`, which is not registered"
@@ -100,6 +127,7 @@ fn a_preferred_value_prefers_nothing_itself() {
   }
 
   for (subtag, preferred) in table::REGION_PREFERRED {
+    let subtag = subtag.as_str();
     assert!(
       region_name(preferred).is_some(),
       "`{subtag}` prefers `{preferred}`, which is not registered"
@@ -120,6 +148,7 @@ fn a_preferred_value_prefers_nothing_itself() {
 #[test]
 fn the_alpha3_fold_supplies_only_what_bcp47_omits() {
   for (code, shortest) in table::ALPHA3 {
+    let code = code.as_str();
     assert_eq!(
       language_name(code),
       None,
@@ -137,6 +166,7 @@ fn the_alpha3_fold_supplies_only_what_bcp47_omits() {
 #[test]
 fn every_suppressed_script_is_a_registered_script() {
   for (subtag, script) in table::LANGUAGE_SUPPRESS_SCRIPT {
+    let subtag = subtag.as_str();
     assert!(
       script_name(script).is_some(),
       "`{subtag}` suppresses `{script}`, which is not a registered script"
@@ -361,7 +391,7 @@ fn a_lookup_is_case_sensitive_and_says_so() {
 fn the_region_roster_holds_both_grammars() {
   let digits = table::REGIONS
     .iter()
-    .filter(|(subtag, _)| subtag.bytes().all(|byte| byte.is_ascii_digit()))
+    .filter(|(subtag, _)| subtag.as_str().bytes().all(|byte| byte.is_ascii_digit()))
     .count();
 
   assert_eq!(digits, 31, "the M.49 areas");

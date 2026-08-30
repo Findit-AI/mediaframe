@@ -160,7 +160,12 @@ impl ScriptSubtag {
 }
 
 /// Every script subtag is exactly this wide. ISO 15924's own shape, and BCP 47's `script = 4ALPHA`.
-const WIDTH: usize = 4;
+///
+/// `pub(super)` rather than private: it is also the width the generated registry's `SCRIPTS` key
+/// column is stored inline at, which is `subtag::MAX`'s reason for the same visibility — a table's
+/// row width is not `script`'s secret once something outside the type needs to store the same
+/// subtag kind.
+pub(super) const WIDTH: usize = 4;
 
 /// A string does not name a script subtag.
 ///

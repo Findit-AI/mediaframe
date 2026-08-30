@@ -45,8 +45,13 @@ pub(super) const MAX: usize = 8;
 ///
 /// The storage of all three subtag types, and — since a value is its bytes — the whole of what
 /// makes them [`Copy`]. See the module docs for why the derived [`Ord`] is the text's order.
+///
+/// `pub(crate)` rather than `pub(super)`: the generated registry's compacted key columns
+/// (`table::LANGUAGES` and its siblings) are themselves `pub(crate)`, and a public item cannot name
+/// a less-visible type in its own signature. The inherent methods below stay `pub(super)` — naming
+/// the TYPE is not calling its constructors, and nothing outside `lang` does either.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct Ascii<const N: usize> {
+pub(crate) struct Ascii<const N: usize> {
   /// The canonical bytes, zero-padded past [`len`](Self::len).
   buffer: [u8; N],
   /// How many of them are the subtag. Never zero: every door refuses an empty text first.

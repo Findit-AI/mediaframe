@@ -158,9 +158,10 @@ fn every_registered_script_is_a_fixpoint_and_the_fold_collides_nothing() {
   let mut reached = BTreeSet::new();
 
   for (subtag, _) in registry::table::SCRIPTS {
+    let subtag = subtag.as_str();
     let held = admitted(subtag);
 
-    assert_eq!(held.as_str(), *subtag, "`{subtag}` is not a fixpoint");
+    assert_eq!(held.as_str(), subtag, "`{subtag}` is not a fixpoint");
     assert!(held.is_registered(), "`{subtag}`");
     assert_eq!(
       admitted(&subtag.to_ascii_uppercase()),

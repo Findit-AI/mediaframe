@@ -48,13 +48,14 @@ fn corpus() -> Vec<String> {
   // Every registered language on its own — which is the `Preferred-Value` and alpha-3 folds, the
   // case fold, and `und`, over every row that has one.
   for (subtag, _) in registry::table::LANGUAGES {
-    tags.push(String::from(*subtag));
+    tags.push(String::from(subtag.as_str()));
   }
 
   // Every language the registry gives a `Suppress-Script`, in the shapes the fold has to decide
   // between: the bare pair, the pair with each later seat filled, and the tails that would climb
   // into the slot the fold vacates.
   for (subtag, script) in registry::table::LANGUAGE_SUPPRESS_SCRIPT {
+    let subtag = subtag.as_str();
     tags.push(std::format!("{subtag}-{script}"));
     tags.push(std::format!("{subtag}-{script}-US"));
     tags.push(std::format!("{subtag}-{script}-419"));
@@ -74,15 +75,17 @@ fn corpus() -> Vec<String> {
   // Every registered script and region, beside a language that implies neither — so the seats are
   // filled from the registry rather than from a handful of familiar subtags.
   for (subtag, _) in registry::table::SCRIPTS {
+    let subtag = subtag.as_str();
     tags.push(std::format!("zh-{subtag}"));
   }
   for (subtag, _) in registry::table::REGIONS {
+    let subtag = subtag.as_str();
     tags.push(std::format!("zh-Hans-{subtag}"));
   }
 
   // Every grandfathered tag, replaced or kept.
   for (tag, _) in registry::table::GRANDFATHERED {
-    tags.push(String::from(*tag));
+    tags.push(String::from(tag.as_str()));
   }
   for tag in registry::table::GRANDFATHERED_KEPT {
     tags.push(String::from(*tag));
@@ -162,7 +165,7 @@ fn interactions() -> Vec<String> {
   // all three at once, since the interaction is the point.
   for tag in registry::table::GRANDFATHERED
     .iter()
-    .map(|(tag, _)| *tag)
+    .map(|(tag, _)| tag.as_str())
     .chain(registry::table::GRANDFATHERED_KEPT.iter().copied())
   {
     let (language, after) = tag.split_once('-').unwrap_or((tag, ""));
@@ -199,14 +202,14 @@ fn interactions() -> Vec<String> {
     .iter()
     .map(|(code, shortest)| {
       (
-        *code,
+        code.as_str(),
         registry::language_preferred(shortest).unwrap_or(shortest),
       )
     })
     .chain(
       registry::table::LANGUAGE_PREFERRED
         .iter()
-        .map(|(subtag, preferred)| (*subtag, *preferred)),
+        .map(|(subtag, preferred)| (subtag.as_str(), *preferred)),
     );
 
   for (sent, folded) in reached {
@@ -222,7 +225,9 @@ fn interactions() -> Vec<String> {
   // THE REGION FOLD BESIDE THE SUPPRESSION — a deprecated region in the seat that follows the one
   // the suppression vacates, on every language that implies a script.
   for (deprecated, _) in registry::table::REGION_PREFERRED {
+    let deprecated = deprecated.as_str();
     for (subtag, script) in registry::table::LANGUAGE_SUPPRESS_SCRIPT {
+      let subtag = subtag.as_str();
       tags.push(std::format!("{subtag}-{script}-{deprecated}"));
     }
   }
@@ -239,7 +244,7 @@ fn language_preimages(subtag: &str) -> Vec<String> {
     registry::table::LANGUAGE_PREFERRED
       .iter()
       .filter(|(_, preferred)| *preferred == subtag)
-      .map(|(deprecated, _)| String::from(*deprecated)),
+      .map(|(deprecated, _)| String::from(deprecated.as_str())),
   );
 
   // The alpha-3 fold runs FIRST, so a code reaches `subtag` either directly or through a spelling
@@ -250,7 +255,7 @@ fn language_preimages(subtag: &str) -> Vec<String> {
     registry::table::ALPHA3
       .iter()
       .filter(|(_, shortest)| through.iter().any(|hop| hop == shortest))
-      .map(|(code, _)| String::from(*code)),
+      .map(|(code, _)| String::from(code.as_str())),
   );
 
   spellings
@@ -268,11 +273,12 @@ fn region_preimages(after: &str) -> Vec<String> {
 
   let canonical = head.to_uppercase();
   for (deprecated, preferred) in registry::table::REGION_PREFERRED {
+    let deprecated = deprecated.as_str();
     if *preferred != canonical {
       continue;
     }
     spellings.push(match rest.is_empty() {
-      true => String::from(*deprecated),
+      true => String::from(deprecated),
       false => std::format!("{deprecated}-{rest}"),
     });
   }
@@ -490,7 +496,7 @@ fn a_grandfathered_tag_with_no_replacement_falls_through_to_the_ordinary_parse()
 fn the_grandfathered_table_fits_the_lookup_buffer() {
   let widest = registry::table::GRANDFATHERED
     .iter()
-    .map(|(tag, _)| tag.len())
+    .map(|(tag, _)| tag.as_str().len())
     .chain(
       registry::table::GRANDFATHERED_KEPT
         .iter()
@@ -990,7 +996,8 @@ fn the_generated_hop_bound_is_the_chain_this_registry_has() {
   let mut deepest = 0usize;
 
   for (start, preferred) in registry::table::GRANDFATHERED {
-    let mut chain: Vec<String> = std::vec![String::from(*start)];
+    let start = start.as_str();
+    let mut chain: Vec<String> = std::vec![String::from(start)];
     let mut held = LanguageId::composed(preferred).unwrap_or_else(|refused| {
       panic!("`{start}` prefers `{preferred}`, which the door refuses: {refused}")
     });

@@ -93,7 +93,7 @@ fn the_derived_order_is_the_texts_order_across_the_registry() {
   let mut languages: std::collections::BTreeMap<u8, Vec<Language>> =
     std::collections::BTreeMap::new();
   for (subtag, _) in registry::table::LANGUAGES {
-    let held = Language::new(subtag).expect("a registered subtag is a subtag");
+    let held = Language::new(subtag.as_str()).expect("a registered subtag is a subtag");
     languages
       .entry(held.as_str().as_bytes()[0])
       .or_default()
@@ -105,7 +105,7 @@ fn the_derived_order_is_the_texts_order_across_the_registry() {
 
   let scripts: Vec<ScriptSubtag> = registry::table::SCRIPTS
     .iter()
-    .map(|(subtag, _)| ScriptSubtag::new(subtag).expect("a script"))
+    .map(|(subtag, _)| ScriptSubtag::new(subtag.as_str()).expect("a script"))
     .collect();
   agrees(&scripts, |held| held.as_str());
 
@@ -113,7 +113,7 @@ fn the_derived_order_is_the_texts_order_across_the_registry() {
   // digits and two letters, and digits sort below letters on both readings.
   let regions: Vec<Region> = registry::table::REGIONS
     .iter()
-    .map(|(subtag, _)| Region::new(subtag).expect("a region"))
+    .map(|(subtag, _)| Region::new(subtag.as_str()).expect("a region"))
     .collect();
   agrees(&regions, |held| held.as_str());
 }

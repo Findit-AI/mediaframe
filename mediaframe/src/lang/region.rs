@@ -197,7 +197,12 @@ impl Region {
 const COUNTRY: usize = 2;
 
 /// A UN M.49 area code is exactly this wide.
-const AREA: usize = 3;
+///
+/// `pub(super)` rather than private: it is also the width the generated registry's `REGIONS` and
+/// `REGION_PREFERRED` key columns are stored inline at, which is `subtag::MAX`'s reason for the
+/// same visibility — a table's row width is not `region`'s secret once something outside the type
+/// needs to store the same subtag kind.
+pub(super) const AREA: usize = 3;
 
 /// A string does not name a region subtag.
 ///
