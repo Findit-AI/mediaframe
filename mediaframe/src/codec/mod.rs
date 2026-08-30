@@ -1,24 +1,30 @@
-//! Stream-descriptor **codec** vocabulary for video, audio, and subtitle
-//! tracks.
+//! Stream-descriptor **codec** vocabulary for video, audio, subtitle,
+//! data, and attachment tracks.
 //!
 //! **Generated** from `xtask/vendor/ffmpeg-codecs.txt` (FFmpeg n9.0
-//! `libavcodec/codec_desc.c`) by `cargo xtask gen-codec`. Every codec
-//! FFmpeg knows under media types `video` / `audio` / `subtitle` has
-//! a named variant here; the `Other(SmolStr)` arm remains a lossless
-//! escape for codecs added in a future FFmpeg release before this file
-//! is regenerated.
+//! `libavcodec/codec_desc.c`) by `cargo xtask gen-codec` — except
+//! [`AttachmentCodec`], whose roster comes from a different FFmpeg
+//! source; see its own doc comment for why. Every codec FFmpeg knows
+//! under media types `video` / `audio` / `subtitle` / `data` has a
+//! named variant here; the `Other(SmolStr)` arm remains a lossless
+//! escape for codecs added in a future FFmpeg release before this
+//! file is regenerated (or, for `AttachmentCodec`, before
+//! `ATTACHMENT_CODECS` is re-derived by hand).
 //!
 //! Regenerate in two steps:
 //! 1. `cargo xtask sync`       — refreshes the vendored table.
 //! 2. `cargo xtask gen-codec`  — regenerates this file from it.
 //!
 //! `cargo xtask check` verifies every named variant's canonical string
-//! exists in the vendored table — CI gate against drift.
+//! exists in the vendored table (or, for `AttachmentCodec`, in
+//! `ATTACHMENT_CODECS`) — CI gate against drift.
 //!
 //! **Derive threshold.** `Unwrap` / `TryUnwrap` generate three methods
 //! per variant, so an enum in the hundreds pays that in compile time for
-//! one reachable payload arm. [`SubtitleCodec`] (27 variants) carries the
-//! pair; [`VideoCodec`] (279) and [`AudioCodec`] (222) do not. The line is
+//! one reachable payload arm.
+//! [`SubtitleCodec`] (27), [`DataCodec`] (11), and [`AttachmentCodec`]
+//! (3) are small enough to carry the pair; [`VideoCodec`] (279)
+//! and [`AudioCodec`] (222) do not. The line is
 //! variant count, not principle — reach for `Other(_)` on the large two
 //! with a `match` or [`IsVariant`](derive_more::IsVariant)'s `is_other`.
 use core::str::FromStr;
@@ -3434,6 +3440,224 @@ impl FromStr for SubtitleCodec {
       b"vplayer" => Self::Vplayer,
       b"webvtt" => Self::Webvtt,
       b"xsub" => Self::Xsub,
+      _ => Self::other(s),
+    })
+  }
+}
+/** Data codec family — every codec FFmpeg n9.0 knows under media type `data`.
+
+`#[non_exhaustive]` keeps future additions non-breaking; the `Other(SmolStr)` arm is the lossless escape for codecs added upstream before this file is regenerated.*/
+#[cfg_attr(
+  feature = "quickcheck",
+  derive(::quickcheck_richderive::Arbitrary),
+  quickcheck(arbitrary = "crate::quickcheck_helpers::strings::data_codec")
+)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant, Unwrap, TryUnwrap)]
+#[unwrap(ref, ref_mut)]
+#[try_unwrap(ref, ref_mut)]
+#[display("{}", self.as_str())]
+#[non_exhaustive]
+pub enum DataCodec {
+  /// FFmpeg `"bin_data"`.
+  BinData,
+  /// FFmpeg `"dvd_nav_packet"`.
+  DvdNavPacket,
+  /// FFmpeg `"epg"`.
+  Epg,
+  /// FFmpeg `"klv"`.
+  Klv,
+  /// FFmpeg `"mpegts"`.
+  Mpegts,
+  /// FFmpeg `"otf"`.
+  Otf,
+  /// FFmpeg `"scte_35"`.
+  Scte35,
+  /// FFmpeg `"smpte_2038"`.
+  Smpte2038,
+  /// FFmpeg `"smpte_436m_anc"`.
+  Smpte436mAnc,
+  /// FFmpeg `"timed_id3"`.
+  TimedId3,
+  /// FFmpeg `"ttf"`.
+  Ttf,
+  /// A codec not enumerated above — carries the FFmpeg short name
+  /// verbatim.
+  Other(SmolStr),
+}
+impl DataCodec {
+  /// Canonical FFmpeg short name (matches `ffmpeg -codecs` column 2).
+  pub fn as_str(&self) -> &str {
+    match self {
+      Self::BinData => "bin_data",
+      Self::DvdNavPacket => "dvd_nav_packet",
+      Self::Epg => "epg",
+      Self::Klv => "klv",
+      Self::Mpegts => "mpegts",
+      Self::Otf => "otf",
+      Self::Scte35 => "scte_35",
+      Self::Smpte2038 => "smpte_2038",
+      Self::Smpte436mAnc => "smpte_436m_anc",
+      Self::TimedId3 => "timed_id3",
+      Self::Ttf => "ttf",
+      Self::Other(s) => s.as_str(),
+    }
+  }
+  /// The open escape for a codec name FFmpeg n9.0 does not carry,
+  /// ASCII-folded to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is
+  /// what keeps the whole value space lowercase-canonical, so the
+  /// derived `Eq` / `Hash` compare names rather than spellings.
+  /// Constructing the variant directly bypasses the fold and is not the
+  /// supported spelling.
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+  }
+}
+impl DataCodec {
+  /// Every data codec this vocabulary names, in declaration order.
+  ///
+  /// A slice rather than an array: how many codecs this build carries
+  /// is a fact about the vendored FFmpeg table, not part of the type,
+  /// so a regeneration that adds one stays a minor change.
+  ///
+  /// [`Self::Other`] is not a member. The roster answers "which names
+  /// does this build know", and the escape is precisely the arm that
+  /// carries a name it does not.
+  pub const ROSTER: &'static [Self] = &[
+    Self::BinData,
+    Self::DvdNavPacket,
+    Self::Epg,
+    Self::Klv,
+    Self::Mpegts,
+    Self::Otf,
+    Self::Scte35,
+    Self::Smpte2038,
+    Self::Smpte436mAnc,
+    Self::TimedId3,
+    Self::Ttf,
+  ];
+}
+const _: () = {
+  #[allow(dead_code)]
+  fn every_variant_is_rostered(v: &DataCodec) {
+    match v {
+      DataCodec::BinData
+      | DataCodec::DvdNavPacket
+      | DataCodec::Epg
+      | DataCodec::Klv
+      | DataCodec::Mpegts
+      | DataCodec::Otf
+      | DataCodec::Scte35
+      | DataCodec::Smpte2038
+      | DataCodec::Smpte436mAnc
+      | DataCodec::TimedId3
+      | DataCodec::Ttf => {}
+      DataCodec::Other(_) => {}
+    }
+  }
+};
+impl FromStr for DataCodec {
+  type Err = core::convert::Infallible;
+  /// Recognise an FFmpeg codec short name, case-insensitively; unknown
+  /// values land in [`Self::Other`] (infallible, lossless).
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    Ok(match folded {
+      b"bin_data" => Self::BinData,
+      b"dvd_nav_packet" => Self::DvdNavPacket,
+      b"epg" => Self::Epg,
+      b"klv" => Self::Klv,
+      b"mpegts" => Self::Mpegts,
+      b"otf" => Self::Otf,
+      b"scte_35" => Self::Scte35,
+      b"smpte_2038" => Self::Smpte2038,
+      b"smpte_436m_anc" => Self::Smpte436mAnc,
+      b"timed_id3" => Self::TimedId3,
+      b"ttf" => Self::Ttf,
+      _ => Self::other(s),
+    })
+  }
+}
+/** Attachment codec family — the FFmpeg codec ids `libavformat/matroskadec.c`'s `mkv_mime_tags` table assigns to an `AVMEDIA_TYPE_ATTACHMENT` stream (`ATTACHMENT_CODECS`; see its doc comment for the full census — `libavcodec/codec_desc.c` has no `AVMEDIA_TYPE_ATTACHMENT` media type to enumerate here the way `DataCodec` and the other vendored enums are).
+
+`#[non_exhaustive]` keeps future additions non-breaking; the `Other(SmolStr)` arm is the lossless escape for an attachment codec id this list does not (yet) name.*/
+#[cfg_attr(
+  feature = "quickcheck",
+  derive(::quickcheck_richderive::Arbitrary),
+  quickcheck(arbitrary = "crate::quickcheck_helpers::strings::attachment_codec")
+)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, IsVariant, Unwrap, TryUnwrap)]
+#[unwrap(ref, ref_mut)]
+#[try_unwrap(ref, ref_mut)]
+#[display("{}", self.as_str())]
+#[non_exhaustive]
+pub enum AttachmentCodec {
+  /// FFmpeg `"bin_data"`.
+  BinData,
+  /// FFmpeg `"otf"`.
+  Otf,
+  /// FFmpeg `"ttf"`.
+  Ttf,
+  /// A codec not enumerated above — carries the FFmpeg short name
+  /// verbatim.
+  Other(SmolStr),
+}
+impl AttachmentCodec {
+  /// Canonical FFmpeg short name (matches `ffmpeg -codecs` column 2).
+  pub fn as_str(&self) -> &str {
+    match self {
+      Self::BinData => "bin_data",
+      Self::Otf => "otf",
+      Self::Ttf => "ttf",
+      Self::Other(s) => s.as_str(),
+    }
+  }
+  /// The open escape for a codec id not in `ATTACHMENT_CODECS`,
+  /// ASCII-folded to the crate's lowercase canon.
+  ///
+  /// The **one** construction path for [`Self::Other`]: folding here is
+  /// what keeps the whole value space lowercase-canonical, so the
+  /// derived `Eq` / `Hash` compare names rather than spellings.
+  /// Constructing the variant directly bypasses the fold and is not the
+  /// supported spelling.
+  pub fn other(slug: impl AsRef<str>) -> Self {
+    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+  }
+}
+impl AttachmentCodec {
+  /// Every attachment codec this vocabulary names, in declaration order.
+  ///
+  /// A slice rather than an array: how many codecs this build carries
+  /// is a fact about the vendored FFmpeg table, not part of the type,
+  /// so a regeneration that adds one stays a minor change.
+  ///
+  /// [`Self::Other`] is not a member. The roster answers "which names
+  /// does this build know", and the escape is precisely the arm that
+  /// carries a name it does not.
+  pub const ROSTER: &'static [Self] = &[Self::BinData, Self::Otf, Self::Ttf];
+}
+const _: () = {
+  #[allow(dead_code)]
+  fn every_variant_is_rostered(v: &AttachmentCodec) {
+    match v {
+      AttachmentCodec::BinData | AttachmentCodec::Otf | AttachmentCodec::Ttf => {}
+      AttachmentCodec::Other(_) => {}
+    }
+  }
+};
+impl FromStr for AttachmentCodec {
+  type Err = core::convert::Infallible;
+  /// Recognise an FFmpeg codec short name, case-insensitively; unknown
+  /// values land in [`Self::Other`] (infallible, lossless).
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    let mut buf = [0u8; crate::parse::FOLD_CAP];
+    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    Ok(match folded {
+      b"bin_data" => Self::BinData,
+      b"otf" => Self::Otf,
+      b"ttf" => Self::Ttf,
       _ => Self::other(s),
     })
   }

@@ -29,6 +29,16 @@ super::arb_open_string_enum!(
   ["srt", "ass", "ssa", "webvtt", "mov_text", "dvb_subtitle"]
 );
 
+super::arb_open_string_enum!(
+  crate::codec::DataCodec,
+  ["klv", "timed_id3", "scte_35", "bin_data", "ttf", "otf"]
+);
+
+// The full roster seeded on purpose — `AttachmentCodec` only has three
+// named variants (see `ATTACHMENT_CODECS` in `xtask/src/main.rs`), so
+// there is no "representative sample" distinct from "all of them".
+super::arb_open_string_enum!(crate::codec::AttachmentCodec, ["ttf", "otf", "bin_data"]);
+
 // `m2ts`/`3g2` are seeded on purpose, not just `mpegts`/… — R5 promoted
 // `M2ts`/`Threeg2` to their own variants (structurally distinct from
 // `MpegTs`/`Threegp`, not aliases), and without their own canonical

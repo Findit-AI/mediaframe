@@ -532,6 +532,20 @@ const VENDORED_PAIRS: &[(&str, &str)] = &[
   ("subtitle", "vplayer"),
   ("subtitle", "webvtt"),
   ("subtitle", "xsub"),
+  ("data", "bin_data"),
+  ("data", "dvd_nav_packet"),
+  ("data", "epg"),
+  ("data", "klv"),
+  ("data", "mpegts"),
+  ("data", "otf"),
+  ("data", "scte_35"),
+  ("data", "smpte_2038"),
+  ("data", "smpte_436m_anc"),
+  ("data", "timed_id3"),
+  ("data", "ttf"),
+  ("attachment", "bin_data"),
+  ("attachment", "otf"),
+  ("attachment", "ttf"),
 ];
 fn vendored_of(media: &'static str) -> impl Iterator<Item = &'static str> {
   VENDORED_PAIRS
@@ -581,6 +595,52 @@ fn every_subtitle_codec_round_trips_to_named_variant() {
   assert!(n > 0);
 }
 #[test]
+fn every_data_codec_round_trips_to_named_variant() {
+  let mut n = 0usize;
+  for name in vendored_of("data") {
+    let c: DataCodec = name.parse().unwrap();
+    assert!(
+      !c.is_other(),
+      "data `{name}` should parse to a named variant"
+    );
+    assert_eq!(c.as_str(), name, "round-trip mismatch for `{name}`");
+    n += 1;
+  }
+  assert!(n > 0, "vendored data list is empty?");
+}
+#[test]
+fn every_attachment_codec_round_trips_to_named_variant() {
+  let mut n = 0usize;
+  for name in vendored_of("attachment") {
+    let c: AttachmentCodec = name.parse().unwrap();
+    assert!(
+      !c.is_other(),
+      "attachment `{name}` should parse to a named variant"
+    );
+    assert_eq!(c.as_str(), name, "round-trip mismatch for `{name}`");
+    n += 1;
+  }
+  assert!(n > 0, "ATTACHMENT_CODECS is empty?");
+}
+/// `ttf`, `otf`, and `bin_data` are the three codec ids `DataCodec`
+/// and `AttachmentCodec` share — the same FFmpeg codec id wearing
+/// two different track-role hats (see `ATTACHMENT_CODECS`'s doc
+/// comment). Confirms the overlap is real rather than one enum
+/// silently missing a name the other carries.
+#[test]
+fn attachment_codecs_are_also_named_data_codecs() {
+  for name in vendored_of("attachment") {
+    let a: AttachmentCodec = name.parse().unwrap();
+    let d: DataCodec = name.parse().unwrap();
+    assert!(!a.is_other());
+    assert!(
+      !d.is_other(),
+      "`{name}` should also be a named DataCodec variant"
+    );
+    assert_eq!(a.as_str(), d.as_str());
+  }
+}
+#[test]
 fn unknown_codec_preserves_string_through_other() {
   let v: VideoCodec = "definitely_not_a_real_codec_xyz".parse().unwrap();
   assert!(v.is_other());
@@ -607,10 +667,11 @@ fn codec_names_are_lowercase_canonical_and_fold_without_collision() {
 /// spelling of a known codec is that codec, and an uppercase
 /// spelling of an unknown one is stored lowercase, so one name is
 /// one value under the derived `Eq` / `Hash`.
-/// `SubtitleCodec` is the third open enum on the `Unwrap` /
-/// `TryUnwrap` pair; the two 200-plus-variant codec enums stay
-/// exempt on compile-time grounds, which is why this names only
-/// the subtitle one.
+/// `SubtitleCodec`, `DataCodec`, and `AttachmentCodec` are the open
+/// enums on the `Unwrap` / `TryUnwrap` pair (see the module doc's
+/// derive threshold); the two 200-plus-variant codec enums stay
+/// exempt on compile-time grounds, which is why this names those
+/// three and not `VideoCodec` / `AudioCodec`.
 #[test]
 fn subtitle_codec_unwrap_other_borrowed_view() {
   let v = SubtitleCodec::other("vendor_sub");
@@ -619,11 +680,27 @@ fn subtitle_codec_unwrap_other_borrowed_view() {
   assert!(SubtitleCodec::Srt.try_unwrap_other_ref().is_err());
 }
 #[test]
+fn data_codec_unwrap_other_borrowed_view() {
+  let v = DataCodec::other("vendor_data");
+  assert_eq!(v.unwrap_other_ref().as_str(), "vendor_data");
+  assert!(v.try_unwrap_other_ref().is_ok());
+  assert!(DataCodec::BinData.try_unwrap_other_ref().is_err());
+}
+#[test]
+fn attachment_codec_unwrap_other_borrowed_view() {
+  let v = AttachmentCodec::other("vendor_attachment");
+  assert_eq!(v.unwrap_other_ref().as_str(), "vendor_attachment");
+  assert!(v.try_unwrap_other_ref().is_ok());
+  assert!(AttachmentCodec::Ttf.try_unwrap_other_ref().is_err());
+}
+#[test]
 fn codec_lookup_and_escape_both_fold() {
   assert_eq!("H264".parse(), Ok(VideoCodec::H264));
   assert_eq!("HeVc".parse(), Ok(VideoCodec::Hevc));
   assert_eq!("AAC".parse(), Ok(AudioCodec::Aac));
   assert_eq!("SRT".parse(), Ok(SubtitleCodec::Srt));
+  assert_eq!("KLV".parse(), Ok(DataCodec::Klv));
+  assert_eq!("OTF".parse(), Ok(AttachmentCodec::Otf));
   let v: VideoCodec = "VENDOR_Codec".parse().unwrap();
   assert!(v.is_other());
   assert_eq!(v.as_str(), "vendor_codec");
@@ -663,7 +740,10 @@ fn subtitle_image_based_is_unknown_for_other() {
 /// `match` witness beside each declaration — a codec added by a
 /// regeneration cannot reach the roster without passing `E0004`
 /// first, and cannot reach the *right place* in it without matching
-/// the vendored order asserted here.
+/// the vendored order asserted here. `AttachmentCodec` goes through
+/// the identical helper — `vendored_of("attachment")` walks
+/// `ATTACHMENT_CODECS`' embedded pairs rather than a `codec_desc.c`
+/// table, but the completeness contract this asserts is the same.
 #[test]
 fn rosters_match_the_vendored_tables() {
   fn check<T>(roster: &'static [T], media: &'static str, expected_len: usize)
@@ -688,6 +768,8 @@ fn rosters_match_the_vendored_tables() {
   check::<VideoCodec>(VideoCodec::ROSTER, "video", 279usize);
   check::<AudioCodec>(AudioCodec::ROSTER, "audio", 222usize);
   check::<SubtitleCodec>(SubtitleCodec::ROSTER, "subtitle", 27usize);
+  check::<DataCodec>(DataCodec::ROSTER, "data", 11usize);
+  check::<AttachmentCodec>(AttachmentCodec::ROSTER, "attachment", 3usize);
 }
 /// No roster carries the open escape — it holds names this build
 /// knows, and `Other` is the arm for one it does not.
@@ -696,12 +778,16 @@ fn rosters_exclude_the_escape() {
   assert!(VideoCodec::ROSTER.iter().all(|c| !c.is_other()));
   assert!(AudioCodec::ROSTER.iter().all(|c| !c.is_other()));
   assert!(SubtitleCodec::ROSTER.iter().all(|c| !c.is_other()));
+  assert!(DataCodec::ROSTER.iter().all(|c| !c.is_other()));
+  assert!(AttachmentCodec::ROSTER.iter().all(|c| !c.is_other()));
 }
 #[test]
 fn display_matches_as_str() {
   assert_eq!(VideoCodec::H264.to_string(), "h264");
   assert_eq!(AudioCodec::Opus.to_string(), "opus");
   assert_eq!(SubtitleCodec::Webvtt.to_string(), "webvtt");
+  assert_eq!(DataCodec::Klv.to_string(), "klv");
+  assert_eq!(AttachmentCodec::BinData.to_string(), "bin_data");
   assert_eq!(
     VideoCodec::Other(SmolStr::new("custom_codec")).to_string(),
     "custom_codec"

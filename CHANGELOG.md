@@ -6,6 +6,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`codec::DataCodec` and `codec::AttachmentCodec`** — the two
+  remaining track-role codec vocabularies, in the same generated shape
+  as `VideoCodec` / `AudioCodec` / `SubtitleCodec`: an `Other(SmolStr)`
+  lossless escape, case-insensitive `FromStr`, lowercase FFmpeg-exact
+  wire names, a `ROSTER` with a compile-time completeness witness, and
+  — small enough to afford it — the `Unwrap` / `TryUnwrap` pair.
+
+  `DataCodec` is vendored exactly like its three siblings: all 11
+  `AVMEDIA_TYPE_DATA` codec ids in FFmpeg n9.0's
+  `libavcodec/codec_desc.c` (`bin_data`, `dvd_nav_packet`, `epg`, `klv`,
+  `mpegts`, `otf`, `scte_35`, `smpte_2038`, `smpte_436m_anc`,
+  `timed_id3`, `ttf`) — `cargo xtask gen-codec` / `cargo xtask check`
+  now cover four vendored media types instead of three.
+
+  `AttachmentCodec` does not, because it cannot: FFmpeg's
+  `codec_desc.c` carries **zero** descriptors typed
+  `AVMEDIA_TYPE_ATTACHMENT`, in n9.0 or on current FFmpeg `master` —
+  attachment is a demuxer-assigned *stream* role, not a
+  codec-descriptor media type. The one place FFmpeg itself assigns a
+  concrete codec id to an `AVMEDIA_TYPE_ATTACHMENT` stream is
+  `libavformat/matroskadec.c`'s `mkv_mime_tags` table (the Matroska /
+  WebM demuxer), which is what `AttachmentCodec`'s three variants
+  (`Ttf`, `Otf`, `BinData`) transcribe. All three are also `DataCodec`
+  variants of the same name — the same FFmpeg codec id wearing two
+  different track-role hats, not an accidental duplication. `cargo
+  xtask`'s generator carries this roster as a hand-curated
+  `ATTACHMENT_CODECS` constant, documented in full and checked for
+  drift the same way the four vendored enums are, just against that
+  constant instead of a vendored FFmpeg table.
+
 ## [0.9.1] - 2026-08-30
 
 ### Changed
