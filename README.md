@@ -160,26 +160,10 @@ speak to without agreeing on anything heavier.
   `#[quickcheck(arbitrary = "…")]` pointing at a `fn(&mut Gen) -> Self`
   helper). Independent of `arbitrary`. Std-only. Off by default — enable
   with `--features quickcheck`.
-- **`ingraph`** — optional self-granted citizenship in the [`ingraph`]
-  indexing framework for the twenty-one vocabularies a graph stores:
-  the `audio` four, the three track-role codecs, the `color` five,
-  `container::Format`, `disposition::TrackDisposition`, the `frame`
-  four, `pixel_format::PixelFormat` and the `subtitle` pair. Each gains
-  the framework's read-side faces — the column's filter, the reading a
-  declaration infers for it and for a collection of it, the keyset
-  cursor, and the column's width and sameness — so a downstream
-  declaration can hold a column of these types without restating them.
-  The vocabularies themselves are untouched: no variant list is
-  duplicated, and the rows name each type's existing `as_str` /
-  `FromStr`. Storage binds and GraphQL seats are deliberately absent
-  (they ride `ingraph` features naming a database driver or a wire
-  library); see `mediaframe::ingraph` for the roster and the argument.
-  Implies `std`. Off by default — enable with `--features ingraph`.
 - **`PixelSink`** + **`SourceFormat`** sealed traits re-exported at
   the crate root.
 
 [`quickcheck-richderive`]: https://crates.io/crates/quickcheck-richderive
-[`ingraph`]: https://crates.io/crates/ingraph
 
 ## Installation
 

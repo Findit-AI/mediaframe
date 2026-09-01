@@ -239,15 +239,6 @@ pub mod frame;
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
 pub mod image;
-// This crate's self-granted `ingraph` citizenship — the faces the
-// indexing framework reads these vocabularies through. Trait impls,
-// their tests and their reasoning; no items of its own. A module rather
-// than a set of `#[cfg]`s scattered beside the twenty-one types,
-// because what a citizenship costs and what it deliberately leaves out
-// is one argument and belongs in one place.
-#[cfg(feature = "ingraph")]
-#[cfg_attr(docsrs, doc(cfg(feature = "ingraph")))]
-pub mod ingraph;
 /// BCP 47 language identity — the three validated subtag types
 /// ([`lang::Language`], [`lang::ScriptSubtag`], [`lang::Region`]) and the
 /// lossless whole tag that composes them ([`lang::LanguageId`]), read

@@ -17,26 +17,6 @@ alloc   = ["dep:smol_str", "dep:smol-bytes", "smol-bytes/alloc", "dep:simdutf8",
 std     = ["alloc", "thiserror/default", "smol_str?/std", "bytes?/std", "smol-bytes?/std", "simdutf8?/std"]
 buffa   = ["dep:buffa", "mediatime/buffa", "alloc"]
 serde   = ["dep:serde", "smol_str?/serde", "bytes?/serde"]
-
-# **Self-granted `ingraph` citizenship** — the faces the indexing
-# framework reads this crate's vocabulary types through, written here
-# because here is where those types live. Purely additive: nothing
-# outside `src/ingraph` changes shape, no other feature implies it, and
-# the default build is untouched. See that module for the roster, and
-# for what a citizenship deliberately does not carry.
-#
-# It implies `std`, and the implication is honest rather than
-# incidental. `ingraph` is a `std` framework, so a `no_std` build has no
-# framework to be a citizen of — and `CursorValue`, the one row here
-# with a signature rather than an associated type, names `Vec` in it.
-# It is also what keeps the roster's SHAPE fixed: sixteen of the twenty
-# vocabularies are open only where `alloc` is (their `Other(SmolStr)`
-# arm is `#[cfg(any(feature = "std", feature = "alloc"))]`), and four of
-# the modules holding them — `audio`, `codec`, `container`, `subtitle`
-# — do not exist at the bare tier at all. A citizenship over a
-# vocabulary that changes shape underneath it is not one to state.
-ingraph = ["dep:ingraph", "std"]
-
 arbitrary  = ["std", "dep:arbitrary"]
 quickcheck = ["std", "dep:quickcheck", "dep:quickcheck-richderive"]
 
@@ -73,63 +53,6 @@ simdutf8    = { version = "0.1", default-features = false, optional = true }
 bytes       = { version = "1", default-features = false, optional = true }
 buffa       = { version = "0.9", default-features = false, optional = true }
 smol_str    = { version = "0.3", default-features = false, optional = true }
-
-# The indexing framework this crate's vocabulary types grant themselves
-# citizenship in, behind the optional `ingraph` feature above.
-#
-# **`flags` is what the rows NEED**; `runtime` is what they COMPILE
-# against, and the difference is measured rather than assumed.
-#
-# `flags` is asked for by exactly ONE of the twenty-one citizens.
-# Twenty are ENUMERATIONS, and every row they take —
-# `EnumFilterMarker`, `DefaultMarker`, `DefaultVecMarker`,
-# `CursorValue`, `ColumnKind`, `ColumnEq` — sits at `ingraph`'s BASE
-# tier, behind no feature at all. The twenty-first is
-# `disposition::TrackDisposition`, a `bitflags!` set, and its four rows
-# (`FlagsValue`, `FlagsFilterMarker`, and the two markers they name) are
-# `#[cfg(feature = "flags")]` upstream. Every tier ABOVE those two —
-# `derive`, a storage backend, a wire binding — belongs to the build
-# that DECLARES a graph, which a descriptor vocabulary never does: it
-# only says how its own types are read when somebody else declares one.
-# Those stay off, and `src/ingraph`'s own note says which rows go with
-# them.
-#
-# `runtime` is here because `ingraph` 0.1.0 does not build without it,
-# and this is the same wall `mediadecode`'s row hit at the same
-# version: `default-features = false, features = ["flags"]` fails to
-# compile in `store/fulltext.rs`, which names `crate::BoxedError` — an
-# item that crate re-exports only under `#[cfg(feature = "runtime")]`.
-# MEASURED on 0.1.0 as published, all four ways: no features and
-# `["flags"]` both fail on `BoxedError`, `["runtime"]` alone fails on
-# the four missing `Flags*` items, and this pair is the leanest
-# configuration that compiles. That is upstream's feature matrix rather
-# than a need of ours — it is fixed on `ingraph`'s main and unreleased —
-# so a later `ingraph` can drop the second word without anyone having
-# to rediscover why it was written.
-#
-# What the pair costs, measured on this pin with
-# `cargo tree -p mediaframe --features ingraph -e normal`: 20 crates in
-# the default build, 24 with the tier the rows actually read, and 42
-# with `runtime` — so 4 crates are the citizenship (`ingraph`, `jiff`,
-# `jiff-core`, `uuid`) and 18 are upstream's wall (flume, cronp,
-# agnostic-lite, left-right, the futures and pin-project leaves and
-# their transitive set). All of it is optional and none of it is in the
-# default build. `bitflags` is not in either count: this crate already
-# depends on it, so the `flags` word adds nothing to any build.
-#
-# `default-features = false` is what keeps that measurement true —
-# `ingraph`'s default is `derive, runtime`, and `derive` is a
-# proc-macro tier for a declaring build.
-#
-# **NO cycle, and it is worth stating because `ingraph` has a
-# `mediaframe` feature of its own.** That word gates
-# `ingraph::primitives::mediaframe`, a house of NEWTYPES over three of
-# this crate's codec vocabularies — the framework-side answer to the
-# same orphan rule this module answers from the other side. It is off
-# here and it stays off: the edge is `mediaframe → ingraph`, one way,
-# and a build that turned both words on at once would be asking for a
-# second copy of this crate rather than a loop.
-ingraph     = { version = "0.1", default-features = false, features = ["flags", "runtime"], optional = true }
 
 serde       = { version = "1", default-features = false, optional = true, features = ["derive"] }
 
