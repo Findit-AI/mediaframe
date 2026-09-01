@@ -6,6 +6,61 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Optional `ingraph` feature — self-granted citizenship for the
+  twenty-one stored vocabularies.** `ingraph` is an indexing framework
+  whose declarations hold columns of these types, and the traits that
+  make a type declarable are foreign ones: only the framework or the
+  crate that owns the type may write them. Until now a consumer wrote
+  neither — it kept a per-vocabulary **mirror**, a local enum restating
+  this crate's variant list with a crossing in each direction and a
+  drift pin over the pair, and there were twenty-one of them against
+  this crate alone. This feature is the restatement's replacement.
+
+  The roster is a census of exactly those mirrors:
+  `audio::{BitRateMode, ChannelLayout, ContainerFormat, SampleFormat}`,
+  `codec::{AudioCodec, SubtitleCodec, VideoCodec}`,
+  `color::{ChromaLocation, DynamicRange, Matrix, Primaries, Transfer}`,
+  `container::Format`, `disposition::TrackDisposition`,
+  `frame::{BayerPattern, FieldOrder, Rotation, StereoMode}`,
+  `pixel_format::PixelFormat`, `subtitle::Format` and
+  `subtitle::TrackOrigin`. `BayerPattern`'s rows ride `bayer` with the
+  type itself.
+
+  Each of the twenty vocabularies gains six rows — the enumeration
+  filter, the reading a column and a collection of it infer, the keyset
+  cursor over the canonical slug, and the column's width and sameness.
+  `TrackDisposition`, a bit set rather than a name vocabulary, gains the
+  flags equivalents plus the schema name and the per-bit wire fields.
+  **No variant list is restated**: every row names something the
+  vocabulary already carries — its `as_str`, its `FromStr`, its
+  `ROSTER` — so a word added here reaches the framework with nothing to
+  edit, which is precisely what a mirror could not do.
+
+  Two rows are worth naming because they are the ones a reader would
+  otherwise assume. **Sameness is the WORD, not the derived
+  `PartialEq`** — a column of one of these types holds `as_str`, and
+  `other()` folds case without parsing, so a caller can build an escape
+  carrying a word the roster already names; a column has one word for
+  such a pair and therefore one value. On every value reachable through
+  `FromStr`, through `ROSTER`, or out of a store the two answers
+  coincide. And **`TrackDisposition`'s cursor reads with
+  `from_bits_retain`**, because that type's domain is every `u32` by its
+  own append-only contract: a bit this build cannot name comes from a
+  demuxer newer than the file, and a strict read would refuse bytes the
+  cursor had just written.
+
+  Purely additive and off by default. Nothing outside
+  `mediaframe::ingraph` changes shape, no existing feature implies it,
+  and the default build's dependency graph is untouched. It implies
+  `std`. Storage binds (`sqlx`), the document form (`bson`) and the
+  GraphQL seats are deliberately absent — each rides an `ingraph`
+  feature naming a driver or a wire library, and a descriptor
+  vocabulary should not pull those in to describe a pixel format; see
+  the module's own note for where that line is and how it is crossed
+  when somebody asks.
+
 ## [0.9.2] - 2026-08-31
 
 ### Added
