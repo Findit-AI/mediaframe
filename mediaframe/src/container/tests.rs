@@ -173,8 +173,8 @@ fn r7_m2t_routes_to_mpegts_not_m2ts() {
 }
 
 /// Lowercase-canonical, collision-free once folded, and read
-/// case-insensitively — with the escape folding too, so one name is one
-/// value under the derived `Eq` / `Hash`.
+/// case-insensitively — with `Self::other` running that same lookup, so
+/// one **named** meaning is one value under the derived `Eq` / `Hash`.
 #[test]
 fn format_slugs_are_lowercase_canonical_and_fold() {
   const SLUGS: &[&str] = &["mp4", "mkv", "webm", "mov", "avi", "mpegts", "flv", "ogg"];
@@ -195,10 +195,19 @@ fn format_slugs_are_lowercase_canonical_and_fold() {
   }
   assert_eq!("mp4", "MP4".parse::<Format>().unwrap().as_str());
 
-  // The escape folds on the way in.
+  // `other()` heals a canonical name to the named variant...
+  assert_eq!(Format::other("MP4"), Format::Mp4);
+  assert_eq!(Format::other("mp4"), Format::Mp4);
+
+  // ...and a documented alias extension, same as `FromStr`.
+  assert_eq!(Format::other("qt"), Format::Mov);
+  assert_eq!(Format::other("QT"), Format::Mov);
+
+  // ...but a genuine stranger keeps its own spelling verbatim — the
+  // escape is a passthrough, not a fold target.
   let escaped: Format = "MP4_X".parse().unwrap();
   assert!(escaped.is_other());
-  assert_eq!(escaped.as_str(), "mp4_x");
+  assert_eq!(escaped.as_str(), "MP4_X");
   assert_eq!(Format::other("MP4_X"), escaped);
 }
 

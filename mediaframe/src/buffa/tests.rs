@@ -115,14 +115,20 @@ fn enum_non_default_round_trips() {
 #[test]
 fn dcp_target_gamut_escape_canonicalization() {
   // Codex adversarial-review F8, restated for the name-shaped wire.
-  // Spelling a *named* gamut through the escape is a misuse; it
-  // canonicalises to the named variant on a round-trip (correct — the
-  // name *is* that gamut), never silent data loss.
+  // Spelling a *named* gamut through the escape is a misuse; `Self::other`
+  // now heals it to the named variant directly (no wire round-trip
+  // needed — the equality-heals fixture), and it still canonicalises on
+  // a round-trip regardless (correct — the name *is* that gamut), never
+  // silent data loss.
   for (misuse, named) in [
     (DcpTargetGamut::other("dci-p3"), DcpTargetGamut::DciP3),
     (DcpTargetGamut::other("rec709"), DcpTargetGamut::Rec709),
     (DcpTargetGamut::other("rec2020"), DcpTargetGamut::Rec2020),
   ] {
+    assert_eq!(
+      misuse, named,
+      "other() must heal to the named variant directly"
+    );
     let b = misuse.encode_to_vec();
     assert_eq!(DcpTargetGamut::decode_from_slice(&b).unwrap(), named);
   }
@@ -686,15 +692,20 @@ fn stereo_mode_round_trip() {
 
 #[test]
 fn stereo_mode_escape_canonicalization() {
-  // Spelling a *named* mode through the escape is a misuse; it
-  // canonicalises to the named variant on a round-trip (correct — the
-  // name *is* that mode), never silent data loss. Mirrors
-  // `dcp_target_gamut_escape_canonicalization`.
+  // Spelling a *named* mode through the escape is a misuse; `Self::other`
+  // now heals it to the named variant directly (no wire round-trip
+  // needed — the equality-heals fixture), and it still canonicalises on
+  // a round-trip regardless (correct — the name *is* that mode), never
+  // silent data loss. Mirrors `dcp_target_gamut_escape_canonicalization`.
   for (misuse, named) in [
     (StereoMode::other("mono"), StereoMode::Mono),
     (StereoMode::other("side-by-side"), StereoMode::SideBySide),
     (StereoMode::other("columns"), StereoMode::Columns),
   ] {
+    assert_eq!(
+      misuse, named,
+      "other() must heal to the named variant directly"
+    );
     let b = misuse.encode_to_vec();
     assert_eq!(StereoMode::decode_from_slice(&b).unwrap(), named);
   }

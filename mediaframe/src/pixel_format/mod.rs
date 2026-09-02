@@ -799,11 +799,10 @@ pub enum PixelFormat {
   BayerGrbg16Le,
   /// Bayer GRBG pattern, 16-bit big-endian.
   BayerGrbg16Be,
-  /// A slug this vocabulary does not enumerate — carried verbatim,
-  /// ASCII-folded to lowercase by the parse gate. The crate-wide
-  /// extension idiom: a downstream backend naming a value mediaframe
-  /// has never heard of keeps that **name**, and it round-trips through
-  /// `as_str` / `FromStr` / `serde` intact.
+  /// A slug this vocabulary does not enumerate — carried verbatim. The
+  /// crate-wide extension idiom: a downstream backend naming a value
+  /// mediaframe has never heard of keeps that **name**, and it
+  /// round-trips through `as_str` / `FromStr` / `serde` intact.
   ///
   /// Requires the `alloc` feature (`std` includes it) — the payload is
   /// heap-capable. At the no-alloc tier the vocabulary is closed and an
@@ -1818,16 +1817,19 @@ impl PixelFormat {
       | Self::BayerGrbg16Be => (self, None),
     }
   }
-  /// The open escape for a slug this vocabulary does not name, ASCII-folded
-  /// to the crate's lowercase canon.
+  /// The open escape for a slug this vocabulary does not name.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is what
-  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
-  /// `Hash` compare names rather than spellings. Constructing the variant
-  /// directly bypasses the fold and is not the supported spelling.
+  /// Runs the ignore-case parse first — [`FromStr`](core::str::FromStr)'s
+  /// own match table, walked through [`Self::from_str`] rather than
+  /// duplicated here — so a canonical spelling or a documented alias
+  /// returns that **named** variant, never a second value for a meaning
+  /// this vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the escape
+  /// is a lossless passthrough for a name this build does not know, not a
+  /// fold target.
   #[cfg(any(feature = "std", feature = "alloc"))]
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    <Self as core::str::FromStr>::from_str(slug.as_ref()).unwrap()
   }
 }
 
@@ -1881,8 +1883,8 @@ impl core::str::FromStr for PixelFormat {
   ///
   /// Returns [`ParsePixelFormatError`] only at the no-alloc tier, where the vocabulary is
   /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
-  /// this type does not name rides [`Self::Other`], ASCII-folded to
-  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// this type does not name rides [`Self::Other`], carrying the caller's
+  /// spelling verbatim — and `Self::Err` is
   /// [`Infallible`](core::convert::Infallible) there, so the totality is
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -2187,7 +2189,7 @@ impl core::str::FromStr for PixelFormat {
       b"monow" => Self::Monowhite,
 
       #[cfg(any(feature = "std", feature = "alloc"))]
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(ParsePixelFormatError),
     })

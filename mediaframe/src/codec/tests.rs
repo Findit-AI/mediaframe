@@ -663,10 +663,12 @@ fn codec_names_are_lowercase_canonical_and_fold_without_collision() {
     assert_eq!(same, 1, "{media} has two codecs spelled `{name}`");
   }
 }
-/// The lookup folds, and the escape folds with it: an uppercase
-/// spelling of a known codec is that codec, and an uppercase
-/// spelling of an unknown one is stored lowercase, so one name is
-/// one value under the derived `Eq` / `Hash`.
+/// The lookup folds, but the escape does not: an uppercase spelling
+/// of a known codec is that codec (`Self::other` runs the same
+/// ignore-case match `FromStr` does, so the two can never diverge),
+/// while an uppercase spelling of an unknown one keeps its own
+/// spelling verbatim — the escape is a lossless passthrough, not a
+/// fold target.
 /// `SubtitleCodec`, `DataCodec`, and `AttachmentCodec` are the open
 /// enums on the `Unwrap` / `TryUnwrap` pair (see the module doc's
 /// derive threshold); the two 200-plus-variant codec enums stay
@@ -693,8 +695,23 @@ fn attachment_codec_unwrap_other_borrowed_view() {
   assert!(v.try_unwrap_other_ref().is_ok());
   assert!(AttachmentCodec::Ttf.try_unwrap_other_ref().is_err());
 }
+/// `Self::other` runs the ignore-case parse first: a canonical
+/// short name (any case) returns the **named** variant, never a
+/// second `Other` value for a meaning this vocabulary already
+/// names — the equality-heals fixture that motivated this whole
+/// escape hatch.
 #[test]
-fn codec_lookup_and_escape_both_fold() {
+fn other_resolves_a_canonical_name_to_the_named_variant() {
+  assert_eq!(VideoCodec::other("h264"), VideoCodec::H264);
+  assert_eq!(VideoCodec::other("H264"), VideoCodec::H264);
+  assert_eq!(VideoCodec::other("HeVc"), VideoCodec::Hevc);
+  assert_eq!(AudioCodec::other("AAC"), AudioCodec::Aac);
+  assert_eq!(SubtitleCodec::other("SRT"), SubtitleCodec::Srt);
+  assert_eq!(DataCodec::other("KLV"), DataCodec::Klv);
+  assert_eq!(AttachmentCodec::other("OTF"), AttachmentCodec::Otf);
+}
+#[test]
+fn codec_lookup_folds_but_the_escape_preserves_spelling() {
   assert_eq!("H264".parse(), Ok(VideoCodec::H264));
   assert_eq!("HeVc".parse(), Ok(VideoCodec::Hevc));
   assert_eq!("AAC".parse(), Ok(AudioCodec::Aac));
@@ -703,9 +720,9 @@ fn codec_lookup_and_escape_both_fold() {
   assert_eq!("OTF".parse(), Ok(AttachmentCodec::Otf));
   let v: VideoCodec = "VENDOR_Codec".parse().unwrap();
   assert!(v.is_other());
-  assert_eq!(v.as_str(), "vendor_codec");
-  assert_eq!("vendor_codec".parse::<VideoCodec>().unwrap(), v);
+  assert_eq!(v.as_str(), "VENDOR_Codec");
   assert_eq!(VideoCodec::other("VENDOR_Codec"), v);
+  assert_ne!("vendor_codec".parse::<VideoCodec>().unwrap(), v);
 }
 #[test]
 fn subtitle_image_based_set_matches_ffmpeg() {

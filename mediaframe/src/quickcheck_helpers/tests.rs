@@ -382,27 +382,48 @@ fn parse_is_idempotent_through_the_text_form() {
   });
 }
 
-/// …and folding is what makes one name one value: an arbitrary string
-/// and its uppercase spelling parse to the *same* value, so the derived
-/// `Eq` / `Hash` never split a name across two entries.
+/// …and the lookup is what makes a **named** meaning one value: an
+/// arbitrary string and its uppercase spelling parse to the *same*
+/// value whenever either resolves to a named variant, so the derived
+/// `Eq` / `Hash` never splits a name this crate actually knows.
+///
+/// A genuine stranger is the opposite now: `Self::other` (and the
+/// `FromStr` miss arm it shares a table with) preserves the caller's
+/// spelling verbatim rather than folding it, so two different-case
+/// strangers are two distinct `Other` values — equal only when
+/// uppercasing happened to be a no-op on the input.
 #[test]
-fn one_name_is_one_value_whatever_its_case() {
-  macro_rules! folds {
+fn a_named_meaning_is_one_value_whatever_its_case() {
+  macro_rules! check {
     ($ty:path, $s:expr) => {{
       let plain: $ty = $s.parse().unwrap();
       let shouted: $ty = $s.to_ascii_uppercase().parse().unwrap();
-      assert_eq!(plain, shouted, "{} split a name by case", stringify!($ty));
+      if plain.is_other() {
+        assert_eq!(
+          plain == shouted,
+          $s == $s.to_ascii_uppercase(),
+          "{} escape must preserve spelling, not fold it",
+          stringify!($ty)
+        );
+      } else {
+        assert_eq!(
+          plain,
+          shouted,
+          "{} split a named meaning by case",
+          stringify!($ty)
+        );
+      }
     }};
   }
   drive(4321, 2048, |g| {
     let s = super::arb_string(g);
-    folds!(crate::codec::VideoCodec, s);
-    folds!(crate::container::Format, s);
-    folds!(crate::image::Format, s);
-    folds!(crate::audio::SampleFormat, s);
-    folds!(crate::color::Matrix, s);
-    folds!(crate::pixel_format::PixelFormat, s);
-    folds!(crate::frame::StereoMode, s);
+    check!(crate::codec::VideoCodec, s);
+    check!(crate::container::Format, s);
+    check!(crate::image::Format, s);
+    check!(crate::audio::SampleFormat, s);
+    check!(crate::color::Matrix, s);
+    check!(crate::pixel_format::PixelFormat, s);
+    check!(crate::frame::StereoMode, s);
   });
 }
 

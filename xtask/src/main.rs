@@ -2096,9 +2096,9 @@ fn build_codec_enum(
     format!(" Every {media_type} codec this vocabulary names, in declaration order.");
 
   let other_doc = if is_attachment {
-    " The open escape for a codec id not in `ATTACHMENT_CODECS`,".to_string()
+    " The open escape for a codec id not in `ATTACHMENT_CODECS`.".to_string()
   } else {
-    format!(" The open escape for a codec name FFmpeg {FFMPEG_TAG} does not carry,")
+    format!(" The open escape for a codec name FFmpeg {FFMPEG_TAG} does not carry.")
   };
 
   let enum_doc = if is_attachment {
@@ -2232,15 +2232,16 @@ fn build_codec_enum(
       }
 
       #[doc = #other_doc]
-      /// ASCII-folded to the crate's lowercase canon.
       ///
-      /// The **one** construction path for [`Self::Other`]: folding here is
-      /// what keeps the whole value space lowercase-canonical, so the
-      /// derived `Eq` / `Hash` compare names rather than spellings.
-      /// Constructing the variant directly bypasses the fold and is not the
-      /// supported spelling.
+      /// Runs the ignore-case parse first — [`Self::from_str`] rather than
+      /// a duplicated table — so a canonical short name returns that
+      /// **named** variant, never a second value for a meaning this
+      /// vocabulary already has one for. Only a genuine stranger reaches
+      /// [`Self::Other`], carrying the caller's spelling verbatim: the
+      /// escape is a lossless passthrough for a name this build does not
+      /// know, not a fold target.
       pub fn other(slug: impl AsRef<str>) -> Self {
-        Self::Other(crate::parse::fold_owned(slug.as_ref()))
+        Self::from_str(slug.as_ref()).unwrap()
       }
 
       #extra_impl
@@ -2276,17 +2277,17 @@ fn build_codec_enum(
       type Err = core::convert::Infallible;
 
       /// Recognise an FFmpeg codec short name, case-insensitively; unknown
-      /// values land in [`Self::Other`] (infallible, lossless).
+      /// values land in [`Self::Other`] (infallible, lossless), carrying
+      /// the caller's spelling verbatim.
       fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut buf = [0u8; crate::parse::FOLD_CAP];
         // An input too long to fold cannot name a codec either, so the
-        // unfolded original falls through to the escape. `Self::other`
-        // folds and ASCII folding is idempotent, so the escape is built
-        // from `s` rather than converting the folded bytes back.
+        // unfolded original falls through to the escape — `Self::Other`
+        // carries the caller's own spelling, not the folded bytes.
         let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
         Ok(match folded {
           #(#from_str_arms)*
-          _ => Self::other(s),
+          _ => Self::Other(SmolStr::new(s)),
         })
       }
     }
@@ -2449,10 +2450,12 @@ fn build_codec_tests(
         }
       }
 
-      /// The lookup folds, and the escape folds with it: an uppercase
-      /// spelling of a known codec is that codec, and an uppercase
-      /// spelling of an unknown one is stored lowercase, so one name is
-      /// one value under the derived `Eq` / `Hash`.
+      /// The lookup folds, but the escape does not: an uppercase spelling
+      /// of a known codec is that codec (`Self::other` runs the same
+      /// ignore-case match `FromStr` does, so the two can never diverge),
+      /// while an uppercase spelling of an unknown one keeps its own
+      /// spelling verbatim — the escape is a lossless passthrough, not a
+      /// fold target.
       /// `SubtitleCodec`, `DataCodec`, and `AttachmentCodec` are the open
       /// enums on the `Unwrap` / `TryUnwrap` pair (see the module doc's
       /// derive threshold); the two 200-plus-variant codec enums stay
@@ -2482,8 +2485,24 @@ fn build_codec_tests(
         assert!(AttachmentCodec::Ttf.try_unwrap_other_ref().is_err());
       }
 
+      /// `Self::other` runs the ignore-case parse first: a canonical
+      /// short name (any case) returns the **named** variant, never a
+      /// second `Other` value for a meaning this vocabulary already
+      /// names — the equality-heals fixture that motivated this whole
+      /// escape hatch.
       #[test]
-      fn codec_lookup_and_escape_both_fold() {
+      fn other_resolves_a_canonical_name_to_the_named_variant() {
+        assert_eq!(VideoCodec::other("h264"), VideoCodec::H264);
+        assert_eq!(VideoCodec::other("H264"), VideoCodec::H264);
+        assert_eq!(VideoCodec::other("HeVc"), VideoCodec::Hevc);
+        assert_eq!(AudioCodec::other("AAC"), AudioCodec::Aac);
+        assert_eq!(SubtitleCodec::other("SRT"), SubtitleCodec::Srt);
+        assert_eq!(DataCodec::other("KLV"), DataCodec::Klv);
+        assert_eq!(AttachmentCodec::other("OTF"), AttachmentCodec::Otf);
+      }
+
+      #[test]
+      fn codec_lookup_folds_but_the_escape_preserves_spelling() {
         assert_eq!("H264".parse(), Ok(VideoCodec::H264));
         assert_eq!("HeVc".parse(), Ok(VideoCodec::Hevc));
         assert_eq!("AAC".parse(), Ok(AudioCodec::Aac));
@@ -2491,11 +2510,17 @@ fn build_codec_tests(
         assert_eq!("KLV".parse(), Ok(DataCodec::Klv));
         assert_eq!("OTF".parse(), Ok(AttachmentCodec::Otf));
 
+        // A genuine stranger's spelling survives verbatim — round-trips
+        // through `as_str`, and `Self::other` agrees with `FromStr`.
         let v: VideoCodec = "VENDOR_Codec".parse().unwrap();
         assert!(v.is_other());
-        assert_eq!(v.as_str(), "vendor_codec");
-        assert_eq!("vendor_codec".parse::<VideoCodec>().unwrap(), v);
+        assert_eq!(v.as_str(), "VENDOR_Codec");
         assert_eq!(VideoCodec::other("VENDOR_Codec"), v);
+
+        // Two spellings of the same stranger are two distinct `Other`
+        // values now — nothing folds them together, unlike a name this
+        // vocabulary actually knows.
+        assert_ne!("vendor_codec".parse::<VideoCodec>().unwrap(), v);
       }
 
       #[test]

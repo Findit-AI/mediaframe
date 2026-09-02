@@ -320,8 +320,25 @@ fn an_unnamed_pixel_format_keeps_its_name() {
   assert_eq!(vendor.as_str(), "yuv420q");
   assert_eq!(vendor.to_u32(), None);
   assert_eq!("yuv420q".parse(), Ok(vendor));
-  // The escape folds on the way in, so one name is one value.
-  assert_eq!(PixelFormat::other("YUV420Q").as_str(), "yuv420q");
+  // A genuine stranger's spelling survives verbatim — the escape is a
+  // passthrough, not a fold target.
+  assert_eq!(PixelFormat::other("YUV420Q").as_str(), "YUV420Q");
+}
+
+/// `Self::other` runs the ignore-case parse first: a canonical spelling
+/// or a documented FFmpeg-synonym alias (`gray`/`monob`/`monow`)
+/// resolves to the **named** variant, not a second value for a meaning
+/// this vocabulary already names — the equality-heals fixture this
+/// escape exists to guarantee.
+#[cfg(any(feature = "std", feature = "alloc"))]
+#[test]
+fn other_resolves_canonical_and_alias_spellings_to_the_named_variant() {
+  assert_eq!(PixelFormat::other("gray8"), PixelFormat::Gray8);
+  assert_eq!(PixelFormat::other("GRAY8"), PixelFormat::Gray8);
+  assert_eq!(PixelFormat::other("gray"), PixelFormat::Gray8);
+  assert_eq!(PixelFormat::other("GRAY"), PixelFormat::Gray8);
+  assert_eq!(PixelFormat::other("monob"), PixelFormat::Monoblack);
+  assert_eq!(PixelFormat::other("monow"), PixelFormat::Monowhite);
 }
 
 /// At the no-alloc tier there is nowhere to put a name, so the same

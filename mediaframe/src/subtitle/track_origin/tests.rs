@@ -63,12 +63,15 @@ fn every_origin_round_trips_through_its_slug() {
     assert_eq!(origin.as_str().parse::<TrackOrigin>().as_ref(), Ok(origin));
   }
 
-  // Case folds, on both the lookup and the escape.
+  // The lookup folds — a named meaning is one value whatever case it
+  // arrives in — but a genuine stranger keeps its own spelling verbatim
+  // through the escape.
   assert_eq!("Embedded".parse(), Ok(TrackOrigin::Embedded));
+  assert_eq!(TrackOrigin::other("Embedded"), TrackOrigin::Embedded);
   let o: TrackOrigin = "BroadCast".parse().unwrap();
-  assert_eq!(o, TrackOrigin::other("broadcast"));
-  assert_eq!(o.as_str(), "broadcast");
-  assert_eq!("broadcast".parse::<TrackOrigin>().unwrap(), o);
+  assert_eq!(o, TrackOrigin::other("BroadCast"));
+  assert_eq!(o.as_str(), "BroadCast");
+  assert_ne!("broadcast".parse::<TrackOrigin>().unwrap(), o);
 }
 
 /// **Type-level** totality, the same proof the nine all-tier

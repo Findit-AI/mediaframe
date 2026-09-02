@@ -109,11 +109,10 @@ pub enum Matrix {
   YCgCoRe,
   /// YCgCo-R, odd bit addition.
   YCgCoRo,
-  /// A slug this vocabulary does not enumerate — carried verbatim,
-  /// ASCII-folded to lowercase by the parse gate. The crate-wide
-  /// extension idiom: a downstream backend naming a value mediaframe
-  /// has never heard of keeps that **name**, and it round-trips through
-  /// `as_str` / `FromStr` / `serde` intact.
+  /// A slug this vocabulary does not enumerate — carried verbatim. The
+  /// crate-wide extension idiom: a downstream backend naming a value
+  /// mediaframe has never heard of keeps that **name**, and it
+  /// round-trips through `as_str` / `FromStr` / `serde` intact.
   ///
   /// Requires the `alloc` feature (`std` includes it) — the payload is
   /// heap-capable. At the no-alloc tier the vocabulary is closed and an
@@ -228,16 +227,19 @@ impl Matrix {
       _ => return None,
     })
   }
-  /// The open escape for a slug this vocabulary does not name, ASCII-folded
-  /// to the crate's lowercase canon.
+  /// The open escape for a slug this vocabulary does not name.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is what
-  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
-  /// `Hash` compare names rather than spellings. Constructing the variant
-  /// directly bypasses the fold and is not the supported spelling.
+  /// Runs the ignore-case parse first — [`FromStr`](core::str::FromStr)'s
+  /// own match table, walked through [`Self::from_str`] rather than
+  /// duplicated here — so a canonical spelling or a documented alias
+  /// returns that **named** variant, never a second value for a meaning
+  /// this vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the escape
+  /// is a lossless passthrough for a name this build does not know, not a
+  /// fold target.
   #[cfg(any(feature = "std", feature = "alloc"))]
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    <Self as core::str::FromStr>::from_str(slug.as_ref()).unwrap()
   }
 }
 
@@ -300,8 +302,8 @@ impl core::str::FromStr for Matrix {
   ///
   /// Returns [`ParseMatrixError`] only at the no-alloc tier, where the vocabulary is
   /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
-  /// this type does not name rides [`Self::Other`], ASCII-folded to
-  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// this type does not name rides [`Self::Other`], carrying the caller's
+  /// spelling verbatim — and `Self::Err` is
   /// [`Infallible`](core::convert::Infallible) there, so the totality is
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -335,7 +337,7 @@ impl core::str::FromStr for Matrix {
       b"unknown" => Self::Unspecified,
 
       #[cfg(any(feature = "std", feature = "alloc"))]
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(ParseMatrixError),
     })
@@ -563,11 +565,10 @@ pub enum Primaries {
   SmpteEg432,
   /// EBU Tech. 3213-E (legacy) / JEDEC P22.
   Ebu3213E,
-  /// A slug this vocabulary does not enumerate — carried verbatim,
-  /// ASCII-folded to lowercase by the parse gate. The crate-wide
-  /// extension idiom: a downstream backend naming a value mediaframe
-  /// has never heard of keeps that **name**, and it round-trips through
-  /// `as_str` / `FromStr` / `serde` intact.
+  /// A slug this vocabulary does not enumerate — carried verbatim. The
+  /// crate-wide extension idiom: a downstream backend naming a value
+  /// mediaframe has never heard of keeps that **name**, and it
+  /// round-trips through `as_str` / `FromStr` / `serde` intact.
   ///
   /// Requires the `alloc` feature (`std` includes it) — the payload is
   /// heap-capable. At the no-alloc tier the vocabulary is closed and an
@@ -786,16 +787,19 @@ impl Primaries {
   pub const fn is_cie_xyz(&self) -> bool {
     matches!(self, Self::SmpteSt428)
   }
-  /// The open escape for a slug this vocabulary does not name, ASCII-folded
-  /// to the crate's lowercase canon.
+  /// The open escape for a slug this vocabulary does not name.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is what
-  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
-  /// `Hash` compare names rather than spellings. Constructing the variant
-  /// directly bypasses the fold and is not the supported spelling.
+  /// Runs the ignore-case parse first — [`FromStr`](core::str::FromStr)'s
+  /// own match table, walked through [`Self::from_str`] rather than
+  /// duplicated here — so a canonical spelling or a documented alias
+  /// returns that **named** variant, never a second value for a meaning
+  /// this vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the escape
+  /// is a lossless passthrough for a name this build does not know, not a
+  /// fold target.
   #[cfg(any(feature = "std", feature = "alloc"))]
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    <Self as core::str::FromStr>::from_str(slug.as_ref()).unwrap()
   }
 }
 
@@ -854,8 +858,8 @@ impl core::str::FromStr for Primaries {
   ///
   /// Returns [`ParsePrimariesError`] only at the no-alloc tier, where the vocabulary is
   /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
-  /// this type does not name rides [`Self::Other`], ASCII-folded to
-  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// this type does not name rides [`Self::Other`], carrying the caller's
+  /// spelling verbatim — and `Self::Err` is
   /// [`Infallible`](core::convert::Infallible) there, so the totality is
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -882,7 +886,7 @@ impl core::str::FromStr for Primaries {
       b"unknown" => Self::Unspecified,
 
       #[cfg(any(feature = "std", feature = "alloc"))]
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(ParsePrimariesError),
     })
@@ -956,11 +960,10 @@ pub enum Transfer {
   SmpteSt428,
   /// ARIB STD-B67 — Hybrid Log-Gamma.
   AribStdB67Hlg,
-  /// A slug this vocabulary does not enumerate — carried verbatim,
-  /// ASCII-folded to lowercase by the parse gate. The crate-wide
-  /// extension idiom: a downstream backend naming a value mediaframe
-  /// has never heard of keeps that **name**, and it round-trips through
-  /// `as_str` / `FromStr` / `serde` intact.
+  /// A slug this vocabulary does not enumerate — carried verbatim. The
+  /// crate-wide extension idiom: a downstream backend naming a value
+  /// mediaframe has never heard of keeps that **name**, and it
+  /// round-trips through `as_str` / `FromStr` / `serde` intact.
   ///
   /// Requires the `alloc` feature (`std` includes it) — the payload is
   /// heap-capable. At the no-alloc tier the vocabulary is closed and an
@@ -1063,16 +1066,19 @@ impl Transfer {
       _ => return None,
     })
   }
-  /// The open escape for a slug this vocabulary does not name, ASCII-folded
-  /// to the crate's lowercase canon.
+  /// The open escape for a slug this vocabulary does not name.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is what
-  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
-  /// `Hash` compare names rather than spellings. Constructing the variant
-  /// directly bypasses the fold and is not the supported spelling.
+  /// Runs the ignore-case parse first — [`FromStr`](core::str::FromStr)'s
+  /// own match table, walked through [`Self::from_str`] rather than
+  /// duplicated here — so a canonical spelling or a documented alias
+  /// returns that **named** variant, never a second value for a meaning
+  /// this vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the escape
+  /// is a lossless passthrough for a name this build does not know, not a
+  /// fold target.
   #[cfg(any(feature = "std", feature = "alloc"))]
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    <Self as core::str::FromStr>::from_str(slug.as_ref()).unwrap()
   }
 }
 
@@ -1135,8 +1141,8 @@ impl core::str::FromStr for Transfer {
   ///
   /// Returns [`ParseTransferError`] only at the no-alloc tier, where the vocabulary is
   /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
-  /// this type does not name rides [`Self::Other`], ASCII-folded to
-  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// this type does not name rides [`Self::Other`], carrying the caller's
+  /// spelling verbatim — and `Self::Err` is
   /// [`Infallible`](core::convert::Infallible) there, so the totality is
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -1170,7 +1176,7 @@ impl core::str::FromStr for Transfer {
       b"bt470bg" => Self::Gamma28,
 
       #[cfg(any(feature = "std", feature = "alloc"))]
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(ParseTransferError),
     })
@@ -1216,11 +1222,10 @@ pub enum DynamicRange {
   Limited,
   /// Full / PC swing (8-bit 0..255); FFmpeg `AVCOL_RANGE_JPEG`.
   Full,
-  /// A slug this vocabulary does not enumerate — carried verbatim,
-  /// ASCII-folded to lowercase by the parse gate. The crate-wide
-  /// extension idiom: a downstream backend naming a value mediaframe
-  /// has never heard of keeps that **name**, and it round-trips through
-  /// `as_str` / `FromStr` / `serde` intact.
+  /// A slug this vocabulary does not enumerate — carried verbatim. The
+  /// crate-wide extension idiom: a downstream backend naming a value
+  /// mediaframe has never heard of keeps that **name**, and it
+  /// round-trips through `as_str` / `FromStr` / `serde` intact.
   ///
   /// Requires the `alloc` feature (`std` includes it) — the payload is
   /// heap-capable. At the no-alloc tier the vocabulary is closed and an
@@ -1279,16 +1284,19 @@ impl DynamicRange {
       _ => return None,
     })
   }
-  /// The open escape for a slug this vocabulary does not name, ASCII-folded
-  /// to the crate's lowercase canon.
+  /// The open escape for a slug this vocabulary does not name.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is what
-  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
-  /// `Hash` compare names rather than spellings. Constructing the variant
-  /// directly bypasses the fold and is not the supported spelling.
+  /// Runs the ignore-case parse first — [`FromStr`](core::str::FromStr)'s
+  /// own match table, walked through [`Self::from_str`] rather than
+  /// duplicated here — so a canonical spelling or a documented alias
+  /// returns that **named** variant, never a second value for a meaning
+  /// this vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the escape
+  /// is a lossless passthrough for a name this build does not know, not a
+  /// fold target.
   #[cfg(any(feature = "std", feature = "alloc"))]
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    <Self as core::str::FromStr>::from_str(slug.as_ref()).unwrap()
   }
 }
 
@@ -1338,8 +1346,8 @@ impl core::str::FromStr for DynamicRange {
   ///
   /// Returns [`ParseDynamicRangeError`] only at the no-alloc tier, where the vocabulary is
   /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
-  /// this type does not name rides [`Self::Other`], ASCII-folded to
-  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// this type does not name rides [`Self::Other`], carrying the caller's
+  /// spelling verbatim — and `Self::Err` is
   /// [`Infallible`](core::convert::Infallible) there, so the totality is
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -1357,7 +1365,7 @@ impl core::str::FromStr for DynamicRange {
       b"unknown" => Self::Unspecified,
 
       #[cfg(any(feature = "std", feature = "alloc"))]
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(ParseDynamicRangeError),
     })
@@ -1408,11 +1416,10 @@ pub enum ChromaLocation {
   BottomLeft,
   /// Bottom.
   Bottom,
-  /// A slug this vocabulary does not enumerate — carried verbatim,
-  /// ASCII-folded to lowercase by the parse gate. The crate-wide
-  /// extension idiom: a downstream backend naming a value mediaframe
-  /// has never heard of keeps that **name**, and it round-trips through
-  /// `as_str` / `FromStr` / `serde` intact.
+  /// A slug this vocabulary does not enumerate — carried verbatim. The
+  /// crate-wide extension idiom: a downstream backend naming a value
+  /// mediaframe has never heard of keeps that **name**, and it
+  /// round-trips through `as_str` / `FromStr` / `serde` intact.
   ///
   /// Requires the `alloc` feature (`std` includes it) — the payload is
   /// heap-capable. At the no-alloc tier the vocabulary is closed and an
@@ -1483,16 +1490,19 @@ impl ChromaLocation {
       _ => return None,
     })
   }
-  /// The open escape for a slug this vocabulary does not name, ASCII-folded
-  /// to the crate's lowercase canon.
+  /// The open escape for a slug this vocabulary does not name.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is what
-  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
-  /// `Hash` compare names rather than spellings. Constructing the variant
-  /// directly bypasses the fold and is not the supported spelling.
+  /// Runs the ignore-case parse first — [`FromStr`](core::str::FromStr)'s
+  /// own match table, walked through [`Self::from_str`] rather than
+  /// duplicated here — so a canonical spelling or a documented alias
+  /// returns that **named** variant, never a second value for a meaning
+  /// this vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the escape
+  /// is a lossless passthrough for a name this build does not know, not a
+  /// fold target.
   #[cfg(any(feature = "std", feature = "alloc"))]
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    <Self as core::str::FromStr>::from_str(slug.as_ref()).unwrap()
   }
 }
 
@@ -1544,8 +1554,8 @@ impl core::str::FromStr for ChromaLocation {
   ///
   /// Returns [`ParseChromaLocationError`] only at the no-alloc tier, where the vocabulary is
   /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
-  /// this type does not name rides [`Self::Other`], ASCII-folded to
-  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// this type does not name rides [`Self::Other`], carrying the caller's
+  /// spelling verbatim — and `Self::Err` is
   /// [`Infallible`](core::convert::Infallible) there, so the totality is
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -1562,7 +1572,7 @@ impl core::str::FromStr for ChromaLocation {
       b"bottomleft" => Self::BottomLeft,
       b"bottom" => Self::Bottom,
       #[cfg(any(feature = "std", feature = "alloc"))]
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(ParseChromaLocationError),
     })
@@ -1762,10 +1772,11 @@ impl Info {
 /// `Default` is [`Self::DciP3`]. [`Self::Other`] carries any gamut
 /// name this build does not enumerate; [`Self::from_u32`] returns a
 /// named variant for a canonical id (`0`/`1`/`2`) and [`None`]
-/// otherwise. Construct the escape through [`Self::other`] so the name
-/// is ASCII-folded to the crate's canon; it survives a buffa
-/// round-trip — which is correct (the id *is* that gamut), not data
-/// loss. The crate-wide extension idiom (Codex adversarial-review F8).
+/// otherwise. Construct the escape through [`Self::other`], which runs
+/// the ignore-case parse first and only falls to [`Self::Other`] for a
+/// genuine stranger, carrying its spelling verbatim; it survives a
+/// buffa round-trip — which is correct (the id *is* that gamut), not
+/// data loss. The crate-wide extension idiom (Codex adversarial-review F8).
 ///
 /// **Tier.** [`Self::Other`] needs a heap, so it exists only at the
 /// `alloc` / `std` tier; at the no-alloc tier this vocabulary is
@@ -1793,11 +1804,10 @@ pub enum DcpTargetGamut {
   Rec709,
   /// **Rec.2020** (D65) — for HDR theatrical / archival.
   Rec2020,
-  /// A slug this vocabulary does not enumerate — carried verbatim,
-  /// ASCII-folded to lowercase by the parse gate. The crate-wide
-  /// extension idiom: a downstream backend naming a value mediaframe
-  /// has never heard of keeps that **name**, and it round-trips through
-  /// `as_str` / `FromStr` / `serde` intact.
+  /// A slug this vocabulary does not enumerate — carried verbatim. The
+  /// crate-wide extension idiom: a downstream backend naming a value
+  /// mediaframe has never heard of keeps that **name**, and it
+  /// round-trips through `as_str` / `FromStr` / `serde` intact.
   ///
   /// Requires the `alloc` feature (`std` includes it) — the payload is
   /// heap-capable. At the no-alloc tier the vocabulary is closed and an
@@ -1869,16 +1879,19 @@ impl DcpTargetGamut {
       _ => return None,
     })
   }
-  /// The open escape for a slug this vocabulary does not name, ASCII-folded
-  /// to the crate's lowercase canon.
+  /// The open escape for a slug this vocabulary does not name.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is what
-  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
-  /// `Hash` compare names rather than spellings. Constructing the variant
-  /// directly bypasses the fold and is not the supported spelling.
+  /// Runs the ignore-case parse first — [`FromStr`](core::str::FromStr)'s
+  /// own match table, walked through [`Self::from_str`] rather than
+  /// duplicated here — so a canonical spelling or a documented alias
+  /// returns that **named** variant, never a second value for a meaning
+  /// this vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the escape
+  /// is a lossless passthrough for a name this build does not know, not a
+  /// fold target.
   #[cfg(any(feature = "std", feature = "alloc"))]
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    <Self as core::str::FromStr>::from_str(slug.as_ref()).unwrap()
   }
 }
 
@@ -1987,8 +2000,8 @@ impl core::str::FromStr for DcpTargetGamut {
   ///
   /// Returns [`ParseDcpTargetGamutError`] only at the no-alloc tier, where the vocabulary is
   /// closed. At the `alloc` / `std` tier this parse is **total** — a slug
-  /// this type does not name rides [`Self::Other`], ASCII-folded to
-  /// lowercase by [`Self::other`] — and `Self::Err` is
+  /// this type does not name rides [`Self::Other`], carrying the caller's
+  /// spelling verbatim — and `Self::Err` is
   /// [`Infallible`](core::convert::Infallible) there, so the totality is
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -2001,7 +2014,7 @@ impl core::str::FromStr for DcpTargetGamut {
       b"rec709" => Self::Rec709,
       b"rec2020" => Self::Rec2020,
       #[cfg(any(feature = "std", feature = "alloc"))]
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
       #[cfg(not(any(feature = "std", feature = "alloc")))]
       _ => return Err(ParseDcpTargetGamutError),
     })

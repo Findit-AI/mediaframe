@@ -179,8 +179,13 @@ fn r8_hif_routes_to_other_not_heic_or_heif() {
     let v: Format = ext.parse().unwrap();
     assert_eq!(
       v,
-      Format::other("hif"),
+      Format::other(ext),
       "`{ext}` must route to the open escape, carrying its own name"
+    );
+    assert_eq!(
+      v.as_str(),
+      ext,
+      "`{ext}` must survive verbatim in the escape, not folded"
     );
     assert!(v.is_other(), "`{ext}` must NOT resolve to a named variant");
     assert_ne!(v, Format::Heic, "`{ext}` must NOT route to Heic");
@@ -189,9 +194,10 @@ fn r8_hif_routes_to_other_not_heic_or_heif() {
 }
 
 /// Lowercase-canonical, collision-free once folded, and read
-/// case-insensitively — with the escape folding too, so one name is one
-/// value under the derived `Eq` / `Hash`. Covers both text faces: the
-/// `as_str()` slugs and the `extensions()` aliases.
+/// case-insensitively — with `Self::other` running that same lookup, so
+/// one **named** meaning is one value under the derived `Eq` / `Hash`.
+/// Covers both text faces: the `as_str()` slugs and the `extensions()`
+/// aliases.
 #[test]
 fn format_slugs_are_lowercase_canonical_and_fold() {
   const SLUGS: &[&str] = &[
@@ -229,10 +235,19 @@ fn format_slugs_are_lowercase_canonical_and_fold() {
     assert_eq!(v, shouted, "alias `{alias}` does not fold by case");
   }
 
-  // The escape folds on the way in.
+  // `other()` heals a canonical name to the named variant...
+  assert_eq!(Format::other("JPG"), Format::Jpeg);
+  assert_eq!(Format::other("jpg"), Format::Jpeg);
+
+  // ...and a documented alias extension, same as `FromStr`.
+  assert_eq!(Format::other("dib"), Format::Bmp);
+  assert_eq!(Format::other("DIB"), Format::Bmp);
+
+  // ...but a genuine stranger keeps its own spelling verbatim — the
+  // escape is a passthrough, not a fold target.
   let escaped: Format = "WEIRD_X".parse().unwrap();
   assert!(escaped.is_other());
-  assert_eq!(escaped.as_str(), "weird_x");
+  assert_eq!(escaped.as_str(), "WEIRD_X");
   assert_eq!(Format::other("WEIRD_X"), escaped);
 }
 

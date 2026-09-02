@@ -31,7 +31,7 @@ fn audio_format_u32_round_trips_named_variants() {
 fn audio_format_unnamed_code_is_rejected_and_the_escape_keeps_its_name() {
   assert_eq!(SampleFormat::from_u32(12_345), None);
   let vendor = SampleFormat::other("VENDOR_S24");
-  assert_eq!(vendor.as_str(), "vendor_s24");
+  assert_eq!(vendor.as_str(), "VENDOR_S24");
   assert_eq!(vendor.to_u32(), None);
 }
 
@@ -221,7 +221,13 @@ fn audio_container_extensions_are_canonical_first_and_every_alias_parses() {
   );
   assert_eq!(
     "APL".parse::<ContainerFormat>().unwrap(),
-    ContainerFormat::other("apl")
+    ContainerFormat::other("APL")
+  );
+  // A genuine stranger's spelling is not folded — the two cases are
+  // distinct `Other` values now.
+  assert_ne!(
+    "apl".parse::<ContainerFormat>().unwrap(),
+    "APL".parse::<ContainerFormat>().unwrap()
   );
   // `.caf` is deliberately NOT an Alac alias — see the variant's own doc.
   assert_eq!(ContainerFormat::Alac.extensions(), &["m4a"]);
@@ -291,8 +297,20 @@ fn audio_slugs_are_lowercase_canonical_and_fold() {
   assert_eq!("S16".parse(), Ok(SampleFormat::S16));
   assert_eq!("FLTP".parse(), Ok(SampleFormat::Fltp));
   assert_eq!("FLAC".parse(), Ok(ContainerFormat::Flac));
-  assert_eq!(SampleFormat::other("VENDOR_S24").as_str(), "vendor_s24");
-  assert_eq!(ContainerFormat::other("SND").as_str(), "snd");
+
+  // `other()` heals a canonical name to the named variant...
+  assert_eq!(SampleFormat::other("S16"), SampleFormat::S16);
+  assert_eq!(SampleFormat::other("s16"), SampleFormat::S16);
+  assert_eq!(ContainerFormat::other("FLAC"), ContainerFormat::Flac);
+  assert_eq!(ContainerFormat::other("flac"), ContainerFormat::Flac);
+
+  // ...and a documented alias extension, same as `FromStr`.
+  assert_eq!(ContainerFormat::other("adts"), ContainerFormat::Aac);
+  assert_eq!(ContainerFormat::other("ADTS"), ContainerFormat::Aac);
+
+  // ...but a genuine stranger keeps its own spelling verbatim.
+  assert_eq!(SampleFormat::other("VENDOR_S24").as_str(), "VENDOR_S24");
+  assert_eq!(ContainerFormat::other("SND").as_str(), "SND");
 }
 #[test]
 fn sample_format_unwrap_other_borrowed_view() {
