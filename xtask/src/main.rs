@@ -2068,8 +2068,9 @@ fn build_codec_enum(
     quote! { Self::#ident => #name, }
   });
 
-  // The parse table compares on the byte side — `crate::parse::fold`
-  // hands back the folded bytes — so the arms are `b"name"` literals.
+  // The parse table compares on the byte side — `crate::parse::lookup`
+  // (declared `Case::Insensitive`, same as every other household today)
+  // hands back the resolved bytes — so the arms are `b"name"` literals.
   let from_str_arms = variants.iter().map(|(ident, name)| {
     let name = Literal::byte_string(name.as_bytes());
     quote! { #name => Self::#ident, }
@@ -2281,10 +2282,7 @@ fn build_codec_enum(
       /// the caller's spelling verbatim.
       fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut buf = [0u8; crate::parse::FOLD_CAP];
-        // An input too long to fold cannot name a codec either, so the
-        // unfolded original falls through to the escape — `Self::Other`
-        // carries the caller's own spelling, not the folded bytes.
-        let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+        let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
         Ok(match folded {
           #(#from_str_arms)*
           _ => Self::Other(SmolStr::new(s)),

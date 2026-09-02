@@ -6,6 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A case-sensitivity axis for every vocabulary's parse table** (the
+  0.10.0 axis, alongside the `other()` fix below). Case-sensitivity is
+  now a per-household constitutional attribute: each of the crate's 22
+  `Other(SmolStr)` households (listed in the `other()` entry below)
+  declares its case-matching strategy explicitly, as the word passed to
+  the one call that resolves its match key — `Insensitive` (fold, exactly
+  how every household already matched) or `Sensitive` (exact bytes, no
+  fold, no length cap). There is no default: a household that omits the
+  word does not compile, so the choice is provable rather than assumed.
+
+  **Zero behaviour change** — all 22 households declare `Insensitive`.
+  Every existing roster is a lowercase-slug domain with no distinctly-cased
+  member, so this PR flips nothing; it makes the crate's one matching gate
+  (`fold`) and its (until now, implicit) "we always fold" assumption into
+  a named, per-type choice instead. `Sensitive` has no
+  production household yet — right for a **fourcc-shaped** domain
+  (vendor codec tags, container FourCCs) where two different casings can
+  legitimately name two different real values, so folding one onto the
+  other would silently substitute a wrong roster member for the caller's
+  actual value. It is proven end-to-end against a test-only table so the
+  first real sensitive household inherits machinery already exercised,
+  rather than being the first thing to exercise it.
+
+  Internal (`pub(crate)`): no public API changes. `ingraph` / `mediagraph`
+  citizen doors inherit each household's declared mode along with the
+  household itself — no changes needed there.
+
 ### Changed
 
 - **Every `other(...)` escape constructor now runs the ignore-case parse

@@ -258,7 +258,8 @@ pub mod lang;
 /// compile-time completeness witness cannot see.
 #[cfg(test)]
 mod roster_tests;
-// The ASCII case-folding gate shared by every `FromStr` in the crate.
+// The case-sensitivity axis and the ASCII case-folding gate every
+// `FromStr` in the crate declares and passes through, respectively.
 // Private: the errors those parses return live with their vocabularies,
 // one per type.
 mod parse;

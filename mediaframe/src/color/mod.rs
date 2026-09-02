@@ -308,9 +308,7 @@ impl core::str::FromStr for Matrix {
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    // An input too long to fold cannot name a variant either, so the
-    // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"rgb" => Self::Rgb,
       b"bt601" => Self::Bt601,
@@ -864,9 +862,7 @@ impl core::str::FromStr for Primaries {
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    // An input too long to fold cannot name a variant either, so the
-    // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"bt709" => Self::Bt709,
       b"unspecified" => Self::Unspecified,
@@ -1147,9 +1143,7 @@ impl core::str::FromStr for Transfer {
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    // An input too long to fold cannot name a variant either, so the
-    // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"bt709" => Self::Bt709,
       b"unspecified" => Self::Unspecified,
@@ -1352,9 +1346,7 @@ impl core::str::FromStr for DynamicRange {
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    // An input too long to fold cannot name a variant either, so the
-    // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"unspecified" => Self::Unspecified,
       b"tv" => Self::Limited,
@@ -1560,9 +1552,7 @@ impl core::str::FromStr for ChromaLocation {
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    // An input too long to fold cannot name a variant either, so the
-    // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"unspecified" => Self::Unspecified,
       b"left" => Self::Left,
@@ -2006,9 +1996,7 @@ impl core::str::FromStr for DcpTargetGamut {
   /// checkable by the compiler rather than only promised here.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    // An input too long to fold cannot name a variant either, so the
-    // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"dci-p3" => Self::DciP3,
       b"rec709" => Self::Rec709,
