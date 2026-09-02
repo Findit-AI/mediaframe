@@ -60,10 +60,9 @@ pub enum TrackOrigin {
   /// track that arrived as text. [`Self::External`] covers the
   /// arrived-as-text case even when the arrival was a download.
   Derived,
-  /// A provenance this vocabulary does not name — carried verbatim,
-  /// ASCII-folded to lowercase by the parse gate. The crate-wide
-  /// extension idiom: a downstream classifier naming an origin
-  /// mediaframe has never heard of keeps that **name**, and it
+  /// A provenance this vocabulary does not name — carried verbatim. The
+  /// crate-wide extension idiom: a downstream classifier naming an
+  /// origin mediaframe has never heard of keeps that **name**, and it
   /// round-trips through `as_str` / `FromStr` / `serde` intact.
   Other(SmolStr),
 }
@@ -136,15 +135,17 @@ impl TrackOrigin {
     }
   }
 
-  /// The open escape for a slug this vocabulary does not name, ASCII-folded
-  /// to the crate's lowercase canon.
+  /// The open escape for a slug this vocabulary does not name.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is what
-  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
-  /// `Hash` compare names rather than spellings. Constructing the variant
-  /// directly bypasses the fold and is not the supported spelling.
+  /// Runs the ignore-case parse first — [`FromStr`](core::str::FromStr)'s
+  /// own match table, walked through [`Self::from_str`] rather than
+  /// duplicated here — so a canonical spelling returns that **named**
+  /// variant, never a second value for a meaning this vocabulary already
+  /// has one for. Only a genuine stranger reaches [`Self::Other`],
+  /// carrying the caller's spelling verbatim: the escape is a lossless
+  /// passthrough for a name this build does not know, not a fold target.
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    <Self as core::str::FromStr>::from_str(slug.as_ref()).unwrap()
   }
 }
 
@@ -194,8 +195,8 @@ impl core::str::FromStr for TrackOrigin {
   /// # Errors
   ///
   /// Never, and the type says so: a slug this vocabulary does not name
-  /// rides [`Self::Other`], ASCII-folded to lowercase by [`Self::other`],
-  /// so `Self::Err` is uninhabited and a caller can discharge it with an
+  /// rides [`Self::Other`], carrying the caller's spelling verbatim, so
+  /// `Self::Err` is uninhabited and a caller can discharge it with an
   /// irrefutable `let Ok(o) = s.parse::<TrackOrigin>();`.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
@@ -207,7 +208,7 @@ impl core::str::FromStr for TrackOrigin {
       b"sidecar" => Self::Sidecar,
       b"external" => Self::External,
       b"derived" => Self::Derived,
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
     })
   }
 }

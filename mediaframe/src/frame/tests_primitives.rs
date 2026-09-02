@@ -525,9 +525,25 @@ fn stereo_mode_u32_round_trip_and_escape() {
 #[test]
 fn stereo_mode_escape_keeps_its_name() {
   let vendor = StereoMode::other("Anaglyph");
-  assert_eq!(vendor.as_str(), "anaglyph");
+  assert_eq!(vendor.as_str(), "Anaglyph");
   assert_eq!(vendor.to_u32(), None);
-  assert_eq!("anaglyph".parse(), Ok(vendor));
+  assert_eq!("Anaglyph".parse(), Ok(vendor));
+}
+
+/// `Self::other` runs the ignore-case parse first: a canonical spelling
+/// resolves to the **named** variant, not a second value for a meaning
+/// these types already name — the equality-heals fixture this escape
+/// exists to guarantee. Neither `Rotation` nor `FieldOrder` documents an
+/// alias beyond its own canonical slug, so this covers the canonical
+/// face only.
+#[cfg(any(feature = "std", feature = "alloc"))]
+#[test]
+fn other_resolves_a_canonical_name_to_the_named_variant() {
+  assert_eq!(Rotation::other("90"), Rotation::D90);
+  assert_eq!(FieldOrder::other("tt"), FieldOrder::Tt);
+  assert_eq!(FieldOrder::other("TT"), FieldOrder::Tt);
+  assert_eq!(StereoMode::other("mono"), StereoMode::Mono);
+  assert_eq!(StereoMode::other("MONO"), StereoMode::Mono);
 }
 
 /// Every named variant of the three coded frame enums must survive

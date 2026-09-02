@@ -249,9 +249,9 @@ fn enum_u32_uses_ffmpeg_codes_and_round_trips() {
 #[test]
 fn a_name_this_build_does_not_enumerate_survives_as_a_name() {
   let vendor = Matrix::other("ACEScct");
-  assert_eq!(vendor.as_str(), "acescct");
+  assert_eq!(vendor.as_str(), "ACEScct");
   assert_eq!(vendor.to_u32(), None);
-  assert_eq!("acescct".parse(), Ok(vendor));
+  assert_eq!("ACEScct".parse(), Ok(vendor));
 }
 
 #[test]
@@ -751,20 +751,51 @@ fn a_synonym_is_scoped_to_its_type() {
 }
 
 /// The escape is total on the `alloc` tier: every name round-trips, and
-/// it is folded to the crate's lowercase canon on the way in, so two
-/// spellings of one name are one value.
+/// a genuine stranger's spelling survives verbatim — the lookup above
+/// already catches every case-variant of a name this crate *does* know,
+/// so folding the leftover strangers would only destroy information.
 #[cfg(any(feature = "std", feature = "alloc"))]
 #[test]
-fn unnamed_slugs_ride_the_folded_escape() {
+fn unnamed_slugs_ride_the_escape_verbatim() {
   let m: Matrix = "definitely-not-a-matrix".parse().unwrap();
   assert!(m.is_other());
   assert_eq!(m.as_str(), "definitely-not-a-matrix");
   assert_eq!(
     "VENDOR-Gamut".parse::<Matrix>().unwrap().as_str(),
-    "vendor-gamut",
-    "the escape must fold to the crate's lowercase canon"
+    "VENDOR-Gamut",
+    "the escape must preserve the caller's spelling verbatim"
   );
   assert_eq!("".parse::<Matrix>().unwrap().as_str(), "");
+}
+
+/// `Self::other` runs the ignore-case parse first: a canonical spelling
+/// or a documented FFmpeg-synonym alias resolves to the **named**
+/// variant, not a second value for a meaning these types already name —
+/// the equality-heals fixture this escape exists to guarantee.
+#[cfg(any(feature = "std", feature = "alloc"))]
+#[test]
+fn other_resolves_canonical_and_alias_spellings_to_the_named_variant() {
+  // Canonical spelling, both cases.
+  assert_eq!(Matrix::other("bt709"), Matrix::Bt709);
+  assert_eq!(Matrix::other("BT709"), Matrix::Bt709);
+  assert_eq!(Primaries::other("bt2020"), Primaries::Bt2020);
+  assert_eq!(Primaries::other("BT2020"), Primaries::Bt2020);
+  assert_eq!(Transfer::other("smpte2084"), Transfer::SmpteSt2084Pq);
+  assert_eq!(Transfer::other("SMPTE2084"), Transfer::SmpteSt2084Pq);
+  assert_eq!(DynamicRange::other("tv"), DynamicRange::Limited);
+  assert_eq!(DynamicRange::other("TV"), DynamicRange::Limited);
+  assert_eq!(ChromaLocation::other("topleft"), ChromaLocation::TopLeft);
+  assert_eq!(ChromaLocation::other("TOPLEFT"), ChromaLocation::TopLeft);
+
+  // A documented FFmpeg-synonym alias, both cases.
+  assert_eq!(Matrix::other("gbr"), Matrix::Rgb);
+  assert_eq!(Matrix::other("GBR"), Matrix::Rgb);
+  assert_eq!(Primaries::other("unknown"), Primaries::Unspecified);
+  assert_eq!(Primaries::other("UNKNOWN"), Primaries::Unspecified);
+  assert_eq!(Transfer::other("bt470m"), Transfer::Gamma22);
+  assert_eq!(Transfer::other("BT470M"), Transfer::Gamma22);
+  assert_eq!(Transfer::other("bt470bg"), Transfer::Gamma28);
+  assert_eq!(DynamicRange::other("unknown"), DynamicRange::Unspecified);
 }
 
 /// `DcpTargetGamut` gained `as_str`/`Display` to match the five H.273

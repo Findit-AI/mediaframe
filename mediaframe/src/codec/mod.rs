@@ -890,16 +890,17 @@ impl VideoCodec {
       Self::Other(s) => s.as_str(),
     }
   }
-  /// The open escape for a codec name FFmpeg n9.0 does not carry,
-  /// ASCII-folded to the crate's lowercase canon.
+  /// The open escape for a codec name FFmpeg n9.0 does not carry.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is
-  /// what keeps the whole value space lowercase-canonical, so the
-  /// derived `Eq` / `Hash` compare names rather than spellings.
-  /// Constructing the variant directly bypasses the fold and is not the
-  /// supported spelling.
+  /// Runs the ignore-case parse first — [`Self::from_str`] rather than
+  /// a duplicated table — so a canonical short name returns that
+  /// **named** variant, never a second value for a meaning this
+  /// vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the
+  /// escape is a lossless passthrough for a name this build does not
+  /// know, not a fold target.
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    Self::from_str(slug.as_ref()).unwrap()
   }
 }
 impl VideoCodec {
@@ -1484,7 +1485,8 @@ const _: () = {
 impl FromStr for VideoCodec {
   type Err = core::convert::Infallible;
   /// Recognise an FFmpeg codec short name, case-insensitively; unknown
-  /// values land in [`Self::Other`] (infallible, lossless).
+  /// values land in [`Self::Other`] (infallible, lossless), carrying
+  /// the caller's spelling verbatim.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
@@ -1768,7 +1770,7 @@ impl FromStr for VideoCodec {
       b"zerocodec" => Self::Zerocodec,
       b"zlib" => Self::Zlib,
       b"zmbv" => Self::Zmbv,
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
     })
   }
 }
@@ -2461,16 +2463,17 @@ impl AudioCodec {
       Self::Other(s) => s.as_str(),
     }
   }
-  /// The open escape for a codec name FFmpeg n9.0 does not carry,
-  /// ASCII-folded to the crate's lowercase canon.
+  /// The open escape for a codec name FFmpeg n9.0 does not carry.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is
-  /// what keeps the whole value space lowercase-canonical, so the
-  /// derived `Eq` / `Hash` compare names rather than spellings.
-  /// Constructing the variant directly bypasses the fold and is not the
-  /// supported spelling.
+  /// Runs the ignore-case parse first — [`Self::from_str`] rather than
+  /// a duplicated table — so a canonical short name returns that
+  /// **named** variant, never a second value for a meaning this
+  /// vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the
+  /// escape is a lossless passthrough for a name this build does not
+  /// know, not a fold target.
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    Self::from_str(slug.as_ref()).unwrap()
   }
 }
 impl AudioCodec {
@@ -2941,7 +2944,8 @@ const _: () = {
 impl FromStr for AudioCodec {
   type Err = core::convert::Infallible;
   /// Recognise an FFmpeg codec short name, case-insensitively; unknown
-  /// values land in [`Self::Other`] (infallible, lossless).
+  /// values land in [`Self::Other`] (infallible, lossless), carrying
+  /// the caller's spelling verbatim.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
@@ -3168,7 +3172,7 @@ impl FromStr for AudioCodec {
       b"xan_dpcm" => Self::XanDpcm,
       b"xma1" => Self::Xma1,
       b"xma2" => Self::Xma2,
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
     })
   }
 }
@@ -3278,16 +3282,17 @@ impl SubtitleCodec {
       Self::Other(s) => s.as_str(),
     }
   }
-  /// The open escape for a codec name FFmpeg n9.0 does not carry,
-  /// ASCII-folded to the crate's lowercase canon.
+  /// The open escape for a codec name FFmpeg n9.0 does not carry.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is
-  /// what keeps the whole value space lowercase-canonical, so the
-  /// derived `Eq` / `Hash` compare names rather than spellings.
-  /// Constructing the variant directly bypasses the fold and is not the
-  /// supported spelling.
+  /// Runs the ignore-case parse first — [`Self::from_str`] rather than
+  /// a duplicated table — so a canonical short name returns that
+  /// **named** variant, never a second value for a meaning this
+  /// vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the
+  /// escape is a lossless passthrough for a name this build does not
+  /// know, not a fold target.
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    Self::from_str(slug.as_ref()).unwrap()
   }
   /// Is this a **bitmap** (image-based) subtitle codec, requiring an
   /// OCR pipeline stage to extract searchable text?
@@ -3408,7 +3413,8 @@ const _: () = {
 impl FromStr for SubtitleCodec {
   type Err = core::convert::Infallible;
   /// Recognise an FFmpeg codec short name, case-insensitively; unknown
-  /// values land in [`Self::Other`] (infallible, lossless).
+  /// values land in [`Self::Other`] (infallible, lossless), carrying
+  /// the caller's spelling verbatim.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
@@ -3440,7 +3446,7 @@ impl FromStr for SubtitleCodec {
       b"vplayer" => Self::Vplayer,
       b"webvtt" => Self::Webvtt,
       b"xsub" => Self::Xsub,
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
     })
   }
 }
@@ -3502,16 +3508,17 @@ impl DataCodec {
       Self::Other(s) => s.as_str(),
     }
   }
-  /// The open escape for a codec name FFmpeg n9.0 does not carry,
-  /// ASCII-folded to the crate's lowercase canon.
+  /// The open escape for a codec name FFmpeg n9.0 does not carry.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is
-  /// what keeps the whole value space lowercase-canonical, so the
-  /// derived `Eq` / `Hash` compare names rather than spellings.
-  /// Constructing the variant directly bypasses the fold and is not the
-  /// supported spelling.
+  /// Runs the ignore-case parse first — [`Self::from_str`] rather than
+  /// a duplicated table — so a canonical short name returns that
+  /// **named** variant, never a second value for a meaning this
+  /// vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the
+  /// escape is a lossless passthrough for a name this build does not
+  /// know, not a fold target.
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    Self::from_str(slug.as_ref()).unwrap()
   }
 }
 impl DataCodec {
@@ -3560,7 +3567,8 @@ const _: () = {
 impl FromStr for DataCodec {
   type Err = core::convert::Infallible;
   /// Recognise an FFmpeg codec short name, case-insensitively; unknown
-  /// values land in [`Self::Other`] (infallible, lossless).
+  /// values land in [`Self::Other`] (infallible, lossless), carrying
+  /// the caller's spelling verbatim.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
@@ -3576,7 +3584,7 @@ impl FromStr for DataCodec {
       b"smpte_436m_anc" => Self::Smpte436mAnc,
       b"timed_id3" => Self::TimedId3,
       b"ttf" => Self::Ttf,
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
     })
   }
 }
@@ -3614,16 +3622,17 @@ impl AttachmentCodec {
       Self::Other(s) => s.as_str(),
     }
   }
-  /// The open escape for a codec id not in `ATTACHMENT_CODECS`,
-  /// ASCII-folded to the crate's lowercase canon.
+  /// The open escape for a codec id not in `ATTACHMENT_CODECS`.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is
-  /// what keeps the whole value space lowercase-canonical, so the
-  /// derived `Eq` / `Hash` compare names rather than spellings.
-  /// Constructing the variant directly bypasses the fold and is not the
-  /// supported spelling.
+  /// Runs the ignore-case parse first — [`Self::from_str`] rather than
+  /// a duplicated table — so a canonical short name returns that
+  /// **named** variant, never a second value for a meaning this
+  /// vocabulary already has one for. Only a genuine stranger reaches
+  /// [`Self::Other`], carrying the caller's spelling verbatim: the
+  /// escape is a lossless passthrough for a name this build does not
+  /// know, not a fold target.
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    Self::from_str(slug.as_ref()).unwrap()
   }
 }
 impl AttachmentCodec {
@@ -3650,7 +3659,8 @@ const _: () = {
 impl FromStr for AttachmentCodec {
   type Err = core::convert::Infallible;
   /// Recognise an FFmpeg codec short name, case-insensitively; unknown
-  /// values land in [`Self::Other`] (infallible, lossless).
+  /// values land in [`Self::Other`] (infallible, lossless), carrying
+  /// the caller's spelling verbatim.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
     let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
@@ -3658,7 +3668,7 @@ impl FromStr for AttachmentCodec {
       b"bin_data" => Self::BinData,
       b"otf" => Self::Otf,
       b"ttf" => Self::Ttf,
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
     })
   }
 }

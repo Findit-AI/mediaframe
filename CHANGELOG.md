@@ -6,6 +6,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Every `other(...)` escape constructor now runs the ignore-case parse
+  first.** Previously `Type::other(slug)` wrapped `slug` into
+  `Type::Other(...)` unconditionally — it never consulted the type's own
+  `FromStr` lookup, so e.g. `VideoCodec::other("h264") != VideoCodec::H264`
+  despite naming the same codec: same meaning, two non-equal values. Now
+  `other()` delegates to `FromStr` (the exact match table it already
+  walks, never a duplicate), so a canonical spelling or a documented
+  alias returns the **named** variant; only a genuine stranger still
+  lands in `Other`. Applies to all twenty-two `Other(SmolStr)` households
+  crate-wide: `color::{Matrix, Primaries, Transfer, DynamicRange,
+  ChromaLocation, DcpTargetGamut}`, `codec::{VideoCodec, AudioCodec,
+  SubtitleCodec, DataCodec, AttachmentCodec}`, `container::Format`,
+  `frame::{Rotation, FieldOrder, StereoMode}`, `pixel_format::PixelFormat`,
+  `audio::{ChannelLayout, SampleFormat, ContainerFormat}`,
+  `image::Format`, `subtitle::{Format, TrackOrigin}`.
+
+  **Behaviour change on the 0.x line** (0.10.0 axis): a stranger's
+  spelling is now preserved **verbatim** in `Other` rather than
+  ASCII-folded to lowercase — folding a name nobody claims discarded
+  information (vendor fourccs and codec tags are routinely
+  case-sensitive) for no benefit, now that the lookup above already
+  catches every case-variant of a name this crate *does* recognise. The
+  `Other(SmolStr)` wire form and every released-serde fixture are
+  unaffected: only the in-memory value a mixed-case stranger produces
+  changes.
+
+  This closes the keyset defect ingraph#524 named as a precondition for
+  the mirror-retirement wave: with `other()` and `FromStr` now provably
+  sharing one match table, a value on a storage/cursor road can no
+  longer carry two non-equal spellings of one named meaning.
+
 ## [0.9.2] - 2026-08-31
 
 ### Added

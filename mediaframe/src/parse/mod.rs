@@ -1,12 +1,19 @@
-//! The ASCII case-folding gate every name lookup and every open escape
-//! passes through.
+//! The ASCII case-folding gate every name lookup passes through.
 //!
 //! Slugs in this crate are **canonically lowercase**: `as_str`, `Display`
 //! and serde emit nothing else, and every `FromStr` folds its input before
-//! looking it up, so `"BT709"`, `"Bt709"` and `"bt709"` are one value. The
-//! escape arms fold too ([`fold_owned`]), which is what keeps the whole
-//! value space canonical and the derived `Eq` / `Hash` comparing *names*
-//! rather than spellings.
+//! looking it up, so `"BT709"`, `"Bt709"` and `"bt709"` are one value — the
+//! same **named** variant. `Self::other` runs that exact lookup first too,
+//! rather than a second table, so a canonical or documented-alias spelling
+//! resolves to the named variant there as well, never a second value for a
+//! meaning this crate already names.
+//!
+//! Only a genuine stranger — a spelling the lookup misses — reaches the
+//! `Other(SmolStr)` escape, and it carries the caller's spelling
+//! **verbatim**. Folding a name nobody claims would destroy information
+//! (vendor fourccs and codec tags are routinely case-sensitive) for no
+//! compensating benefit, now that the lookup above already catches every
+//! case-variant of a name this crate *does* recognise.
 //!
 //! The lookup itself is on the **byte side**: [`fold`] yields the folded
 //! bytes and every table arm is a `b"slug"` literal. A `FromStr` added
@@ -51,29 +58,6 @@ pub(crate) fn fold<'b>(s: &str, buf: &'b mut [u8; FOLD_CAP]) -> Option<&'b [u8]>
   buf[..n].copy_from_slice(bytes);
   buf[..n].make_ascii_lowercase();
   Some(&buf[..n])
-}
-
-/// ASCII-fold a slug that is about to be stored in an `Other(SmolStr)`
-/// escape.
-///
-/// The one gate every escape is built through. A slug that fits
-/// `SmolStr`'s inline capacity never allocates, folded or not: the fold
-/// happens on the stack, straight into the inline representation, with
-/// no `String` in between.
-///
-/// A `FromStr` miss arm hands this the **original** input rather than
-/// [`fold`]'s bytes: ASCII folding is idempotent, so the escape is the
-/// same value either way, and this direction needs no `str` back out of
-/// the byte buffer.
-#[cfg(any(feature = "std", feature = "alloc"))]
-pub(crate) fn fold_owned(s: &str) -> smol_str::SmolStr {
-  use smol_str::StrExt as _;
-
-  if s.bytes().any(|b| b.is_ascii_uppercase()) {
-    s.to_ascii_lowercase_smolstr()
-  } else {
-    smol_str::SmolStr::new(s)
-  }
 }
 
 #[cfg(test)]

@@ -207,15 +207,17 @@ impl Format {
       Self::Other(_) => None,
     }
   }
-  /// The open escape for a slug this vocabulary does not name, ASCII-folded
-  /// to the crate's lowercase canon.
+  /// The open escape for a slug this vocabulary does not name.
   ///
-  /// The **one** construction path for [`Self::Other`]: folding here is what
-  /// keeps the whole value space lowercase-canonical, so the derived `Eq` /
-  /// `Hash` compare names rather than spellings. Constructing the variant
-  /// directly bypasses the fold and is not the supported spelling.
+  /// Runs the ignore-case parse first — [`FromStr`]'s own match table,
+  /// walked through [`Self::from_str`] rather than duplicated here — so a
+  /// canonical spelling returns that **named** variant, never a second
+  /// value for a meaning this vocabulary already has one for. Only a
+  /// genuine stranger reaches [`Self::Other`], carrying the caller's
+  /// spelling verbatim: the escape is a lossless passthrough for a name
+  /// this build does not know, not a fold target.
   pub fn other(slug: impl AsRef<str>) -> Self {
-    Self::Other(crate::parse::fold_owned(slug.as_ref()))
+    Self::from_str(slug.as_ref()).unwrap()
   }
 }
 
@@ -256,7 +258,7 @@ impl FromStr for Format {
       b"hdmv_pgs_subtitle" => Self::HdmvPgs,
       b"dvb_subtitle" => Self::DvbSub,
       b"xsub" => Self::XSub,
-      _ => Self::other(s),
+      _ => Self::Other(SmolStr::new(s)),
     })
   }
 }

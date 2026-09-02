@@ -266,8 +266,8 @@ fn is_variant_predicates() {
 }
 
 /// Lowercase-canonical, collision-free once folded, and read
-/// case-insensitively — with the escape folding too, so one name is one
-/// value under the derived `Eq` / `Hash`.
+/// case-insensitively — with `Self::other` running that same lookup, so
+/// one **named** meaning is one value under the derived `Eq` / `Hash`.
 #[test]
 fn channellayout_slugs_are_lowercase_canonical_and_fold() {
   const SLUGS: &[&str] = &["mono", "stereo", "5.1", "7.1", "quad"];
@@ -288,10 +288,15 @@ fn channellayout_slugs_are_lowercase_canonical_and_fold() {
   }
   assert_eq!("mono", "MONO".parse::<ChannelLayout>().unwrap().as_str());
 
-  // The escape folds on the way in.
+  // `other()` heals a canonical name to the named variant...
+  assert_eq!(ChannelLayout::other("MONO"), ChannelLayout::Mono);
+  assert_eq!(ChannelLayout::other("mono"), ChannelLayout::Mono);
+
+  // ...but a genuine stranger keeps its own spelling verbatim — the
+  // escape is a passthrough, not a fold target.
   let escaped: ChannelLayout = "MONO_X".parse().unwrap();
   assert!(escaped.is_other());
-  assert_eq!(escaped.as_str(), "mono_x");
+  assert_eq!(escaped.as_str(), "MONO_X");
   assert_eq!(ChannelLayout::other("MONO_X"), escaped);
 }
 #[test]
