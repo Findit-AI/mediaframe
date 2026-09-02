@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-02
+
 ### Added
 
 - **A case-sensitivity axis for every vocabulary's parse table** (the
