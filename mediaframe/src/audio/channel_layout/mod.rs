@@ -421,9 +421,7 @@ impl FromStr for ChannelLayout {
   /// [`Self::Other`] (infallible, lossless).
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    // An input too long to fold cannot name a variant either, so the
-    // unfolded original falls through to the miss arm.
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"mono" => Self::Mono,
       b"stereo" => Self::Stereo,

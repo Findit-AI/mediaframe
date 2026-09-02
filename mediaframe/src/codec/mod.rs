@@ -1489,7 +1489,7 @@ impl FromStr for VideoCodec {
   /// the caller's spelling verbatim.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"012v" => Self::N012v,
       b"4xm" => Self::N4xm,
@@ -2948,7 +2948,7 @@ impl FromStr for AudioCodec {
   /// the caller's spelling verbatim.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"4gv" => Self::N4gv,
       b"8svx_exp" => Self::N8svxExp,
@@ -3417,7 +3417,7 @@ impl FromStr for SubtitleCodec {
   /// the caller's spelling verbatim.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"arib_caption" => Self::AribCaption,
       b"ass" => Self::Ass,
@@ -3571,7 +3571,7 @@ impl FromStr for DataCodec {
   /// the caller's spelling verbatim.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"bin_data" => Self::BinData,
       b"dvd_nav_packet" => Self::DvdNavPacket,
@@ -3663,7 +3663,7 @@ impl FromStr for AttachmentCodec {
   /// the caller's spelling verbatim.
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut buf = [0u8; crate::parse::FOLD_CAP];
-    let folded = crate::parse::fold(s, &mut buf).unwrap_or(s.as_bytes());
+    let folded = crate::parse::lookup(crate::parse::Case::Insensitive, s, &mut buf);
     Ok(match folded {
       b"bin_data" => Self::BinData,
       b"otf" => Self::Otf,
